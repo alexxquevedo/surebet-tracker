@@ -37,37 +37,42 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const parsed = credentialsSchema.safeParse(credentials)
-        if (!parsed.success) return null
+        try {
+          const parsed = credentialsSchema.safeParse(credentials)
+          if (!parsed.success) return null
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            passwordHash: true,
-            plan: true,
-          },
-        })
+          const user = await prisma.user.findUnique({
+            where: { email: parsed.data.email },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              image: true,
+              passwordHash: true,
+              plan: true,
+            },
+          })
 
-        if (!user?.passwordHash) return null
+          if (!user?.passwordHash) return null
 
-        const isValid = await bcrypt.compare(parsed.data.password, user.passwordHash)
-        if (!isValid) return null
+          const isValid = await bcrypt.compare(parsed.data.password, user.passwordHash)
+          if (!isValid) return null
 
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLoginAt: new Date() },
-        })
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { lastLoginAt: new Date() },
+          })
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          plan: user.plan,
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+            plan: user.plan,
+          }
+        } catch (error) {
+          console.error('[Auth] authorize error:', error)
+          return null
         }
       },
     }),
