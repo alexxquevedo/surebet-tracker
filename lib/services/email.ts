@@ -19,7 +19,7 @@ interface EmailPayload {
 
 async function sendEmail(payload: EmailPayload): Promise<void> {
   if (!IS_LIVE) {
-    console.info('[Email] Dev mode — skipped send to:', payload.to, '|', payload.subject)
+    console.warn('[Email] Dev mode — skipped send to:', payload.to, '|', payload.subject)
     return
   }
 
