@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Política de privacidad — Surebet Tracker' }
 
@@ -163,7 +164,7 @@ export default function PrivacyPage() {
           <li>
             <strong>Supresión («derecho al olvido»):</strong> solicitar el borrado de tus datos.
             Puedes hacerlo directamente desde{' '}
-            <a href="/settings" className="underline">Configuración → Zona de peligro</a>.
+            <Link href="/settings" className="underline">Configuración → Zona de peligro</Link>.
           </li>
           <li>
             <strong>Portabilidad:</strong> recibir tus datos en formato estructurado y legible por

@@ -3,6 +3,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { signOut } from 'next-auth/react'
 import Decimal from 'decimal.js'
 import { createQuickBetAction, createMultiLegBetAction } from '@/lib/actions/bet-record'
 
@@ -135,13 +136,13 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
               <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
             )}
           </div>
-          <a
-            href="/api/auth/signout"
-            className="flex items-center gap-3 px-3 py-2 text-sm rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          <button
+            onClick={() => void signOut({ callbackUrl: '/login' })}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <span className="text-base leading-none">🚪</span>
             Cerrar sesión
-          </a>
+          </button>
         </div>
       </aside>
 

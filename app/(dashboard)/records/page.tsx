@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
@@ -297,10 +298,10 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         </button>
 
         {hasAnyFilter && (
-          <a href="/records"
+          <Link href="/records"
             className="rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
             Limpiar todo
-          </a>
+          </Link>
         )}
       </form>
 

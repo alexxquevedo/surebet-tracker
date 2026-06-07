@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Términos de uso — Surebet Tracker' }
 
@@ -17,7 +18,7 @@ export default function TermsPage() {
         <p>
           Al acceder o utilizar Surebet Tracker Pro (el «Servicio»), aceptas quedar vinculado por
           estos Términos de uso y por nuestra{' '}
-          <a href="/privacy" className="underline">Política de privacidad</a>. Si no estás de
+          <Link href="/privacy" className="underline">Política de privacidad</Link>. Si no estás de
           acuerdo con alguna de las condiciones aquí establecidas, no debes usar el Servicio.
         </p>
         <p>
@@ -154,7 +155,7 @@ export default function TermsPage() {
       <Section title="11. Resolución de cuenta">
         <p>
           Puedes eliminar tu cuenta en cualquier momento desde{' '}
-          <a href="/settings" className="underline">Configuración → Zona de peligro</a>. También
+          <Link href="/settings" className="underline">Configuración → Zona de peligro</Link>. También
           podemos suspender o cancelar tu acceso si incumples estos términos, con o sin previo
           aviso dependiendo de la gravedad del incumplimiento.
         </p>

@@ -1,5 +1,6 @@
 'use client'
 import { useActionState } from 'react'
+import Link from 'next/link'
 import { loginAction } from '@/lib/actions/auth'
 
 export function LoginForm() {
@@ -53,9 +54,9 @@ export function LoginForm() {
 
       <p className="text-center text-sm text-muted-foreground">
         ¿No tienes cuenta?{' '}
-        <a href="/register" className="text-primary hover:underline font-medium">
+        <Link href="/register" className="text-primary hover:underline font-medium">
           Regístrate gratis
-        </a>
+        </Link>
       </p>
     </form>
   )

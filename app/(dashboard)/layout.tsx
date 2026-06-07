@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { SidebarNav } from './_components/sidebar-nav'
@@ -45,8 +46,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <footer className="hidden md:flex shrink-0 border-t px-6 py-3 items-center justify-between text-xs text-muted-foreground bg-card">
           <span>© 2026 Surebet Tracker Pro</span>
           <nav className="flex gap-4">
-            <a href="/terms"   className="hover:text-foreground transition-colors">Términos de uso</a>
-            <a href="/privacy" className="hover:text-foreground transition-colors">Privacidad</a>
+            <Link href="/terms"   className="hover:text-foreground transition-colors">Términos de uso</Link>
+            <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidad</Link>
           </nav>
         </footer>
       </main>
