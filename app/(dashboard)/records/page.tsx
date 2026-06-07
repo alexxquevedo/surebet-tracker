@@ -1,0 +1,549 @@
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth/auth'
+import { prisma } from '@/lib/db/client'
+import { type Prisma } from '@prisma/client'
+import { SettleButton } from './_components/settle-button'
+import type { LegInfo } from './_components/settle-button'
+
+export const metadata: Metadata = { title: 'Operaciones — Surebet Tracker' }
+
+// ─── Labels ──────────────────────────────────────────────────────────────────
+
+const BET_TYPE_LABEL: Record<string, string> = {
+  ARBITRAGE: '⚡ Surebets',
+  MIDDLE:    '🎯 Middlebet',
+  SINGLE:    '⚽ Single',
+  COMBO:     '📋 Combo',
+  CASINO:    '🎰 Casino',
+  CUSTOM:    '📝 Custom',
+}
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  PLACED:      { label: 'En juego',  cls: 'bg-amber-100 text-amber-700 border border-amber-200'  },
+  WON:         { label: 'Ganada',    cls: 'bg-green-100 text-green-700 border border-green-200'  },
+  LOST:        { label: 'Perdida',   cls: 'bg-red-100 text-red-700 border border-red-200'        },
+  VOID:        { label: 'Anulada',   cls: 'bg-gray-100 text-gray-600 border border-gray-200'     },
+  CASHOUT:     { label: 'Cashout',   cls: 'bg-blue-100 text-blue-700 border border-blue-200'     },
+  PARTIAL_WIN: { label: 'Parcial',   cls: 'bg-teal-100 text-teal-700 border border-teal-200'     },
+}
+
+const SPORT_LABEL: Record<string, string> = {
+  FOOTBALL:   'Fútbol',
+  BASKETBALL: 'Baloncesto',
+  TENNIS:     'Tenis',
+  HOCKEY:     'Hockey Hielo',
+  BASEBALL:   'Béisbol',
+  RUGBY:      'Rugby',
+  CRICKET:    'Cricket',
+  GOLF:       'Golf',
+  MMA:        'MMA',
+  BOXING:     'Boxeo',
+  MOTORSPORT: 'Motorsport',
+  ESPORTS:    'eSports',
+  OTHER:      'Otro',
+}
+
+// ─── Date preset helpers ──────────────────────────────────────────────────────
+
+function getDatePresets() {
+  const now  = new Date()
+  const pad  = (n: number) => String(n).padStart(2, '0')
+  const iso  = (d: Date)   => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const today = iso(now)
+
+  // Start of this week (Monday)
+  const weekStart = new Date(now)
+  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+
+  // Start of this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  // Last month
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0)
+
+  return {
+    today:         { from: today,             to: today },
+    thisWeek:      { from: iso(weekStart),    to: today },
+    thisMonth:     { from: iso(monthStart),   to: today },
+    lastMonth:     { from: iso(lastMonthStart), to: iso(lastMonthEnd) },
+  }
+}
+
+function buildPresetUrl(base: string, from: string, to: string, extra: string) {
+  return `${base}?dateFrom=${from}&dateTo=${to}${extra}`
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function RecordsPage({ searchParams }: PageProps) {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) redirect('/login')
+
+  const params       = await searchParams
+  const filterSport  = typeof params['sport']    === 'string' ? params['sport']    : undefined
+  const filterBm     = typeof params['bm']       === 'string' ? params['bm']       : undefined
+  const filterStatus = typeof params['status']   === 'string' ? params['status']   : undefined
+  const filterLive   = typeof params['live']     === 'string' ? params['live']     : undefined
+  const filterFrom   = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
+  const filterTo     = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
+
+  // Build where clause
+  const where: Prisma.BetRecordWhereInput = {
+    userId,
+    deletedAt: null,
+    ...(filterSport  ? { sport:  filterSport  as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
+    ...(filterStatus ? { status: filterStatus as Prisma.EnumBetStatusFilter['equals'] } : {}),
+    ...(filterLive === 'true'  ? { isLive: true  } : {}),
+    ...(filterLive === 'false' ? { isLive: false } : {}),
+    ...(filterBm ? {
+      OR: [
+        { primaryBookmakerId: filterBm },
+        { legs: { some: { bookmakerId: filterBm } } },
+      ],
+    } : {}),
+    ...(filterFrom || filterTo ? {
+      datePlaced: {
+        ...(filterFrom ? { gte: new Date(`${filterFrom}T00:00:00`) } : {}),
+        ...(filterTo   ? { lte: new Date(`${filterTo}T23:59:59`)   } : {}),
+      },
+    } : {}),
+  }
+
+  const [records, bookmakers] = await Promise.all([
+    prisma.betRecord.findMany({
+      where,
+      orderBy: { datePlaced: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        sport: true,
+        isLive: true,
+        totalStake: true,
+        grossProfit: true,
+        potentialReturn: true,
+        datePlaced: true,
+        dateSettled: true,
+        title: true,
+        primaryBookmakerId: true,
+        primaryBookmaker: { select: { name: true, color: true } },
+        singleBetDetail:  { select: { selection: true, odds: true } },
+        legs: {
+          where: { deletedAt: null },
+          orderBy: { id: 'asc' },
+          select: { id: true, bookmakerId: true, stake: true, odds: true, potentialReturn: true, bookmaker: { select: { name: true } } },
+        },
+      },
+    }),
+    prisma.bookmaker.findMany({
+      where: { userId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+  ])
+
+  const totalPlaced = records.filter((r) => r.status === 'PLACED').length
+  const totalPnl    = records.reduce((acc, r) => acc + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0), 0)
+
+  // ─── Build date preset URLs ───────────────────────────────────────────────
+  const presets    = getDatePresets()
+  const extraParams = [
+    filterSport  ? `&sport=${filterSport}`   : '',
+    filterBm     ? `&bm=${filterBm}`         : '',
+    filterStatus ? `&status=${filterStatus}` : '',
+    filterLive   ? `&live=${filterLive}`     : '',
+  ].join('')
+
+  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
+
+  return (
+    <div className="space-y-6">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Operaciones</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {records.length} registros · {totalPlaced} en juego ·{' '}
+            <span className={totalPnl >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+              {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} P&L
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* ─── Date Range Presets ─────────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Período</p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: 'Hoy',         ...presets.today,      },
+            { label: 'Esta semana', ...presets.thisWeek,   },
+            { label: 'Este mes',    ...presets.thisMonth,  },
+            { label: 'Mes pasado',  ...presets.lastMonth,  },
+          ].map(({ label, from, to }) => {
+            const url     = buildPresetUrl('/records', from, to, extraParams)
+            const isActive = filterFrom === from && filterTo === to
+            return (
+              <a
+                key={label}
+                href={url}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                    : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {label}
+              </a>
+            )
+          })}
+
+          {/* Custom range */}
+          <form method="GET" className="flex items-center gap-2">
+            {filterSport  && <input type="hidden" name="sport"  value={filterSport}  />}
+            {filterBm     && <input type="hidden" name="bm"     value={filterBm}     />}
+            {filterStatus && <input type="hidden" name="status" value={filterStatus} />}
+            {filterLive   && <input type="hidden" name="live"   value={filterLive}   />}
+            <input
+              type="date"
+              name="dateFrom"
+              defaultValue={filterFrom ?? ''}
+              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
+            />
+            <span className="text-xs text-muted-foreground">→</span>
+            <input
+              type="date"
+              name="dateTo"
+              defaultValue={filterTo ?? ''}
+              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+            >
+              Aplicar
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* ─── Filters ────────────────────────────────────────────────────── */}
+      <form method="GET" className="flex flex-wrap gap-3 items-end">
+        {/* Preserve date params */}
+        {filterFrom && <input type="hidden" name="dateFrom" value={filterFrom} />}
+        {filterTo   && <input type="hidden" name="dateTo"   value={filterTo}   />}
+
+        {/* Live / Pre-partido */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Momento</label>
+          <select name="live" defaultValue={filterLive ?? ''}
+            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]">
+            <option value="">Live + Pre</option>
+            <option value="false">📅 Pre-partido</option>
+            <option value="true">⚡ Live</option>
+          </select>
+        </div>
+
+        {/* Sport */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deporte</label>
+          <select name="sport" defaultValue={filterSport ?? ''}
+            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]">
+            <option value="">Todos los deportes</option>
+            {Object.entries(SPORT_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Bookmaker */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Casa</label>
+          <select name="bm" defaultValue={filterBm ?? ''}
+            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[140px]">
+            <option value="">Todas las casas</option>
+            {bookmakers.map((bm) => (
+              <option key={bm.id} value={bm.id}>{bm.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Status */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado</label>
+          <select name="status" defaultValue={filterStatus ?? ''}
+            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[120px]">
+            <option value="">Todos</option>
+            <option value="PLACED">En juego</option>
+            <option value="WON">Ganada</option>
+            <option value="LOST">Perdida</option>
+            <option value="VOID">Anulada</option>
+            <option value="CASHOUT">Cashout</option>
+          </select>
+        </div>
+
+        <button type="submit"
+          className="rounded-lg bg-primary text-primary-foreground px-4 py-1.5 text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm">
+          Filtrar
+        </button>
+
+        {hasAnyFilter && (
+          <a href="/records"
+            className="rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            Limpiar todo
+          </a>
+        )}
+      </form>
+
+      {/* ─── Table ──────────────────────────────────────────────────────── */}
+      {records.length === 0 && (
+        <div className="rounded-xl border border-dashed p-12 text-center">
+          <p className="text-3xl mb-3">📋</p>
+          <p className="font-semibold">Sin operaciones</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {hasAnyFilter
+              ? 'No hay operaciones que coincidan con los filtros actuales.'
+              : 'Usa el botón + para registrar tu primera apuesta.'}
+          </p>
+        </div>
+      )}
+
+      {/* ─── Tabla (escritorio) ─────────────────────────────────────────── */}
+      {records.length > 0 && (
+        <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-muted/40">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Tipo</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">Selección</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Estado</th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Stake</th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">P&L</th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">Fecha</th>
+                <th className="px-4 py-3 text-xs uppercase tracking-wide"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {records.map((r) => {
+                const profit    = r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null
+                const profitCls = profit === null
+                  ? 'text-muted-foreground'
+                  : profit > 0 ? 'text-green-600 font-semibold' : profit < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'
+
+                const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
+                const legNames   = r.legs.map((l) => l.bookmaker.name).join(' + ')
+                const houseLabel = r.legs.length > 0
+                  ? legNames
+                  : r.primaryBookmaker?.name ?? '—'
+
+                const sm      = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
+                const dateObj = new Date(r.datePlaced)
+                const dateFmt = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+                const timeFmt = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+
+                // Build bet info for settle modal
+                const betForSettle = {
+                  id:                 r.id,
+                  type:               r.type,
+                  totalStake:         parseFloat(r.totalStake.toString()),
+                  primaryBookmakerId: r.primaryBookmakerId,
+                  singleOdds:         r.singleBetDetail?.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null,
+                  legs:               r.legs.map((l): LegInfo => ({
+                    id:              l.id,
+                    bookmakerId:     l.bookmakerId,
+                    bookmakerName:   l.bookmaker.name,
+                    stake:           parseFloat(l.stake.toString()),
+                    odds:            parseFloat(l.odds.toString()),
+                    potentialReturn: parseFloat(l.potentialReturn.toString()),
+                  })),
+                }
+
+                return (
+                  <tr key={r.id} className="hover:bg-muted/20 transition-colors group">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {r.isLive && (
+                          <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full leading-tight">
+                            LIVE
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold">{BET_TYPE_LABEL[r.type] ?? r.type}</span>
+                      </div>
+                      {r.sport && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{SPORT_LABEL[r.sport] ?? r.sport}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell max-w-[180px]">
+                      <span className="text-xs text-muted-foreground truncate block">{selText}</span>
+                      {r.singleBetDetail?.odds && (
+                        <span className="text-xs font-mono text-muted-foreground">
+                          @{parseFloat(r.singleBetDetail.odds.toString()).toFixed(2)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <div className="flex items-center gap-1.5">
+                        {r.primaryBookmaker?.color && r.legs.length === 0 && (
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.primaryBookmaker.color }} />
+                        )}
+                        <span className="text-xs">{houseLabel}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5 ${sm.cls}`}>
+                        {sm.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">
+                      {parseFloat(r.totalStake.toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono text-xs ${profitCls}`}>
+                      {profit === null
+                        ? <span className="text-muted-foreground">{parseFloat((r.potentialReturn ?? r.totalStake).toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
+                        : `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
+                      }
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-muted-foreground hidden sm:table-cell">
+                      <span className="block">{dateFmt}</span>
+                      <span className="block text-muted-foreground/60">{timeFmt}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.status === 'PLACED' && (
+                        <SettleButton bet={betForSettle} />
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ─── Tarjetas (móvil) ───────────────────────────────────────────── */}
+      {records.length > 0 && (
+        <div className="block md:hidden space-y-3">
+          {records.map((r) => {
+            const profit    = r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null
+            const pnlCls    =
+              profit === null
+                ? 'text-muted-foreground'
+                : profit > 0
+                  ? 'text-green-600 font-bold'
+                  : profit < 0
+                    ? 'text-red-600 font-bold'
+                    : 'text-muted-foreground'
+            const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
+            const legNames   = r.legs.map((l) => l.bookmaker.name).join(' + ')
+            const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker?.name ?? '—')
+            const sm         = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
+            const dateObj    = new Date(r.datePlaced)
+            const dateFmt    = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+            const timeFmt    = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+
+            const betForSettle = {
+              id:                 r.id,
+              type:               r.type,
+              totalStake:         parseFloat(r.totalStake.toString()),
+              primaryBookmakerId: r.primaryBookmakerId,
+              singleOdds:         r.singleBetDetail?.odds
+                ? parseFloat(r.singleBetDetail.odds.toString())
+                : null,
+              legs: r.legs.map((l): LegInfo => ({
+                id:              l.id,
+                bookmakerId:     l.bookmakerId,
+                bookmakerName:   l.bookmaker.name,
+                stake:           parseFloat(l.stake.toString()),
+                odds:            parseFloat(l.odds.toString()),
+                potentialReturn: parseFloat(l.potentialReturn.toString()),
+              })),
+            }
+
+            return (
+              <div key={r.id} className="rounded-xl border bg-card shadow-sm overflow-hidden">
+
+                {/* ── Cabecera: tipo · evento · estado badge ─────────── */}
+                <div className="flex items-start justify-between gap-3 px-4 py-3 border-b bg-muted/20 min-h-[44px]">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {r.isLive && (
+                      <span className="shrink-0 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full leading-tight">
+                        LIVE
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-tight truncate">{selText}</p>
+                      <p className="text-xs text-muted-foreground">{BET_TYPE_LABEL[r.type] ?? r.type}</p>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-1 ${sm.cls}`}>
+                    {sm.label}
+                  </span>
+                </div>
+
+                {/* ── Cuerpo: casa · stake · cuota · P&L ────────────── */}
+                <div className="flex items-center justify-between gap-3 px-4 py-3 min-h-[44px]">
+                  <div className="min-w-0 space-y-0.5 flex-1">
+                    <p className="text-xs font-medium text-foreground truncate">{houseLabel}</p>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                      <span className="font-mono">
+                        {parseFloat(r.totalStake.toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                      </span>
+                      {r.singleBetDetail?.odds && (
+                        <>
+                          <span>·</span>
+                          <span className="font-mono">
+                            @{parseFloat(r.singleBetDetail.odds.toString()).toFixed(2)}
+                          </span>
+                        </>
+                      )}
+                      {r.sport && (
+                        <>
+                          <span>·</span>
+                          <span>{SPORT_LABEL[r.sport] ?? r.sport}</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/70">{dateFmt} · {timeFmt}</p>
+                  </div>
+
+                  {/* P&L / retorno potencial */}
+                  <div className="shrink-0 text-right">
+                    <p className={`text-base tabular-nums ${pnlCls}`}>
+                      {profit === null
+                        ? parseFloat(
+                            (r.potentialReturn ?? r.totalStake).toString(),
+                          ).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+                        : `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
+                      }
+                    </p>
+                    {profit === null && (
+                      <p className="text-[10px] text-muted-foreground">Potencial</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Pie: botón liquidar (solo PLACED) ─────────────── */}
+                {r.status === 'PLACED' && (
+                  <div className="px-4 pb-3 border-t pt-2 bg-muted/10">
+                    <SettleButton bet={betForSettle} />
+                  </div>
+                )}
+
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

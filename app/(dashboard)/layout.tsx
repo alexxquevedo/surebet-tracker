@@ -1,0 +1,55 @@
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth/auth'
+import { prisma } from '@/lib/db/client'
+import { SidebarNav } from './_components/sidebar-nav'
+
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) redirect('/login')
+
+  // Fetch active bookmakers for the modal selector (exclude CLOSED and SUSPENDED)
+  const bookmakers = await prisma.bookmaker.findMany({
+    where:   { userId, status: { notIn: ['CLOSED', 'SUSPENDED'] } },
+    select:  { id: true, name: true, color: true },
+    orderBy: { name: 'asc' },
+  })
+
+  const plan      = session.user?.plan ?? 'FREE'
+  const userName  = session.user?.name ?? null
+  const userEmail = session.user?.email ?? null
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      {/* ── Sidebar (Client Component — usePathname + modal) ─────────── */}
+      <SidebarNav
+        bookmakers={bookmakers}
+        plan={plan}
+        userName={userName}
+        userEmail={userEmail}
+      />
+
+      {/* ── Main content area ─────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Mobile topbar (hidden on md+) */}
+        <header className="h-14 border-b flex items-center justify-between px-6 bg-card shrink-0 md:hidden">
+          <span className="text-sm font-bold">Surebet Tracker</span>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+            {plan}
+          </span>
+        </header>
+
+        <div className="flex-1 p-6 pb-28 md:pb-6 overflow-auto">{children}</div>
+
+        {/* ── Footer ────────────────────────────────────────────────────── */}
+        <footer className="hidden md:flex shrink-0 border-t px-6 py-3 items-center justify-between text-xs text-muted-foreground bg-card">
+          <span>© 2026 Surebet Tracker Pro</span>
+          <nav className="flex gap-4">
+            <a href="/terms"   className="hover:text-foreground transition-colors">Términos de uso</a>
+            <a href="/privacy" className="hover:text-foreground transition-colors">Privacidad</a>
+          </nav>
+        </footer>
+      </main>
+    </div>
+  )
+}
