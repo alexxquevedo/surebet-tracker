@@ -1,5 +1,9 @@
-import { auth } from '@/lib/auth/auth'
+import NextAuth from 'next-auth'
 import { NextResponse } from 'next/server'
+import { authConfig } from '@/lib/auth/auth.config'
+
+// Instancia ligera — NO importa bcryptjs ni Prisma (Edge Runtime safe)
+const { auth } = NextAuth(authConfig)
 
 const PUBLIC_ROUTES = [
   '/login',
