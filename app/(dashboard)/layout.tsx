@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { SidebarNav } from './_components/sidebar-nav'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -33,11 +34,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* ── Main content area ─────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Mobile topbar (hidden on md+) */}
-        <header className="h-14 border-b flex items-center justify-between px-6 bg-card shrink-0 md:hidden">
+        <header className="h-14 border-b flex items-center justify-between px-4 bg-card shrink-0 md:hidden">
           <span className="text-sm font-bold">Surebet Tracker</span>
-          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-            {plan}
-          </span>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+              {plan}
+            </span>
+          </div>
         </header>
 
         <div className="flex-1 p-6 pb-28 md:pb-6 overflow-auto">{children}</div>

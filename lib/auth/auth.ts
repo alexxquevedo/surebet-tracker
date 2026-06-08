@@ -13,7 +13,7 @@ const credentialsSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  session: { strategy: 'jwt' },
+  session: { strategy: 'jwt', maxAge: 6 * 60 * 60 }, // 6 horas
   pages: {
     signIn: '/login',
     error: '/login',

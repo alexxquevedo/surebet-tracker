@@ -26,8 +26,28 @@ interface Props {
   bet: BetForSettle
 }
 
+const SETTLED_LABELS: Record<string, { text: string; cls: string }> = {
+  WON:     { text: '✅ Ganada',    cls: 'text-green-600' },
+  LOST:    { text: '❌ Perdida',   cls: 'text-red-600'   },
+  VOID:    { text: '↩ Anulada',   cls: 'text-gray-500'  },
+  CASHOUT: { text: '💰 Cashout',  cls: 'text-blue-600'  },
+}
+
 export function SettleButton({ bet }: Props) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen]       = useState(false)
+  const [settled, setSettled] = useState<string | null>(null)
+
+  // Actualización optimista: muestra el nuevo estado INMEDIATAMENTE
+  // sin esperar a que router.refresh() complete
+  if (settled) {
+    const meta = SETTLED_LABELS[settled]
+    return (
+      <span className={`text-xs font-medium ${meta?.cls ?? 'text-muted-foreground'}`}>
+        {meta?.text ?? settled}
+      </span>
+    )
+  }
+
   return (
     <>
       <button
@@ -36,7 +56,13 @@ export function SettleButton({ bet }: Props) {
       >
         Liquidar
       </button>
-      {open && <SettleModal bet={bet} onClose={() => setOpen(false)} />}
+      {open && (
+        <SettleModal
+          bet={bet}
+          onClose={() => setOpen(false)}
+          onSettled={setSettled}
+        />
+      )}
     </>
   )
 }
@@ -46,7 +72,7 @@ export function SettleButton({ bet }: Props) {
 type Outcome = 'WON' | 'LOST' | 'VOID' | 'CASHOUT'
 type WinningLeg = '1' | '2' | 'BOTH'
 
-function SettleModal({ bet, onClose }: { bet: BetForSettle; onClose: () => void }) {
+function SettleModal({ bet, onClose, onSettled }: { bet: BetForSettle; onClose: () => void; onSettled: (status: string) => void }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
@@ -94,7 +120,9 @@ function SettleModal({ bet, onClose }: { bet: BetForSettle; onClose: () => void 
     setIsPending(false)
 
     if (result.success) {
+      const finalStatus = isMultiLeg ? (preview >= 0 ? 'WON' : 'LOST') : outcome
       setSuccess(true)
+      onSettled(finalStatus)          // actualización optimista instantánea
       startTransition(() => router.refresh())
       setTimeout(onClose, 1400)
     } else {

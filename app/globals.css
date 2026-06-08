@@ -74,6 +74,11 @@
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 
+  /* Elimina el zoom accidental al pulsar botones en móvil */
+  button, [role="button"], a, input, select, textarea {
+    touch-action: manipulation;
+  }
+
   /* Números con fuente mono para alineación financiera */
   .tabular-nums {
     font-variant-numeric: tabular-nums;

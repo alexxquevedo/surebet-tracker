@@ -261,7 +261,7 @@ function BankrollSection({ bankroll }: { bankroll: BankrollMetrics }) {
           </div>
 
           {/* ROI y Yield en columnas */}
-          <div className="flex gap-8">
+          <div className="flex flex-wrap gap-4 sm:gap-8">
             <div>
               <p className="text-xs text-muted-foreground">ROI sobre Capital</p>
               <p className={`text-2xl font-bold mt-1 ${profitCls(bankroll.roi)}`}>
@@ -473,7 +473,7 @@ function AdvancedSection({ advanced }: { advanced: AdvancedStats }) {
       </div>
 
       {/* Promedios */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <MetricCard
           label="Promedio diario"
           value={formatProfit(advanced.avgDailyProfit)}
@@ -620,7 +620,7 @@ function KpiCard({
   return (
     <div className="rounded-xl border bg-card p-5 shadow-sm">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={`text-3xl font-bold mt-2 tabular-nums ${valueCls}`}>{value}</p>
+      <p className={`text-xl sm:text-3xl font-bold mt-2 tabular-nums break-all ${valueCls}`}>{value}</p>
       {subtext !== undefined && (
         <p className="text-xs text-muted-foreground mt-1.5">{subtext}</p>
       )}
@@ -638,9 +638,9 @@ function MetricCard({
   valueCls?: string
 }) {
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`text-sm font-semibold mt-0.5 tabular-nums ${valueCls}`}>{value}</p>
+    <div className="rounded-lg border bg-card px-2 sm:px-4 py-3">
+      <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{label}</p>
+      <p className={`text-xs sm:text-sm font-semibold mt-0.5 tabular-nums ${valueCls}`}>{value}</p>
     </div>
   )
 }

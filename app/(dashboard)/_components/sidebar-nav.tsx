@@ -4,6 +4,7 @@ import { useState, useTransition, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import Decimal from 'decimal.js'
 import { createQuickBetAction, createMultiLegBetAction } from '@/lib/actions/bet-record'
 
@@ -128,13 +129,16 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
           })}
         </nav>
 
-        {/* User + sign-out */}
+        {/* User + sign-out + theme */}
         <div className="p-3 border-t space-y-1">
-          <div className="px-3 py-1">
-            <p className="text-xs font-semibold truncate">{userName ?? userEmail ?? 'Usuario'}</p>
-            {userName && userEmail && (
-              <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
-            )}
+          <div className="px-3 py-1 flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold truncate">{userName ?? userEmail ?? 'Usuario'}</p>
+              {userName && userEmail && (
+                <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+              )}
+            </div>
+            <ThemeToggle />
           </div>
           <button
             onClick={() => void signOut({ callbackUrl: '/login' })}

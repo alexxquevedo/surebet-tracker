@@ -5,7 +5,7 @@ import { signIn } from 'next-auth/react'
 import Link from 'next/link'
 
 export function LoginForm() {
-  const [error, setError]       = useState<string | null>(null)
+  const [error, setError]         = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
   const router = useRouter()
 
@@ -21,9 +21,10 @@ export function LoginForm() {
       redirect: false,
     })
 
-    setIsPending(false)
-
+    // Solo paramos el spinner si hay error — si todo va bien,
+    // el spinner sigue visible hasta que el dashboard cargue
     if (!result?.ok || result.error) {
+      setIsPending(false)
       console.error('[Login] signIn result:', result)
       if (result?.error === 'CredentialsSignin') {
         setError('Email o contraseña incorrectos')
@@ -55,7 +56,8 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           required
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          disabled={isPending}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="tu@email.com"
         />
       </div>
@@ -70,7 +72,8 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           required
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          disabled={isPending}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="••••••••"
         />
       </div>
@@ -78,9 +81,30 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-md bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-75 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
-        {isPending ? 'Iniciando sesión...' : 'Iniciar sesión'}
+        {isPending && (
+          <svg
+            className="animate-spin h-4 w-4 shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle
+              className="opacity-25"
+              cx="12" cy="12" r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+        )}
+        {isPending ? 'Redirigiendo...' : 'Iniciar sesión'}
       </button>
 
       <p className="text-center text-sm text-muted-foreground">

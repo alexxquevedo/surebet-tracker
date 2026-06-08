@@ -9,7 +9,7 @@ import type { NextAuthConfig } from 'next-auth'
  * cuando no hay JWT válido (evita bucle de redirección).
  */
 export const authConfig: NextAuthConfig = {
-  session: { strategy: 'jwt' },
+  session: { strategy: 'jwt', maxAge: 6 * 60 * 60 }, // 6 horas
   pages: {
     signIn: '/login',
     error: '/login',

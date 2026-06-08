@@ -29,6 +29,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
+      {/* Aplica el tema ANTES de que React hidrate para evitar el flash blanco/negro */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('theme'),d=window.matchMedia('(prefers-color-scheme:dark)').matches;if(t==='dark'||(!t&&d))document.documentElement.classList.add('dark')}catch(e){}` }} />
+      </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans`}>
         {children}
         <Toaster

@@ -1,11 +1,11 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
 import { SettleButton } from './_components/settle-button'
 import type { LegInfo } from './_components/settle-button'
+import { RecordsFilters } from './_components/records-filters'
 
 export const metadata: Metadata = { title: 'Operaciones — Surebet Tracker' }
 
@@ -163,8 +163,6 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     filterLive   ? `&live=${filterLive}`     : '',
   ].join('')
 
-  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
-
   return (
     <div className="space-y-6">
 
@@ -237,73 +235,16 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* ─── Filters ────────────────────────────────────────────────────── */}
-      <form method="GET" className="flex flex-wrap gap-3 items-end">
-        {/* Preserve date params */}
-        {filterFrom && <input type="hidden" name="dateFrom" value={filterFrom} />}
-        {filterTo   && <input type="hidden" name="dateTo"   value={filterTo}   />}
-
-        {/* Live / Pre-partido */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Momento</label>
-          <select name="live" defaultValue={filterLive ?? ''}
-            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]">
-            <option value="">Live + Pre</option>
-            <option value="false">📅 Pre-partido</option>
-            <option value="true">⚡ Live</option>
-          </select>
-        </div>
-
-        {/* Sport */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deporte</label>
-          <select name="sport" defaultValue={filterSport ?? ''}
-            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]">
-            <option value="">Todos los deportes</option>
-            {Object.entries(SPORT_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Bookmaker */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Casa</label>
-          <select name="bm" defaultValue={filterBm ?? ''}
-            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[140px]">
-            <option value="">Todas las casas</option>
-            {bookmakers.map((bm) => (
-              <option key={bm.id} value={bm.id}>{bm.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Status */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado</label>
-          <select name="status" defaultValue={filterStatus ?? ''}
-            className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[120px]">
-            <option value="">Todos</option>
-            <option value="PLACED">En juego</option>
-            <option value="WON">Ganada</option>
-            <option value="LOST">Perdida</option>
-            <option value="VOID">Anulada</option>
-            <option value="CASHOUT">Cashout</option>
-          </select>
-        </div>
-
-        <button type="submit"
-          className="rounded-lg bg-primary text-primary-foreground px-4 py-1.5 text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm">
-          Filtrar
-        </button>
-
-        {hasAnyFilter && (
-          <Link href="/records"
-            className="rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-            Limpiar todo
-          </Link>
-        )}
-      </form>
+      {/* ─── Filters (auto-apply con debounce 300ms) ────────────────────── */}
+      <RecordsFilters
+        bookmakers={bookmakers}
+        filterSport={filterSport}
+        filterBm={filterBm}
+        filterStatus={filterStatus}
+        filterLive={filterLive}
+        filterFrom={filterFrom}
+        filterTo={filterTo}
+      />
 
       {/* ─── Table ──────────────────────────────────────────────────────── */}
       {records.length === 0 && (
@@ -311,7 +252,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           <p className="text-3xl mb-3">📋</p>
           <p className="font-semibold">Sin operaciones</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {hasAnyFilter
+            {(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
               ? 'No hay operaciones que coincidan con los filtros actuales.'
               : 'Usa el botón + para registrar tu primera apuesta.'}
           </p>
