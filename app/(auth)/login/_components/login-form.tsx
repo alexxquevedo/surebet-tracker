@@ -1,16 +1,42 @@
 'use client'
-import { useActionState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 import Link from 'next/link'
-import { loginAction } from '@/lib/actions/auth'
 
 export function LoginForm() {
-  const [state, formAction, isPending] = useActionState(loginAction, null)
+  const [error, setError]       = useState<string | null>(null)
+  const [isPending, setIsPending] = useState(false)
+  const router = useRouter()
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setIsPending(true)
+    setError(null)
+
+    const data   = new FormData(e.currentTarget)
+    const result = await signIn('credentials', {
+      email:    data.get('email'),
+      password: data.get('password'),
+      redirect: false,
+    })
+
+    setIsPending(false)
+
+    if (!result?.ok || result.error) {
+      setError('Email o contraseña incorrectos')
+      return
+    }
+
+    router.push('/dashboard')
+    router.refresh()
+  }
 
   return (
-    <form action={formAction} className="space-y-4">
-      {state?.error && (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
         <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {state.error}
+          {error}
         </div>
       )}
 

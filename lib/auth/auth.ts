@@ -13,6 +13,7 @@ const credentialsSchema = z.object({
 })
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
   adapter: PrismaAdapter(prisma),
   session: { strategy: 'jwt' },
   pages: {
@@ -98,22 +99,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   events: {
     async signIn({ user, isNewUser }) {
-      if (isNewUser && user.id) {
-        await prisma.userSettings.upsert({
-          where:  { userId: user.id },
-          update: {},
-          create: { userId: user.id },
-        })
-      }
-      // Send login security notification only if the user has it enabled (default: true)
-      if (user.email && !isNewUser && user.id) {
-        const prefs = await prisma.userSettings.findUnique({
-          where:  { userId: user.id },
-          select: { emailLoginAlert: true },
-        })
-        if (prefs?.emailLoginAlert !== false) {
-          void sendLoginNotificationEmail(user.email, user.name ?? null).catch(console.error)
+      try {
+        if (isNewUser && user.id) {
+          await prisma.userSettings.upsert({
+            where:  { userId: user.id },
+            update: {},
+            create: { userId: user.id },
+          })
         }
+        // Send login security notification only if the user has it enabled (default: true)
+        if (user.email && !isNewUser && user.id) {
+          const prefs = await prisma.userSettings.findUnique({
+            where:  { userId: user.id },
+            select: { emailLoginAlert: true },
+          })
+          if (prefs?.emailLoginAlert !== false) {
+            void sendLoginNotificationEmail(user.email, user.name ?? null).catch(console.error)
+          }
+        }
+      } catch (error) {
+        console.error('[Auth] signIn event error:', error)
+        // No relanzamos — el login debe funcionar aunque fallen operaciones secundarias
       }
     },
   },

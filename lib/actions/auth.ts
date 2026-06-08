@@ -1,6 +1,7 @@
 'use server'
 import bcrypt from 'bcryptjs'
 import { AuthError } from 'next-auth'
+import { redirect } from 'next/navigation'
 import { signIn } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { registerSchema } from '@/types/forms'
@@ -77,20 +78,6 @@ export async function registerAction(
     return { error: toActionError(error).error }
   }
 
-  // Auto-login after creation — re-throw redirect, catch only auth failures
-  try {
-    await signIn('credentials', {
-      email: parsed.data.email,
-      password: parsed.data.password,
-      redirectTo: '/dashboard',
-    })
-  } catch (error) {
-    if (error instanceof AuthError) {
-      // Shouldn't happen since we just created the user, but handle gracefully
-      return { error: 'Cuenta creada. Inicia sesión en /login' }
-    }
-    throw error // Re-throw NEXT_REDIRECT
-  }
-
-  return null
+  // Redirigir al login con mensaje de éxito
+  redirect('/login?registered=1')
 }
