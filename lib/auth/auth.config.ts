@@ -23,5 +23,12 @@ export const authConfig: NextAuthConfig = {
       }
       return token
     },
+    session({ session, token }) {
+      if (token?.id) {
+        session.user.id   = token.id as string
+        session.user.plan = (token.plan as string | undefined) ?? 'FREE'
+      }
+      return session
+    },
   },
 }
