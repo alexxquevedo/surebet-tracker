@@ -26,11 +26,11 @@ interface Props {
 // ─── Nav links ───────────────────────────────────────────────────────────────
 
 const NAV_LINKS = [
-  { href: '/dashboard',   label: 'Dashboard',          icon: '📊' },
-  { href: '/bookmakers',  label: 'Casas de apuestas',  icon: '🏦' },
-  { href: '/records',     label: 'Operaciones',        icon: '📋' },
-  { href: '/stats',       label: 'Estadísticas',       icon: '📈' },
-  { href: '/settings',    label: 'Configuración',      icon: '⚙️' },
+  { href: '/dashboard',   label: 'Dashboard',          icon: '📊',  proOnly: false },
+  { href: '/bookmakers',  label: 'Casas de apuestas',  icon: '🏦',  proOnly: false },
+  { href: '/records',     label: 'Operaciones',        icon: '📋',  proOnly: false },
+  { href: '/stats',       label: 'Estadísticas',       icon: '📈',  proOnly: true  },
+  { href: '/settings',    label: 'Configuración',      icon: '⚙️',  proOnly: false },
 ] as const
 
 // ─── Bet type config ─────────────────────────────────────────────────────────
@@ -113,6 +113,7 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
             const isActive =
               pathname === link.href ||
               (link.href !== '/dashboard' && pathname.startsWith(link.href + '/'))
+            const locked = link.proOnly && plan === 'FREE'
             return (
               <Link
                 key={link.href}
@@ -124,7 +125,12 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
                 }`}
               >
                 <span className="text-base leading-none">{link.icon}</span>
-                {link.label}
+                <span className="flex-1">{link.label}</span>
+                {locked && (
+                  <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase tracking-wide">
+                    PRO
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -172,7 +178,7 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors relative ${
                 isActive
                   ? 'text-primary'
                   : 'text-muted-foreground hover:text-foreground'
@@ -180,6 +186,11 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
             >
               <span className="text-xl leading-none">{link.icon}</span>
               <span className="text-[10px] font-medium leading-tight">{link.label}</span>
+              {link.href === '/stats' && plan === 'FREE' && (
+                <span className="absolute top-1 right-1 text-[8px] font-bold bg-primary text-primary-foreground px-1 rounded leading-tight">
+                  PRO
+                </span>
+              )}
             </Link>
           )
         })}

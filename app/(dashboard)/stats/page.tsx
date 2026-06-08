@@ -23,6 +23,48 @@ export default async function StatsPage() {
   const userId  = session?.user?.id
   if (!userId) redirect('/login')
 
+  const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
+
+  // Página bloqueada para FREE
+  if (userPlan === 'FREE') {
+    return (
+      <div className="space-y-8 max-w-4xl">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Estadísticas</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Análisis avanzado de rendimiento</p>
+        </div>
+        <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-12 text-center space-y-4">
+          <p className="text-5xl">📈</p>
+          <div>
+            <p className="text-xl font-bold">Estadísticas avanzadas — Plan PRO</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+              Accede a distribución de resultados, win rate por deporte y casa de apuestas,
+              análisis de P&L y mucho más.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto text-left pt-2">
+            {[
+              '📊 Distribución de resultados',
+              '🏆 Win rate por deporte',
+              '🏦 Rendimiento por casa',
+              '💰 Análisis de P&L detallado',
+            ].map((f) => (
+              <div key={f} className="rounded-lg border bg-card px-3 py-2.5 text-xs font-medium flex items-start gap-2">
+                <span>{f}</span>
+              </div>
+            ))}
+          </div>
+          <a
+            href="/settings"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors mt-2"
+          >
+            Actualizar a PRO →
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   const stats = await getStatsData(userId)
 
   const noData = stats.totalAll === 0
