@@ -189,12 +189,15 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             { label: 'Este mes',    ...presets.thisMonth,  },
             { label: 'Mes pasado',  ...presets.lastMonth,  },
           ].map(({ label, from, to }) => {
-            const url     = buildPresetUrl('/records', from, to, extraParams)
-            const isActive = filterFrom === from && filterTo === to
+            const isActive  = filterFrom === from && filterTo === to
+            // Si ya está activo, al pulsar de nuevo lo desactiva (mantiene el resto de filtros)
+            const clearUrl  = extraParams ? `/records?${extraParams.slice(1)}` : '/records'
+            const applyUrl  = buildPresetUrl('/records', from, to, extraParams)
+            const href      = isActive ? clearUrl : applyUrl
             return (
               <a
                 key={label}
-                href={url}
+                href={href}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   isActive
                     ? 'bg-primary text-primary-foreground border-primary shadow-sm'
