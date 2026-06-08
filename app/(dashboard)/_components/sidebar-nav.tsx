@@ -28,8 +28,9 @@ interface Props {
 const NAV_LINKS = [
   { href: '/dashboard',   label: 'Dashboard',          icon: '📊' },
   { href: '/bookmakers',  label: 'Casas de apuestas',  icon: '🏦' },
-  { href: '/records',     label: 'Operaciones',         icon: '📋' },
-  { href: '/settings',    label: 'Configuración',       icon: '⚙️' },
+  { href: '/records',     label: 'Operaciones',        icon: '📋' },
+  { href: '/stats',       label: 'Estadísticas',       icon: '📈' },
+  { href: '/settings',    label: 'Configuración',      icon: '⚙️' },
 ] as const
 
 // ─── Bet type config ─────────────────────────────────────────────────────────
@@ -157,9 +158,10 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
       >
         {(
           [
-            { href: '/dashboard', label: 'Dashboard',   icon: '📊' },
-            { href: '/records',   label: 'Operaciones', icon: '📋' },
-            { href: '/settings',  label: 'Ajustes',     icon: '⚙️' },
+            { href: '/dashboard',  label: 'Inicio',   icon: '📊' },
+            { href: '/bookmakers', label: 'Casas',    icon: '🏦' },
+            { href: '/records',    label: 'Apuestas', icon: '📋' },
+            { href: '/settings',   label: 'Ajustes',  icon: '⚙️' },
           ] as const
         ).map((link) => {
           const isActive =

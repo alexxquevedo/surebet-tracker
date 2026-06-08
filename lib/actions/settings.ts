@@ -75,11 +75,15 @@ export async function updatePreferencesAction(formData: FormData): Promise<Setti
   const userId = session?.user?.id
   if (!userId) return { success: false, error: 'No autenticado' }
 
+  const VALID_CURRENCIES = ['EUR','USD','GBP','BRL','MXN','COP','ARS','PEN','CLP','PYG']
   const timezone = (formData.get('timezone') as string | null)?.trim() || 'Europe/Madrid'
-  await prisma.user.update({ where: { id: userId }, data: { timezone } })
+  const rawCurrency = (formData.get('currency') as string | null)?.trim().toUpperCase() || 'EUR'
+  const currency = VALID_CURRENCIES.includes(rawCurrency) ? rawCurrency : 'EUR'
+
+  await prisma.user.update({ where: { id: userId }, data: { timezone, currency } })
   revalidatePath('/settings')
   revalidatePath('/dashboard')
-  return { success: true, message: 'Zona horaria guardada' }
+  return { success: true, message: 'Preferencias guardadas' }
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────

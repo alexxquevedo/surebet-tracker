@@ -312,7 +312,8 @@ function ByTypeSection({ byType }: { byType: TypeBreakdown[] }) {
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[320px]">
         <thead>
           <tr className="border-b bg-muted/40">
             <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">
@@ -356,6 +357,7 @@ function ByTypeSection({ byType }: { byType: TypeBreakdown[] }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

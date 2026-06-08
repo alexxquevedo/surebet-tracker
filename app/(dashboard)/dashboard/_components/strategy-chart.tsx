@@ -11,6 +11,7 @@ import {
   Cell,
 } from 'recharts'
 import type { TypeBreakdown } from '@/types/domain'
+import { useDarkMode } from '@/lib/hooks/use-dark-mode'
 
 interface Props {
   data: TypeBreakdown[]
@@ -35,6 +36,12 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 export function StrategyChart({ data }: Props) {
+  const dark = useDarkMode()
+  const gridColor  = dark ? '#374151' : '#f0f0f0'
+  const tickColor  = dark ? '#9ca3af' : '#6b7280'
+  const tooltipBg  = dark ? '#1f2937' : '#ffffff'
+  const tooltipBdr = dark ? '#374151' : '#e5e7eb'
+
   if (data.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center">
@@ -52,15 +59,15 @@ export function StrategyChart({ data }: Props) {
   return (
     <ResponsiveContainer width="100%" height={170}>
       <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fontSize: 11, fill: '#6b7280' }}
+          tick={{ fontSize: 11, fill: tickColor }}
           tickLine={false}
           axisLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: '#6b7280' }}
+          tick={{ fontSize: 11, fill: tickColor }}
           tickLine={false}
           axisLine={false}
           width={52}
@@ -74,10 +81,12 @@ export function StrategyChart({ data }: Props) {
           contentStyle={{
             fontSize: 12,
             borderRadius: 8,
-            border: '1px solid #e5e7eb',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            border: `1px solid ${tooltipBdr}`,
+            backgroundColor: tooltipBg,
+            color: dark ? '#f9fafb' : '#111827',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
           }}
-          cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+          cursor={{ fill: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
         />
         <Bar dataKey="profit" radius={[4, 4, 0, 0]} maxBarSize={60}>
           {chartData.map((entry, index) => (

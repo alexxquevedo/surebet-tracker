@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import {
@@ -26,12 +26,25 @@ interface ApiKeyData {
   createdAt: string
 }
 
+const CURRENCIES = [
+  { code: 'EUR', label: 'EUR — Euro (€)' },
+  { code: 'USD', label: 'USD — Dólar americano ($)' },
+  { code: 'GBP', label: 'GBP — Libra esterlina (£)' },
+  { code: 'BRL', label: 'BRL — Real brasileño (R$)' },
+  { code: 'MXN', label: 'MXN — Peso mexicano ($)' },
+  { code: 'COP', label: 'COP — Peso colombiano ($)' },
+  { code: 'ARS', label: 'ARS — Peso argentino ($)' },
+  { code: 'PEN', label: 'PEN — Sol peruano (S/)' },
+  { code: 'CLP', label: 'CLP — Peso chileno ($)' },
+]
+
 export interface SettingsClientProps {
   user: {
     name: string | null
     email: string | null
     plan: string
     timezone: string
+    currency: string
     hasPassword: boolean
   }
   settings: {
@@ -169,7 +182,12 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
   const [confirmPw, setConfirmPw] = useState('')
 
   // Preferences
-  const [timezone, setTimezone] = useState(user.timezone)
+  const [timezone, setTimezone]   = useState(user.timezone)
+  const [currency, setCurrency]   = useState(user.currency)
+  const [language, setLanguage]   = useState('es')
+  useEffect(() => {
+    setLanguage(localStorage.getItem('language') ?? 'es')
+  }, [])
 
   // Notifications
   const [emailLoginAlert, setEmailLoginAlert] = useState(settings.emailLoginAlert)
@@ -227,6 +245,8 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
   function handleUpdatePreferences() {
     const fd = new FormData()
     fd.set('timezone', timezone)
+    fd.set('currency', currency)
+    localStorage.setItem('language', language)
     startTransition(async () => {
       const r = await updatePreferencesAction(fd)
       showToast(r)
@@ -440,20 +460,44 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
             </select>
           </div>
 
-          <div className="space-y-2 pt-2 border-t text-sm text-muted-foreground">
-            <div className="flex justify-between py-1.5">
-              <span>Moneda principal</span>
-              <span className="font-medium text-foreground">EUR (€)</span>
-            </div>
-            <div className="flex justify-between py-1.5">
-              <span>Idioma</span>
-              <span className="font-medium text-foreground">Español</span>
-            </div>
+          {/* Moneda */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Moneda principal</label>
+            <p className="text-xs text-muted-foreground">
+              Se usará para mostrar importes en todo el dashboard.
+            </p>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Idioma */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Idioma de la interfaz</label>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="es">🇪🇸 Español</option>
+              <option value="en">🇬🇧 English (próximamente)</option>
+            </select>
+            {language === 'en' && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                La interfaz en inglés está en desarrollo — tu preferencia se guardará y se activará cuando esté disponible.
+              </p>
+            )}
           </div>
 
           <button
             onClick={handleUpdatePreferences}
-            disabled={isPending || timezone === user.timezone}
+            disabled={isPending || (timezone === user.timezone && currency === user.currency)}
             className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors"
           >
             {isPending ? 'Guardando…' : 'Guardar preferencias'}

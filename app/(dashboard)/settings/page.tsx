@@ -14,7 +14,7 @@ export default async function SettingsPage() {
   const [user, settingsRow, apiKeys] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where:  { id: userId },
-      select: { name: true, email: true, plan: true, timezone: true, passwordHash: true },
+      select: { name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true },
     }),
     prisma.userSettings.findUnique({
       where:  { userId },
@@ -34,6 +34,7 @@ export default async function SettingsPage() {
         email:       user.email,
         plan:        session.user.plan ?? 'FREE',
         timezone:    user.timezone,
+        currency:    user.currency,
         hasPassword: !!user.passwordHash,
       }}
       settings={{

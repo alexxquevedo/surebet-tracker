@@ -76,6 +76,29 @@ function buildPresetUrl(base: string, from: string, to: string, extra: string) {
   return `${base}?dateFrom=${from}&dateTo=${to}${extra}`
 }
 
+function buildSortUrl(
+  key: string,
+  current: string,
+  filters: { sport?: string; bm?: string; status?: string; live?: string; dateFrom?: string; dateTo?: string },
+): string {
+  const next = current === `${key}-desc` ? `${key}-asc` : `${key}-desc`
+  const p    = new URLSearchParams()
+  if (filters.dateFrom) p.set('dateFrom', filters.dateFrom)
+  if (filters.dateTo)   p.set('dateTo',   filters.dateTo)
+  if (filters.sport)    p.set('sport',    filters.sport)
+  if (filters.bm)       p.set('bm',       filters.bm)
+  if (filters.status)   p.set('status',   filters.status)
+  if (filters.live)     p.set('live',     filters.live)
+  p.set('sort', next)
+  return `/records?${p.toString()}`
+}
+
+function SortIcon({ col, current }: { col: string; current: string }) {
+  if (current === `${col}-desc`) return <span className="ml-1 opacity-70">↓</span>
+  if (current === `${col}-asc`)  return <span className="ml-1 opacity-70">↑</span>
+  return <span className="ml-1 opacity-30">↕</span>
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 interface PageProps {
@@ -94,6 +117,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterLive   = typeof params['live']     === 'string' ? params['live']     : undefined
   const filterFrom   = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
   const filterTo     = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
+  const filterSort   = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
 
   // Build where clause
   const where: Prisma.BetRecordWhereInput = {
@@ -117,10 +141,18 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     } : {}),
   }
 
+  const orderBy: Prisma.BetRecordOrderByWithRelationInput[] =
+    filterSort === 'date-asc'    ? [{ datePlaced: 'asc' }] :
+    filterSort === 'stake-desc'  ? [{ totalStake: 'desc' }, { datePlaced: 'desc' }] :
+    filterSort === 'stake-asc'   ? [{ totalStake: 'asc'  }, { datePlaced: 'desc' }] :
+    filterSort === 'profit-desc' ? [{ grossProfit: { sort: 'desc', nulls: 'last' } }, { datePlaced: 'desc' }] :
+    filterSort === 'profit-asc'  ? [{ grossProfit: { sort: 'asc',  nulls: 'last' } }, { datePlaced: 'desc' }] :
+                                   [{ datePlaced: 'desc' }]
+
   const [records, bookmakers] = await Promise.all([
     prisma.betRecord.findMany({
       where,
-      orderBy: { datePlaced: 'desc' },
+      orderBy,
       take: 100,
       select: {
         id: true,
@@ -167,17 +199,34 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Operaciones</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {records.length} registros · {totalPlaced} en juego ·{' '}
-            <span className={totalPnl >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-              {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} P&L
-            </span>
-          </p>
-        </div>
-      </div>
+      {(() => {
+        const csvParams = new URLSearchParams()
+        if (filterFrom)   csvParams.set('dateFrom', filterFrom)
+        if (filterTo)     csvParams.set('dateTo',   filterTo)
+        if (filterSport)  csvParams.set('sport',    filterSport)
+        if (filterBm)     csvParams.set('bm',       filterBm)
+        if (filterStatus) csvParams.set('status',   filterStatus)
+        if (filterLive)   csvParams.set('live',     filterLive)
+        return (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Operaciones</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {records.length} registros · {totalPlaced} en juego ·{' '}
+                <span className={totalPnl >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                  {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} P&L
+                </span>
+              </p>
+            </div>
+            <a
+              href={`/api/records/export?${csvParams.toString()}`}
+              className="shrink-0 flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              📥 Exportar CSV
+            </a>
+          </div>
+        )
+      })()}
 
       {/* ─── Date Range Presets ─────────────────────────────────────────── */}
       <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
@@ -272,9 +321,21 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">Selección</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Estado</th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Stake</th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">P&L</th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">Fecha</th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
+                  <a href={buildSortUrl('stake', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
+                    Stake<SortIcon col="stake" current={filterSort} />
+                  </a>
+                </th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
+                  <a href={buildSortUrl('profit', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
+                    P&L<SortIcon col="profit" current={filterSort} />
+                  </a>
+                </th>
+                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">
+                  <a href={buildSortUrl('date', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
+                    Fecha<SortIcon col="date" current={filterSort} />
+                  </a>
+                </th>
                 <th className="px-4 py-3 text-xs uppercase tracking-wide"></th>
               </tr>
             </thead>
