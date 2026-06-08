@@ -107,6 +107,60 @@ export async function sendWelcomeEmail(email: string, name: string | null): Prom
   })
 }
 
+// ─── Confirmación de liquidación ────────────────────────────────────────────
+
+export async function sendSettleEmail(
+  email:  string,
+  name:   string | null,
+  data: {
+    status:    string
+    stake:     number
+    profit:    number
+    currency?: string
+  },
+): Promise<void> {
+  const displayName = name ?? email
+  const currency    = data.currency ?? 'EUR'
+
+  const STATUS_LABELS: Record<string, string> = {
+    WON:     '✅ Ganada',
+    LOST:    '❌ Perdida',
+    VOID:    '↩️ Anulada',
+    CASHOUT: '💰 Cashout',
+  }
+  const statusLabel     = STATUS_LABELS[data.status] ?? data.status
+  const isProfit        = data.profit >= 0
+  const sign            = isProfit ? '+' : ''
+  const profitColor     = isProfit ? '#16a34a' : '#dc2626'
+  const profitFormatted = `${sign}${data.profit.toLocaleString('es-ES', { style: 'currency', currency })}`
+  const stakeFormatted  = data.stake.toLocaleString('es-ES', { style: 'currency', currency })
+
+  const html = baseLayout(`
+    <h2 style="margin:0 0 12px;font-size:20px;font-weight:700;">Apuesta liquidada ${statusLabel}</h2>
+    <p style="margin:0 0 16px;color:#444;">
+      Hola <strong>${displayName}</strong>, una operación en tu cuenta ha sido liquidada.
+    </p>
+    <div style="background:#f8f8f8;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <p style="margin:0;font-size:14px;"><strong>Estado:</strong> ${statusLabel}</p>
+      <p style="margin:6px 0 0;font-size:14px;"><strong>Stake:</strong> ${stakeFormatted}</p>
+      <p style="margin:6px 0 0;font-size:14px;"><strong>P&amp;L:</strong>
+        <span style="color:${profitColor};font-weight:700;">${profitFormatted}</span>
+      </p>
+    </div>
+    <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3010'}/records"
+       style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+              font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;">
+      Ver operaciones →
+    </a>
+  `)
+
+  await sendEmail({
+    to:      email,
+    subject: `${statusLabel} — Operación liquidada · Surebet Tracker`,
+    html,
+  })
+}
+
 // ─── Notificación de inicio de sesión ───────────────────────────────────────
 
 export async function sendLoginNotificationEmail(email: string, name: string | null): Promise<void> {

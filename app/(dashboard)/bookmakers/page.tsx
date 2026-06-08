@@ -115,7 +115,8 @@ export default async function BookmakersPage() {
           <div className="px-4 py-3 border-b bg-muted/30">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Todas las casas</h2>
           </div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/20">
               <tr>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Casa</th>
@@ -204,6 +205,7 @@ export default async function BookmakersPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

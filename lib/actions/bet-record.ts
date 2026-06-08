@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import Decimal from 'decimal.js'
 import type { BetType, BetStatus } from '@/types/domain'
+import { sendSettleEmail } from '@/lib/services/email'
 
 export type BetActionResult = { success: true; id: string } | { success: false; error: string }
 
@@ -263,6 +264,18 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
   if (!betRecordId) return { success: false, error: 'ID de operación requerido' }
   if (!outcome) return { success: false, error: 'Resultado requerido' }
 
+  // Fetch user email + notification prefs in parallel (fire-and-forget settle email later)
+  const [userRow, userPrefs] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    prisma.userSettings.findUnique({ where: { userId }, select: { emailOnSettle: true } }),
+  ])
+
+  function maybeEmailSettle(status: string, stake: number, profit: number) {
+    if (userRow?.email && userPrefs?.emailOnSettle !== false) {
+      void sendSettleEmail(userRow.email!, userRow.name ?? null, { status, stake, profit }).catch(console.error)
+    }
+  }
+
   try {
     // Fetch the bet with legs and detail
     const bet = await prisma.betRecord.findFirst({
@@ -375,6 +388,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
             await tx.bookmakerTransaction.create({ data: { userId, bookmakerId: leg2.bookmakerId, type: 'BET_RETURN', amount: ret2, balanceBefore: D(bm2.currentBalance), balanceAfter: D(bm2.currentBalance).plus(ret2), currency: 'EUR', referenceId: betRecordId, referenceType: 'BetRecord' } })
           }
         })
+        maybeEmailSettle('WON', totalStake.toNumber(), grossProfit.toNumber())
         return { success: true, id: betRecordId }
       }
 
@@ -454,6 +468,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
       }
     })
 
+    maybeEmailSettle(finalStatus, totalStake.toNumber(), grossProfit.toNumber())
     return { success: true, id: betRecordId }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Error al liquidar la operación' }

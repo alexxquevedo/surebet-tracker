@@ -8,8 +8,8 @@ import { WinRateBars } from './_components/win-rate-bars'
 export const metadata: Metadata = { title: 'Estadísticas — Surebet Tracker' }
 
 function profitCls(v: number) {
-  if (v > 0) return 'text-green-600'
-  if (v < 0) return 'text-red-600'
+  if (v > 0) return 'text-green-600 dark:text-green-400'
+  if (v < 0) return 'text-red-600 dark:text-red-400'
   return 'text-muted-foreground'
 }
 
@@ -56,7 +56,7 @@ export default async function StatsPage() {
             </div>
             <div className="rounded-xl border bg-card p-5 shadow-sm">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Win Rate</p>
-              <p className={`text-2xl font-bold mt-2 tabular-nums ${stats.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`text-2xl font-bold mt-2 tabular-nums ${stats.winRate >= 50 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                 {stats.winRate.toFixed(1)}%
               </p>
             </div>
@@ -137,7 +137,7 @@ export default async function StatsPage() {
                         <td className="px-5 py-3.5 font-medium">{row.name}</td>
                         <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.count}</td>
                         <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.won}</td>
-                        <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${row.winRate >= 55 ? 'text-green-600' : row.winRate >= 45 ? 'text-amber-600' : 'text-red-600'}`}>
+                        <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${row.winRate >= 55 ? 'text-green-600 dark:text-green-400' : row.winRate >= 45 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                           {row.winRate.toFixed(1)}%
                         </td>
                         <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.profit)}`}>

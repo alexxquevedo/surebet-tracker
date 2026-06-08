@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
+import { Eye, EyeOff } from 'lucide-react'
 import {
   updateProfileAction,
   changePasswordAction,
@@ -106,6 +107,7 @@ function InputField({
   placeholder,
   autoComplete,
   maxLength,
+  showToggle = false,
 }: {
   label: string
   type?: string
@@ -114,19 +116,36 @@ function InputField({
   placeholder?: string
   autoComplete?: string
   maxLength?: number
+  showToggle?: boolean
 }) {
+  const [showPw, setShowPw] = useState(false)
+  const inputType = type === 'password' && showToggle ? (showPw ? 'text' : 'password') : type
+
   return (
     <div className="space-y-1">
       <label className="text-sm font-medium">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        maxLength={maxLength}
-        className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-      />
+      <div className="relative">
+        <input
+          type={inputType}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          maxLength={maxLength}
+          className={`w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${type === 'password' && showToggle ? 'pr-10' : ''}`}
+        />
+        {type === 'password' && showToggle && (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPw((v) => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={showPw ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          >
+            {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -393,6 +412,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
                 <InputField
                   label="Contraseña actual"
                   type="password"
+                  showToggle
                   value={currentPw}
                   onChange={setCurrentPw}
                   placeholder="••••••••"
@@ -401,6 +421,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
                 <InputField
                   label="Nueva contraseña"
                   type="password"
+                  showToggle
                   value={newPw}
                   onChange={setNewPw}
                   placeholder="Mínimo 8 caracteres"
@@ -409,6 +430,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
                 <InputField
                   label="Confirmar nueva contraseña"
                   type="password"
+                  showToggle
                   value={confirmPw}
                   onChange={setConfirmPw}
                   placeholder="Repite la nueva contraseña"

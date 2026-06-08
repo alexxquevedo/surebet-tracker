@@ -160,7 +160,8 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
           [
             { href: '/dashboard',  label: 'Inicio',   icon: '📊' },
             { href: '/bookmakers', label: 'Casas',    icon: '🏦' },
-            { href: '/records',    label: 'Apuestas', icon: '📋' },
+            { href: '/records',    label: 'Ops.',     icon: '📋' },
+            { href: '/stats',      label: 'Stats',    icon: '📈' },
             { href: '/settings',   label: 'Ajustes',  icon: '⚙️' },
           ] as const
         ).map((link) => {

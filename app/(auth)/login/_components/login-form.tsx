@@ -3,10 +3,12 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import Link from 'next/link'
+import { Eye, EyeOff } from 'lucide-react'
 
 export function LoginForm() {
   const [error, setError]         = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
+  const [showPw, setShowPw]       = useState(false)
   const router = useRouter()
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -66,16 +68,27 @@ export function LoginForm() {
         <label htmlFor="password" className="block text-sm font-medium">
           Contraseña
         </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          disabled={isPending}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
-          placeholder="••••••••"
-        />
+        <div className="relative">
+          <input
+            id="password"
+            name="password"
+            type={showPw ? 'text' : 'password'}
+            autoComplete="current-password"
+            required
+            disabled={isPending}
+            className="w-full rounded-md border bg-background px-3 py-2 pr-10 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPw((v) => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={showPw ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          >
+            {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
       </div>
 
       <button
