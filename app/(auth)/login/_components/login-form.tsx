@@ -24,7 +24,12 @@ export function LoginForm() {
     setIsPending(false)
 
     if (!result?.ok || result.error) {
-      setError('Email o contraseña incorrectos')
+      console.error('[Login] signIn result:', result)
+      if (result?.error === 'CredentialsSignin') {
+        setError('Email o contraseña incorrectos')
+      } else {
+        setError(`Error al iniciar sesión (${result?.error ?? 'desconocido'}). Inténtalo de nuevo.`)
+      }
       return
     }
 
