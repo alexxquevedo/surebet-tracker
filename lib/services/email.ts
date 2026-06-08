@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/services/email.ts
  *
  * Servicio de email usando la Resend REST API (sin npm install).
@@ -8,7 +8,7 @@
 
 const RESEND_API = 'https://api.resend.com/emails'
 const API_KEY    = process.env.RESEND_API_KEY ?? ''
-const FROM       = process.env.EMAIL_FROM ?? 'Surebet Tracker <noreply@surebettracker.pro>'
+const FROM       = process.env.EMAIL_FROM ?? 'DualStats Tracker <noreply@surebettracker.pro>'
 const IS_LIVE    = !!API_KEY && !API_KEY.startsWith('re_dev') && !API_KEY.startsWith('re_placeholder')
 
 interface EmailPayload {
@@ -61,7 +61,7 @@ function baseLayout(content: string): string {
         <!-- Header -->
         <div style="background:#111;padding:24px 32px;">
           <p style="margin:0;font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.5px;">
-            Surebet Tracker
+            DualStats Tracker
           </p>
         </div>
         <!-- Body -->
@@ -71,7 +71,7 @@ function baseLayout(content: string): string {
         <!-- Footer -->
         <div style="border-top:1px solid #e5e5e5;padding:16px 32px;text-align:center;">
           <p style="margin:0;font-size:12px;color:#888;">
-            Surebet Tracker Pro · <a href="https://surebettracker.pro" style="color:#888;">surebettracker.pro</a>
+            DualStats Tracker · <a href="https://surebettracker.pro" style="color:#888;">surebettracker.pro</a>
           </p>
         </div>
       </div>
@@ -86,7 +86,7 @@ export async function sendWelcomeEmail(email: string, name: string | null): Prom
   const html = baseLayout(`
     <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;">¡Bienvenido, ${displayName}! 🎉</h1>
     <p style="margin:0 0 16px;color:#444;">
-      Tu cuenta en <strong>Surebet Tracker Pro</strong> ha sido creada correctamente.
+      Tu cuenta en <strong>DualStats Tracker</strong> ha sido creada correctamente.
       Ya puedes registrar tus operaciones, analizar tu rendimiento y hacer un seguimiento
       de tu bankroll en tiempo real.
     </p>
@@ -102,7 +102,7 @@ export async function sendWelcomeEmail(email: string, name: string | null): Prom
 
   await sendEmail({
     to:      email,
-    subject: '¡Bienvenido a Surebet Tracker! 🎉',
+    subject: '¡Bienvenido a DualStats Tracker! 🎉',
     html,
   })
 }
@@ -156,7 +156,7 @@ export async function sendSettleEmail(
 
   await sendEmail({
     to:      email,
-    subject: `${statusLabel} — Operación liquidada · Surebet Tracker`,
+    subject: `${statusLabel} — Operación liquidada · DualStats Tracker`,
     html,
   })
 }
@@ -175,7 +175,7 @@ export async function sendLoginNotificationEmail(email: string, name: string | n
     <h2 style="margin:0 0 12px;font-size:20px;font-weight:700;">Nuevo inicio de sesión 🔐</h2>
     <p style="margin:0 0 16px;color:#444;">
       Hola <strong>${displayName}</strong>, se ha detectado un nuevo inicio de sesión
-      en tu cuenta de Surebet Tracker.
+      en tu cuenta de DualStats Tracker.
     </p>
     <div style="background:#f8f8f8;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin:0 0 16px;">
       <p style="margin:0;font-size:14px;"><strong>Fecha y hora:</strong> ${now}</p>

@@ -1,10 +1,10 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { SettingsClient } from './_components/settings-client'
 
-export const metadata: Metadata = { title: 'Configuración — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Configuración — DualStats Tracker' }
 
 export default async function SettingsPage() {
   const session = await auth()

@@ -43,6 +43,19 @@ function parseDatePlaced(raw: string | null): Date {
   return isNaN(d.getTime()) ? new Date() : d
 }
 
+// Límites del plan FREE
+const FREE_BET_LIMIT        = 50
+const FREE_BOOKMAKER_LIMIT  = 3
+
+/** Comprueba si el usuario FREE ha alcanzado el límite de apuestas. */
+async function checkFreeBetLimit(userId: string, plan: string): Promise<string | null> {
+  if (plan !== 'FREE') return null
+  const count = await prisma.betRecord.count({ where: { userId, deletedAt: null } })
+  if (count >= FREE_BET_LIMIT)
+    return `Plan FREE: límite de ${FREE_BET_LIMIT} operaciones alcanzado. Actualiza a PRO para registros ilimitados.`
+  return null
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // createQuickBetAction  — apuesta simple (un solo bookmaker)
 // ════════════════════════════════════════════════════════════════════════════
@@ -51,6 +64,10 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   const session = await auth()
   const userId  = session?.user?.id
   if (!userId) return { success: false, error: 'No autenticado' }
+
+  const userPlan  = (session?.user as { plan?: string })?.plan ?? 'FREE'
+  const limitErr  = await checkFreeBetLimit(userId, userPlan)
+  if (limitErr) return { success: false, error: limitErr }
 
   const rawType     = formData.get('type') as string | null
   const bookmakerId = formData.get('bookmakerId') as string | null
@@ -140,6 +157,10 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
   const session = await auth()
   const userId  = session?.user?.id
   if (!userId) return { success: false, error: 'No autenticado' }
+
+  const userPlan  = (session?.user as { plan?: string })?.plan ?? 'FREE'
+  const limitErr  = await checkFreeBetLimit(userId, userPlan)
+  if (limitErr) return { success: false, error: limitErr }
 
   const rawType   = formData.get('type') as string | null
   const bm1Id     = formData.get('bm1Id') as string | null

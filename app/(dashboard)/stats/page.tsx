@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { getStatsData } from '@/lib/queries/stats'
 import { DistributionChart } from './_components/distribution-chart'
 import { WinRateBars } from './_components/win-rate-bars'
 
-export const metadata: Metadata = { title: 'Estadísticas — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Estadísticas — DualStats Tracker' }
 
 function profitCls(v: number) {
   if (v > 0) return 'text-green-600 dark:text-green-400'

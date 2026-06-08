@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
@@ -7,7 +7,7 @@ import { SettleButton } from './_components/settle-button'
 import type { LegInfo } from './_components/settle-button'
 import { RecordsFilters } from './_components/records-filters'
 
-export const metadata: Metadata = { title: 'Operaciones — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Operaciones — DualStats Tracker' }
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -30,19 +30,19 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 }
 
 const SPORT_LABEL: Record<string, string> = {
-  FOOTBALL:   'Fútbol',
-  BASKETBALL: 'Baloncesto',
-  TENNIS:     'Tenis',
-  HOCKEY:     'Hockey Hielo',
-  BASEBALL:   'Béisbol',
-  RUGBY:      'Rugby',
-  CRICKET:    'Cricket',
-  GOLF:       'Golf',
-  MMA:        'MMA',
-  BOXING:     'Boxeo',
-  MOTORSPORT: 'Motorsport',
-  ESPORTS:    'eSports',
-  OTHER:      'Otro',
+  FOOTBALL:   '⚽ Fútbol',
+  BASKETBALL: '🏀 Baloncesto',
+  TENNIS:     '🎾 Tenis',
+  HOCKEY:     '🏒 Hockey Hielo',
+  BASEBALL:   '⚾ Béisbol',
+  RUGBY:      '🏉 Rugby',
+  CRICKET:    '🏏 Cricket',
+  GOLF:       '⛳ Golf',
+  MMA:        '🥋 MMA',
+  BOXING:     '🥊 Boxeo',
+  MOTORSPORT: '🏎️ Motorsport',
+  ESPORTS:    '🎮 eSports',
+  OTHER:      '🎯 Otro',
 }
 
 // ─── Date preset helpers ──────────────────────────────────────────────────────
@@ -149,7 +149,10 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     filterSort === 'profit-asc'  ? [{ grossProfit: { sort: 'asc',  nulls: 'last' } }, { datePlaced: 'desc' }] :
                                    [{ datePlaced: 'desc' }]
 
-  const [records, bookmakers] = await Promise.all([
+  const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
+  const FREE_BET_LIMIT = 50
+
+  const [records, bookmakers, totalBetCount] = await Promise.all([
     prisma.betRecord.findMany({
       where,
       orderBy,
@@ -181,6 +184,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),
+    userPlan === 'FREE'
+      ? prisma.betRecord.count({ where: { userId, deletedAt: null } })
+      : Promise.resolve(null),
   ])
 
   const totalPlaced = records.filter((r) => r.status === 'PLACED').length
@@ -227,6 +233,29 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           </div>
         )
       })()}
+
+      {/* ─── Banner límite FREE ─────────────────────────────────────────── */}
+      {userPlan === 'FREE' && totalBetCount !== null && (
+        <div className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 text-sm ${
+          totalBetCount >= FREE_BET_LIMIT
+            ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+            : totalBetCount >= FREE_BET_LIMIT * 0.8
+              ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+              : 'bg-muted/40 border-border text-muted-foreground'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span>{totalBetCount >= FREE_BET_LIMIT ? '🔒' : '📊'}</span>
+            <span>
+              {totalBetCount >= FREE_BET_LIMIT
+                ? 'Has alcanzado el límite de 50 operaciones del plan FREE.'
+                : `${totalBetCount} / ${FREE_BET_LIMIT} operaciones registradas (plan FREE)`}
+            </span>
+          </div>
+          <a href="/settings" className="shrink-0 font-semibold underline underline-offset-2 hover:no-underline">
+            Actualizar a PRO →
+          </a>
+        </div>
+      )}
 
       {/* ─── Date Range Presets ─────────────────────────────────────────── */}
       <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">

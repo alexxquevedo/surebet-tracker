@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from 'next'
+﻿import type { Metadata, Viewport } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import { Toaster } from 'sonner'
@@ -6,14 +6,14 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Surebet Tracker Pro',
-    template: '%s | Surebet Tracker Pro',
+    default: 'DualStats Tracker',
+    template: '%s | DualStats Tracker',
   },
   description:
     'La herramienta profesional de tracking para arbitraje deportivo. Controla tu bankroll, analiza tu ROI y optimiza tus operaciones.',
   keywords: ['arbitraje', 'surebet', 'apuestas deportivas', 'bankroll', 'ROI', 'tracker'],
-  authors: [{ name: 'Surebet Tracker Pro' }],
-  creator: 'Surebet Tracker Pro',
+  authors: [{ name: 'DualStats Tracker' }],
+  creator: 'DualStats Tracker',
   robots: { index: false, follow: false },
 }
 

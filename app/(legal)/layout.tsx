@@ -1,8 +1,8 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
-  title: { template: '%s — Surebet Tracker', default: 'Surebet Tracker' },
+  title: { template: '%s — DualStats Tracker', default: 'DualStats Tracker' },
 }
 
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +12,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       <header className="border-b bg-card">
         <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href="/dashboard" className="text-sm font-bold tracking-tight hover:opacity-80 transition-opacity">
-            Surebet Tracker Pro
+            DualStats Tracker
           </Link>
           <Link
             href="/dashboard"
@@ -29,7 +29,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       {/* Footer */}
       <footer className="border-t mt-16">
         <div className="max-w-3xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-muted-foreground">
-          <span>© 2026 Surebet Tracker Pro</span>
+          <span>© 2026 DualStats Tracker</span>
           <nav className="flex gap-4">
             <Link href="/terms"   className="hover:text-foreground transition-colors">Términos</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidad</Link>

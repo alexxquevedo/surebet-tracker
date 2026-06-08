@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useTransition, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -46,17 +46,17 @@ const BET_TYPES = [
 type ModalBetType = (typeof BET_TYPES)[number]['value']
 
 const SPORTS = [
-  { value: 'FOOTBALL',   label: 'Fútbol' },
-  { value: 'BASKETBALL', label: 'Baloncesto' },
-  { value: 'TENNIS',     label: 'Tenis' },
-  { value: 'HOCKEY',     label: 'Hockey' },
-  { value: 'BASEBALL',   label: 'Béisbol' },
-  { value: 'RUGBY',      label: 'Rugby' },
-  { value: 'MMA',        label: 'MMA' },
-  { value: 'BOXING',     label: 'Boxeo' },
-  { value: 'MOTORSPORT', label: 'Motorsport' },
-  { value: 'ESPORTS',    label: 'eSports' },
-  { value: 'OTHER',      label: 'Otro' },
+  { value: 'FOOTBALL',   label: '⚽ Fútbol' },
+  { value: 'BASKETBALL', label: '🏀 Baloncesto' },
+  { value: 'TENNIS',     label: '🎾 Tenis' },
+  { value: 'HOCKEY',     label: '🏒 Hockey' },
+  { value: 'BASEBALL',   label: '⚾ Béisbol' },
+  { value: 'RUGBY',      label: '🏉 Rugby' },
+  { value: 'MMA',        label: '🥋 MMA' },
+  { value: 'BOXING',     label: '🥊 Boxeo' },
+  { value: 'MOTORSPORT', label: '🏎️ Motorsport' },
+  { value: 'ESPORTS',    label: '🎮 eSports' },
+  { value: 'OTHER',      label: '🎯 Otro' },
 ] as const
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
 
         {/* Logo + plan */}
         <div className="p-5 border-b">
-          <span className="font-bold text-base tracking-tight">Surebet Tracker</span>
+          <span className="font-bold text-base tracking-tight">DualStats Tracker</span>
           <span className="ml-2 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide">
             {plan}
           </span>

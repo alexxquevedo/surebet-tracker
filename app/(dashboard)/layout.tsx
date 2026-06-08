@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+﻿import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <main className="flex-1 flex flex-col min-w-0">
         {/* Mobile topbar (hidden on md+) */}
         <header className="h-14 border-b flex items-center justify-between px-4 bg-card shrink-0 md:hidden">
-          <span className="text-sm font-bold">Surebet Tracker</span>
+          <span className="text-sm font-bold">DualStats Tracker</span>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
@@ -48,7 +48,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
         {/* ── Footer ────────────────────────────────────────────────────── */}
         <footer className="hidden md:flex shrink-0 border-t px-6 py-3 items-center justify-between text-xs text-muted-foreground bg-card">
-          <span>© 2026 Surebet Tracker Pro</span>
+          <span>© 2026 DualStats Tracker</span>
           <nav className="flex gap-4">
             <Link href="/terms"   className="hover:text-foreground transition-colors">Términos de uso</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidad</Link>

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
@@ -6,7 +6,7 @@ import { AddBookmakerModal } from './_components/add-bookmaker-modal'
 import { ManageBookmaker }  from './_components/manage-bookmaker'
 import { BankrollManager }  from './_components/bankroll-manager'
 
-export const metadata: Metadata = { title: 'Casas de Apuestas — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Casas de Apuestas — DualStats Tracker' }
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   ACTIVE:    { label: 'Activa',     cls: 'bg-green-100 text-green-700 border border-green-200'  },
@@ -44,10 +44,12 @@ export default async function BookmakersPage() {
   ])
 
   const existingNames = bookmakers.map((b) => b.name)
+  const userPlan      = (session?.user as { plan?: string })?.plan ?? 'FREE'
 
-  const totalBalance = bookmakers.reduce((a, b) => a + parseFloat(b.currentBalance.toString()), 0)
-  const totalProfit  = bookmakers.reduce((a, b) => a + parseFloat(b.totalProfit.toString()), 0)
-  const activeCount  = bookmakers.filter((b) => b.status === 'ACTIVE').length
+  const totalBalance  = bookmakers.reduce((a, b) => a + parseFloat(b.currentBalance.toString()), 0)
+  const totalProfit   = bookmakers.reduce((a, b) => a + parseFloat(b.totalProfit.toString()), 0)
+  const activeCount   = bookmakers.filter((b) => b.status === 'ACTIVE').length
+  const FREE_BM_LIMIT = 3
 
   // Enrich bankrolls with computed balances
   const bankrollsForManager = bankrolls.map((br) => ({
@@ -75,6 +77,29 @@ export default async function BookmakersPage() {
         </div>
         <AddBookmakerModal existingNames={existingNames} />
       </div>
+
+      {/* Banner límite FREE */}
+      {userPlan === 'FREE' && (
+        <div className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 text-sm ${
+          activeCount >= FREE_BM_LIMIT
+            ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+            : activeCount >= FREE_BM_LIMIT - 1
+              ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+              : 'bg-muted/40 border-border text-muted-foreground'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span>{activeCount >= FREE_BM_LIMIT ? '🔒' : '🏦'}</span>
+            <span>
+              {activeCount >= FREE_BM_LIMIT
+                ? 'Has alcanzado el límite de 3 casas activas del plan FREE.'
+                : `${activeCount} / ${FREE_BM_LIMIT} casas activas (plan FREE)`}
+            </span>
+          </div>
+          <a href="/settings" className="shrink-0 font-semibold underline underline-offset-2 hover:no-underline">
+            Actualizar a PRO →
+          </a>
+        </div>
+      )}
 
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

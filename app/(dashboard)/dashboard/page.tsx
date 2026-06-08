@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+﻿import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
@@ -18,7 +18,7 @@ import type {
   BetStatus,
 } from '@/types/domain'
 
-export const metadata: Metadata = { title: 'Dashboard — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Dashboard — DualStats Tracker' }
 
 // ─── Metadatos visuales por tipo de apuesta ────────────────────────────────
 const BET_TYPE_META: Record<BetType, { label: string; emoji: string; cls: string }> = {

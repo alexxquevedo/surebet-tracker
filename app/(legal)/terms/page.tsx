@@ -1,7 +1,7 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import Link from 'next/link'
 
-export const metadata: Metadata = { title: 'Términos de uso — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Términos de uso — DualStats Tracker' }
 
 const LAST_UPDATED = '1 de junio de 2026'
 const CONTACT_EMAIL = 'legal@surebettracker.pro'
@@ -16,7 +16,7 @@ export default function TermsPage() {
 
       <Section title="1. Aceptación de los términos">
         <p>
-          Al acceder o utilizar Surebet Tracker Pro (el «Servicio»), aceptas quedar vinculado por
+          Al acceder o utilizar DualStats Tracker (el «Servicio»), aceptas quedar vinculado por
           estos Términos de uso y por nuestra{' '}
           <Link href="/privacy" className="underline">Política de privacidad</Link>. Si no estás de
           acuerdo con alguna de las condiciones aquí establecidas, no debes usar el Servicio.
@@ -30,7 +30,7 @@ export default function TermsPage() {
 
       <Section title="2. Descripción del Servicio">
         <p>
-          Surebet Tracker Pro es una aplicación web de software como servicio (SaaS) diseñada para
+          DualStats Tracker es una aplicación web de software como servicio (SaaS) diseñada para
           ayudar a usuarios individuales a registrar, organizar y analizar sus operaciones de
           apuestas deportivas (surebets, middles, apuestas simples y similares). El Servicio
           proporciona herramientas de seguimiento de bankroll, gestión de casas de apuestas e
@@ -141,7 +141,7 @@ export default function TermsPage() {
 
       <Section title="10. Limitación de responsabilidad">
         <p>
-          En la máxima medida permitida por la ley, Surebet Tracker Pro no será responsable de
+          En la máxima medida permitida por la ley, DualStats Tracker no será responsable de
           ningún daño indirecto, incidental, especial o consecuente derivado del uso o la
           imposibilidad de uso del Servicio, incluyendo pérdidas económicas derivadas de
           decisiones de apuestas tomadas con base en la información mostrada en la plataforma.

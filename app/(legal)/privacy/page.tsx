@@ -1,7 +1,7 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import Link from 'next/link'
 
-export const metadata: Metadata = { title: 'Política de privacidad — Surebet Tracker' }
+export const metadata: Metadata = { title: 'Política de privacidad — DualStats Tracker' }
 
 const LAST_UPDATED  = '1 de junio de 2026'
 const CONTACT_EMAIL = 'privacidad@surebettracker.pro'
@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       </p>
 
       <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
-        En Surebet Tracker Pro nos comprometemos a proteger tu privacidad. Esta Política explica
+        En DualStats Tracker nos comprometemos a proteger tu privacidad. Esta Política explica
         qué datos recogemos, cómo los usamos y qué derechos tienes sobre ellos. Si tienes
         alguna duda, escríbenos a{' '}
         <a href={`mailto:${CONTACT_EMAIL}`} className="underline text-foreground">
@@ -27,7 +27,7 @@ export default function PrivacyPage() {
       <Section title="1. Responsable del tratamiento">
         <p>
           El responsable del tratamiento de tus datos personales es{' '}
-          <strong>Surebet Tracker Pro</strong> (en adelante, «nosotros» o «el Servicio»).
+          <strong>DualStats Tracker</strong> (en adelante, «nosotros» o «el Servicio»).
           Para ejercer tus derechos o consultas sobre privacidad, contacta con nuestro
           Delegado de Protección de Datos (DPO) en:{' '}
           <a href={`mailto:${DPO_EMAIL}`} className="underline">{DPO_EMAIL}</a>.

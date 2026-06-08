@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { LoginForm } from './_components/login-form'
 
 export const metadata: Metadata = { title: 'Iniciar sesión' }
@@ -17,7 +17,7 @@ export default async function LoginPage({ searchParams }: Props) {
         <div className="mb-6">
           <h2 className="text-xl font-semibold">Iniciar sesión</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Accede a tu cuenta de Surebet Tracker
+            Accede a tu cuenta de DualStats Tracker
           </p>
         </div>
         {justRegistered && (

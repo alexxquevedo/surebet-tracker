@@ -19,6 +19,8 @@ function D(v: unknown): Decimal {
 // Crea una nueva casa de apuestas para el usuario a partir de un preset.
 // ════════════════════════════════════════════════════════════════════════════
 
+const FREE_BOOKMAKER_LIMIT = 3
+
 export async function addPresetBookmakerAction(
   preset: BookmakerPreset,
   initialBalance: number,
@@ -29,6 +31,14 @@ export async function addPresetBookmakerAction(
 
   if (isNaN(initialBalance) || initialBalance < 0) {
     return { success: false, error: 'Saldo inicial inválido (debe ser ≥ 0)' }
+  }
+
+  // FREE plan: max 3 active bookmakers
+  const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
+  if (userPlan === 'FREE') {
+    const activeCount = await prisma.bookmaker.count({ where: { userId, status: 'ACTIVE' } })
+    if (activeCount >= FREE_BOOKMAKER_LIMIT)
+      return { success: false, error: `Plan FREE: límite de ${FREE_BOOKMAKER_LIMIT} casas activas alcanzado. Actualiza a PRO para casas ilimitadas.` }
   }
 
   try {
