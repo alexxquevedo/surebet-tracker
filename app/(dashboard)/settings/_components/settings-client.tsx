@@ -52,8 +52,8 @@ function StatusMessage({ result, onDismiss }: { result: SettingsResult; onDismis
     <div
       className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md border ${
         isOk
-          ? 'bg-green-50 text-green-800 border-green-200'
-          : 'bg-red-50 text-red-800 border-red-200'
+          ? 'bg-green-50 dark:bg-green-950/40 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800'
+          : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 border-red-200 dark:border-red-800'
       }`}
     >
       <span className="shrink-0">{isOk ? '✓' : '✗'}</span>
@@ -73,7 +73,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       aria-checked={value}
       onClick={() => onChange(!value)}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
-        value ? 'bg-primary' : 'bg-muted-foreground/30'
+        value ? 'bg-primary' : 'bg-muted-foreground/30 dark:bg-slate-600'
       }`}
     >
       <span
@@ -307,10 +307,10 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
             className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors ${
               activeTab === t.id
                 ? t.danger
-                  ? 'border-red-500 text-red-700 bg-red-50/50'
+                  ? 'border-red-500 text-red-700 dark:text-red-400 bg-red-50/50 dark:bg-red-950/30'
                   : 'border-primary text-primary bg-primary/5'
                 : t.danger
-                  ? 'border-transparent text-red-600/70 hover:text-red-600 hover:border-red-300'
+                  ? 'border-transparent text-red-600/70 dark:text-red-500/80 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-700'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
             }`}
           >
@@ -520,24 +520,24 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
 
             {/* Generated key reveal banner */}
             {generatedKey && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
-                <p className="text-xs font-semibold text-amber-800">
+              <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
                   ⚠️ Guarda esta clave ahora — no volverá a mostrarse
                 </p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 min-w-0 rounded bg-white border px-2 py-1.5 text-xs font-mono break-all text-amber-900">
+                  <code className="flex-1 min-w-0 rounded bg-white dark:bg-background border px-2 py-1.5 text-xs font-mono break-all text-amber-900 dark:text-amber-200">
                     {generatedKey}
                   </code>
                   <button
                     onClick={copyKey}
-                    className="shrink-0 rounded-md border bg-white px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                    className="shrink-0 rounded-md border bg-white dark:bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
                   >
                     {copiedKey ? '✓ Copiado' : 'Copiar'}
                   </button>
                 </div>
                 <button
                   onClick={() => setGeneratedKey(null)}
-                  className="text-xs text-amber-700 underline underline-offset-2"
+                  className="text-xs text-amber-700 dark:text-amber-400 underline underline-offset-2"
                 >
                   He guardado la clave, cerrar
                 </button>
@@ -564,7 +564,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
                     <button
                       onClick={() => handleRevokeKey(key.id)}
                       disabled={isPending}
-                      className="shrink-0 rounded-md border border-red-200 text-red-700 px-2.5 py-1 text-xs font-medium hover:bg-red-50 disabled:opacity-50 transition-colors"
+                      className="shrink-0 rounded-md border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-2.5 py-1 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-950/50 disabled:opacity-50 transition-colors"
                     >
                       Revocar
                     </button>
@@ -611,9 +611,9 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
 
       {/* ── Zona de peligro ───────────────────────────────────────────────── */}
       {activeTab === 'peligro' && (
-        <div className="rounded-lg border border-red-200 bg-red-50/40 p-6 space-y-4">
-          <h2 className="text-base font-semibold text-red-800">Zona de peligro</h2>
-          <p className="text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-950/30 p-6 space-y-4">
+          <h2 className="text-base font-semibold text-red-800 dark:text-red-300">Zona de peligro</h2>
+          <p className="text-sm text-red-700 dark:text-red-300/80">
             Eliminar tu cuenta es una acción{' '}
             <strong>permanente e irreversible</strong>. Se borrarán todos tus datos: casas de
             apuestas, operaciones, bankrolls e historial financiero.
@@ -622,15 +622,15 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="rounded-md border border-red-400 text-red-700 bg-white px-4 py-2 text-sm font-medium hover:bg-red-50 transition-colors"
+              className="rounded-md border border-red-400 dark:border-red-700 text-red-700 dark:text-red-400 bg-white dark:bg-transparent px-4 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
             >
               Eliminar mi cuenta
             </button>
           ) : (
-            <div className="space-y-3 rounded-md border border-red-300 bg-white p-4">
-              <p className="text-sm font-medium text-red-800">
+            <div className="space-y-3 rounded-md border border-red-300 dark:border-red-800 bg-white dark:bg-card p-4">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">
                 Escribe{' '}
-                <code className="bg-red-100 px-1 rounded font-mono">ELIMINAR</code>{' '}
+                <code className="bg-red-100 dark:bg-red-950 dark:text-red-300 px-1 rounded font-mono">ELIMINAR</code>{' '}
                 para confirmar la eliminación permanente:
               </p>
               <input
@@ -638,7 +638,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
                 value={deleteConfirmText}
                 onChange={(e) => setDeleteConfirmText(e.target.value)}
                 placeholder="ELIMINAR"
-                className="w-full rounded-md border border-red-300 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/50"
+                className="w-full rounded-md border border-red-300 dark:border-red-700 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/50"
               />
               <div className="flex gap-2">
                 <button
