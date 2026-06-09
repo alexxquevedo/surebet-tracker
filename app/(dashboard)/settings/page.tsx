@@ -23,7 +23,7 @@ export default async function SettingsPage({
   const paymentCanceled = sp.canceled === '1'
 
   const [user, settingsRow, apiKeys] = await Promise.all([
-    prisma.user.findUniqueOrThrow({
+    prisma.user.findUnique({
       where:  { id: userId },
       select: {
         name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true,
@@ -41,6 +41,9 @@ export default async function SettingsPage({
       orderBy: { createdAt: 'desc' },
     }),
   ])
+
+  // Si no existe el usuario en DB (sesión obsoleta), limpiar y redirigir
+  if (!user) redirect('/login')
 
   // Si es admin, cargar datos del panel
   const adminData = user.isAdmin ? await getAdminDataAction() : null
