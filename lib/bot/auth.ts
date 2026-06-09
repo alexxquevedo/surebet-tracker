@@ -3,18 +3,15 @@ import type { NextRequest } from 'next/server'
 
 /**
  * Verifica que la request viene de FidesBot usando el secreto compartido.
- * El bot envía: `Authorization: Bearer {FIDESBOT_SECRET}`
+ * El bot envía: `x-bot-secret: {BOT_SECRET}`
  *
  * Usa timingSafeEqual para prevenir timing attacks.
  */
 export function verifyBotSecret(request: NextRequest): boolean {
-  const secret = process.env.FIDESBOT_SECRET
+  const secret = process.env.BOT_SECRET ?? process.env.FIDESBOT_SECRET
   if (!secret) return false
 
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader?.startsWith('Bearer ')) return false
-
-  const provided = authHeader.slice(7).trim()
+  const provided = request.headers.get('x-bot-secret')?.trim()
   if (!provided) return false
 
   try {
