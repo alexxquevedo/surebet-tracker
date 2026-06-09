@@ -85,6 +85,59 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
 
   const isPro = (plan: string) => plan === 'PRO' || plan === 'PRO_TRACKER' || plan === 'ENTERPRISE'
 
+  // Controles de activación reutilizables (tabla + tarjeta)
+  function UserActions({ u }: { u: AdminUser }) {
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        <select
+          value={planType[u.id] ?? 'PRO'}
+          onChange={(e) => setPlanType((p) => ({ ...p, [u.id]: e.target.value as 'PRO' | 'PRO_TRACKER' }))}
+          className="rounded border bg-background px-1 py-0.5 text-[10px]"
+        >
+          <option value="PRO">Pro</option>
+          <option value="PRO_TRACKER">Pro+Tracker</option>
+        </select>
+        <input
+          type="number"
+          min={1} max={365}
+          value={customDays[u.id] ?? '30'}
+          onChange={(e) => setCustomDays((p) => ({ ...p, [u.id]: e.target.value }))}
+          className="w-10 rounded border bg-background px-1 py-0.5 text-[10px] text-center"
+          title="Días"
+        />
+        <span className="text-[10px] text-muted-foreground">d</span>
+        <button
+          onClick={() => handleActivate(u.id)}
+          disabled={isPending}
+          className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {isPro(u.plan) ? '+' : '▶'}
+        </button>
+        {isPro(u.plan) && (
+          <button
+            onClick={() => handleRevoke(u.id)}
+            disabled={isPending}
+            className="rounded border border-red-300 px-1.5 py-0.5 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            ✕
+          </button>
+        )}
+        <button
+          onClick={() => handleToggleAdmin(u.id, !u.isAdmin)}
+          disabled={isPending}
+          title={u.isAdmin ? 'Quitar admin' : 'Hacer admin'}
+          className={`rounded border px-1.5 py-0.5 text-[10px] disabled:opacity-50 ${
+            u.isAdmin
+              ? 'border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100'
+              : 'border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-500'
+          }`}
+        >
+          👑
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -98,7 +151,7 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
         </div>
       )}
 
-      {/* Stats — 4 + 2 compactos */}
+      {/* Stats */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <StatCard label="Usuarios"    value={stats.totalUsers}   />
         <StatCard label="PRO"         value={stats.proUsers}     />
@@ -108,7 +161,6 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
         <StatCard label="Este mes"    value={stats.newThisMonth} />
       </div>
 
-      {/* Tabla compacta — sin scroll horizontal */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-medium">Usuarios ({stats.totalUsers})</h3>
@@ -121,7 +173,8 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
           </button>
         </div>
 
-        <div className="rounded-lg border overflow-hidden">
+        {/* ── TABLA — solo escritorio ─────────────────────── */}
+        <div className="hidden sm:block rounded-lg border overflow-hidden">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-muted/50 text-muted-foreground">
@@ -135,15 +188,11 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
             <tbody className="divide-y">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/20 transition-colors">
-
-                  {/* Usuario */}
                   <td className="px-3 py-2 max-w-[160px]">
                     <div className="font-medium truncate">{u.name ?? '—'}</div>
                     <div className="text-muted-foreground truncate text-[11px]">{u.email}</div>
                     {u.isAdmin && <span className="text-[10px] text-amber-600 font-medium">👑 admin</span>}
                   </td>
-
-                  {/* Plan + expiry */}
                   <td className="px-3 py-2 whitespace-nowrap">
                     <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${PLAN_BADGE[u.plan] ?? PLAN_BADGE.FREE}`}>
                       {PLAN_LABEL[u.plan] ?? u.plan}
@@ -154,72 +203,54 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
                       </div>
                     )}
                   </td>
-
-                  {/* Bets */}
                   <td className="px-2 py-2 text-center font-mono">{u.betCount}</td>
-
-                  {/* Telegram */}
                   <td className="px-2 py-2 text-center">{u.telegramLinked ? '✅' : '—'}</td>
-
-                  {/* Acciones */}
                   <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1">
-                      {/* Selector plan */}
-                      <select
-                        value={planType[u.id] ?? 'PRO'}
-                        onChange={(e) => setPlanType((p) => ({ ...p, [u.id]: e.target.value as 'PRO' | 'PRO_TRACKER' }))}
-                        className="rounded border bg-background px-1 py-0.5 text-[10px]"
-                      >
-                        <option value="PRO">Pro</option>
-                        <option value="PRO_TRACKER">Pro+Tracker</option>
-                      </select>
-                      {/* Días */}
-                      <input
-                        type="number"
-                        min={1} max={365}
-                        value={customDays[u.id] ?? '30'}
-                        onChange={(e) => setCustomDays((p) => ({ ...p, [u.id]: e.target.value }))}
-                        className="w-10 rounded border bg-background px-1 py-0.5 text-[10px] text-center"
-                        title="Días"
-                      />
-                      <span className="text-[10px] text-muted-foreground">d</span>
-                      {/* Activar */}
-                      <button
-                        onClick={() => handleActivate(u.id)}
-                        disabled={isPending}
-                        className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {isPro(u.plan) ? '+' : '▶'}
-                      </button>
-                      {/* Revocar */}
-                      {isPro(u.plan) && (
-                        <button
-                          onClick={() => handleRevoke(u.id)}
-                          disabled={isPending}
-                          className="rounded border border-red-300 px-1.5 py-0.5 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          ✕
-                        </button>
-                      )}
-                      {/* Toggle admin */}
-                      <button
-                        onClick={() => handleToggleAdmin(u.id, !u.isAdmin)}
-                        disabled={isPending}
-                        title={u.isAdmin ? 'Quitar admin' : 'Hacer admin'}
-                        className={`rounded border px-1.5 py-0.5 text-[10px] disabled:opacity-50 ${
-                          u.isAdmin
-                            ? 'border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100'
-                            : 'border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-500'
-                        }`}
-                      >
-                        👑
-                      </button>
+                    <div className="flex items-center justify-end">
+                      <UserActions u={u} />
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* ── TARJETAS — solo móvil ───────────────────────── */}
+        <div className="sm:hidden space-y-2">
+          {users.map((u) => (
+            <div key={u.id} className="rounded-lg border bg-card p-3 space-y-2">
+              {/* Fila 1: nombre + plan + corona */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">
+                    {u.name ?? '—'}
+                    {u.isAdmin && <span className="ml-1 text-[10px] text-amber-600 font-medium">👑</span>}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${PLAN_BADGE[u.plan] ?? PLAN_BADGE.FREE}`}>
+                    {PLAN_LABEL[u.plan] ?? u.plan}
+                  </span>
+                  {isPro(u.plan) && u.daysLeft !== null && (
+                    <div className={`text-[10px] mt-0.5 ${u.daysLeft <= 3 ? 'text-red-600 font-medium' : u.daysLeft <= 7 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                      {u.daysLeft}d · {fmtDate(u.planExpiresAt)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Fila 2: métricas */}
+              <div className="flex gap-3 text-[11px] text-muted-foreground">
+                <span>🎲 {u.betCount} bets</span>
+                <span>{u.telegramLinked ? '📱 TG ✅' : '📱 TG —'}</span>
+              </div>
+              {/* Fila 3: acciones */}
+              <div className="pt-1 border-t">
+                <UserActions u={u} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
