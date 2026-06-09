@@ -13,6 +13,7 @@ const PUBLIC_ROUTES = [
   '/verify-email',
   '/api/auth',
   '/api/health',
+  '/api/bot',
 ]
 
 const AUTH_ROUTES = ['/login', '/register', '/forgot-password']
