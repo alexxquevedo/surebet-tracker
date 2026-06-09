@@ -1035,7 +1035,7 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
                 <p className="text-lg font-bold mt-0.5">1 mes</p>
                 <div className="flex items-baseline gap-2 mt-1">
                   <p className="text-2xl font-extrabold text-primary">
-                    {!user.hasEverPaid ? '29€' : '45€'}
+                    {!user.hasEverPaid ? '35€' : '45€'}
                   </p>
                   {!user.hasEverPaid && (
                     <span className="text-sm text-muted-foreground line-through">45€</span>
@@ -1059,7 +1059,7 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
               >
                 {checkoutLoading === 'pro_30'
                   ? 'Redirigiendo…'
-                  : `Comprar — ${!user.hasEverPaid ? '29€' : '45€'}`}
+                  : `Comprar — ${!user.hasEverPaid ? '35€' : '45€'}`}
               </button>
             </div>
 
@@ -1068,8 +1068,19 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">PRO+Tracker</p>
                 <p className="text-lg font-bold mt-0.5">1 mes</p>
-                <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-1">49€</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">
+                    {!user.hasEverPaid ? '39,99€' : '49,99€'}
+                  </p>
+                  {!user.hasEverPaid && (
+                    <span className="text-sm text-muted-foreground line-through">49,99€</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {!user.hasEverPaid
+                    ? '🎁 Descuento bienvenida · Solo primera vez'
+                    : 'Pago único · Sin renovación'}
+                </p>
               </div>
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>✓ Todo lo de PRO</li>
@@ -1081,7 +1092,9 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
                 disabled={checkoutLoading !== null}
                 className="w-full rounded-md bg-indigo-600 text-white py-2 text-sm font-semibold disabled:opacity-50 hover:bg-indigo-700 transition-colors"
               >
-                {checkoutLoading === 'tracker_30' ? 'Redirigiendo…' : 'Comprar — 49€'}
+                {checkoutLoading === 'tracker_30'
+                  ? 'Redirigiendo…'
+                  : `Comprar — ${!user.hasEverPaid ? '39,99€' : '49,99€'}`}
               </button>
             </div>
 
