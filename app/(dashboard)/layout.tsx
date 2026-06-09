@@ -21,6 +21,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const userName  = session.user?.name ?? null
   const userEmail = session.user?.email ?? null
 
+  // Fetch isAdmin for sidebar
+  const userId2   = session.user?.id
+  const dbUser    = userId2
+    ? await prisma.user.findUnique({ where: { id: userId2 }, select: { isAdmin: true } })
+    : null
+  const isAdmin   = dbUser?.isAdmin ?? false
+
   return (
     <div className="flex min-h-screen bg-background">
       {/* ── Sidebar (Client Component — usePathname + modal) ─────────── */}
@@ -29,6 +36,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         plan={plan}
         userName={userName}
         userEmail={userEmail}
+        isAdmin={isAdmin}
       />
 
       {/* ── Main content area ─────────────────────────────────────────── */}

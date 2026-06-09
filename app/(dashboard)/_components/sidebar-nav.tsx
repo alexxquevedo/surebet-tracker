@@ -21,6 +21,7 @@ interface Props {
   plan:       string
   userName:   string | null | undefined
   userEmail:  string | null | undefined
+  isAdmin:    boolean
 }
 
 // ─── Nav links ───────────────────────────────────────────────────────────────
@@ -80,13 +81,13 @@ function defaultDateTime() {
 // SIDEBAR NAV (Client Component)
 // ════════════════════════════════════════════════════════════════════════════
 
-export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
+export function SidebarNav({ bookmakers, plan, userName, userEmail, isAdmin }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
   return (
     <>
-      <aside className="w-60 border-r bg-card hidden md:flex flex-col shrink-0">
+      <aside className="w-60 border-r bg-card hidden md:flex flex-col shrink-0 sticky top-0 h-screen overflow-y-auto">
 
         {/* Logo + plan */}
         <div className="p-5 border-b">
@@ -134,6 +135,24 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail }: Props) {
               </Link>
             )
           })}
+
+          {/* Admin — solo visible para admins */}
+          {isAdmin && (
+            <Link
+              href="/settings?tab=admin"
+              className={`flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
+                pathname === '/settings' && typeof window !== 'undefined' && window.location.search.includes('tab=admin')
+                  ? 'bg-primary/10 text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              <span className="text-base leading-none">🛡️</span>
+              <span className="flex-1">Admin</span>
+              <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                ADM
+              </span>
+            </Link>
+          )}
         </nav>
 
         {/* User + sign-out + theme */}

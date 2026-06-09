@@ -23,14 +23,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { telegram_id?: unknown; telegram_username?: unknown; token?: unknown }
+  let body: { telegram_id?: unknown; telegram_username?: unknown; token?: unknown; is_admin?: unknown }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { telegram_id, telegram_username, token } = body
+  const { telegram_id, telegram_username, token, is_admin } = body
 
   if (!telegram_id || !token || typeof token !== 'string') {
     return NextResponse.json(
@@ -121,13 +121,30 @@ export async function POST(request: NextRequest) {
     }),
   ])
 
+  // ── Si es admin del bot → darle admin + PRO_TRACKER en la web ─────────────
+  const isBotAdmin = is_admin === true
+
+  if (isBotAdmin) {
+    const farFuture = new Date('2099-01-01')
+    await prisma.user.update({
+      where: { id: linkToken.userId },
+      data:  { isAdmin: true, plan: 'PRO_TRACKER', planExpiresAt: farFuture, hasEverPaid: true },
+    })
+    await prisma.botSubscription.upsert({
+      where:  { telegramId: telegramIdStr },
+      create: { telegramId: telegramIdStr, plan: 'PRO_TRACKER', expiresAt: farFuture },
+      update: { plan: 'PRO_TRACKER', expiresAt: farFuture },
+    })
+  }
+
   // ── Si el usuario tiene PRO_TRACKER en la web → activar BotSubscription ──
   const fullUser = await prisma.user.findUnique({
     where:  { id: linkToken.userId },
-    select: { plan: true, planExpiresAt: true },
+    select: { plan: true, planExpiresAt: true, isAdmin: true },
   })
 
   if (
+    !isBotAdmin &&
     fullUser &&
     (fullUser.plan === 'PRO_TRACKER' || fullUser.plan === 'ENTERPRISE') &&
     fullUser.planExpiresAt &&
