@@ -14,10 +14,14 @@ import {
   revokeApiKeyAction,
 } from '@/lib/actions/settings'
 import type { SettingsResult } from '@/lib/actions/settings'
+import {
+  generateLinkTokenAction,
+  unlinkTelegramAction,
+} from '@/lib/actions/telegram'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'peligro'
+type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'peligro'
 
 interface ApiKeyData {
   id: string
@@ -51,6 +55,10 @@ export interface SettingsClientProps {
   settings: {
     emailLoginAlert: boolean
     emailOnSettle: boolean
+  }
+  telegram: {
+    connected: boolean
+    username: string | null
   }
   apiKeys: ApiKeyData[]
 }
@@ -186,7 +194,7 @@ const TIMEZONES = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps) {
+export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsClientProps) {
   const router   = useRouter()
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab]    = useState<Tab>('perfil')
@@ -222,6 +230,14 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
   // Danger zone
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // Integraciones — FidesBot
+  const [tgConnected, setTgConnected]     = useState(telegram.connected)
+  const [tgUsername,  setTgUsername]      = useState(telegram.username)
+  const [tgLinkData,  setTgLinkData]      = useState<{
+    deepLink: string; manualToken: string; expiresAt: string
+  } | null>(null)
+  const [tgExpiredMsg, setTgExpiredMsg]   = useState(false)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -312,6 +328,41 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
     })
   }
 
+  // ── Integraciones — FidesBot ─────────────────────────────────────────────
+
+  function handleGenerateLink() {
+    setTgExpiredMsg(false)
+    startTransition(async () => {
+      const r = await generateLinkTokenAction()
+      if (!r.success) { showToast(r); return }
+      setTgLinkData({ deepLink: r.deepLink, manualToken: r.manualToken, expiresAt: r.expiresAt })
+      // Auto-expirar el panel a los 10 min
+      setTimeout(() => {
+        setTgLinkData(null)
+        setTgExpiredMsg(true)
+      }, 10 * 60 * 1000)
+    })
+  }
+
+  function handleUnlinkTelegram() {
+    startTransition(async () => {
+      const r = await unlinkTelegramAction()
+      showToast(r)
+      if (r.success) {
+        setTgConnected(false)
+        setTgUsername(null)
+        setTgLinkData(null)
+        router.refresh()
+      }
+    })
+  }
+
+  function handleVerifyConnection() {
+    // Recarga la página para ver si ya se vinculó desde el bot
+    setTgLinkData(null)
+    router.refresh()
+  }
+
   // ── Tabs config ───────────────────────────────────────────────────────────
 
   const tabs: { id: Tab; label: string; icon: string; danger?: boolean }[] = [
@@ -319,6 +370,7 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
     { id: 'preferencias',    label: 'Preferencias',    icon: '⚙️' },
     { id: 'notificaciones',  label: 'Notificaciones',  icon: '🔔' },
     { id: 'api-keys',        label: 'API Keys',        icon: '🔑' },
+    { id: 'integraciones',   label: 'Integraciones',   icon: '🔗' },
     { id: 'peligro',         label: 'Zona de peligro', icon: '⚠️', danger: true },
   ]
 
@@ -672,6 +724,176 @@ export function SettingsClient({ user, settings, apiKeys }: SettingsClientProps)
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Integraciones ─────────────────────────────────────────────────── */}
+      {activeTab === 'integraciones' && (
+        <div className="space-y-4">
+
+          {/* ── Tarjeta FidesBot ──────────────────────────── */}
+          <div className="rounded-lg border bg-card p-6 space-y-5">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <h2 className="text-base font-semibold">FidesBot</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Bot de Telegram para alertas de surebets en tiempo real
+                </p>
+              </div>
+              <span className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${
+                tgConnected
+                  ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                  : 'bg-muted text-muted-foreground'
+              }`}>
+                {tgConnected ? '✓ Conectado' : 'No conectado'}
+              </span>
+            </div>
+
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Vincula tu cuenta para que cada apuesta que marques como{' '}
+              <strong className="text-foreground">✅ Hecha</strong> en FidesBot se registre
+              automáticamente aquí. Tus estadísticas de P&L, ROI y yield se actualizan solos.
+            </p>
+
+            {/* ── Plan FREE: bloquear ───────────────────────── */}
+            {user.plan === 'FREE' && (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 flex items-center gap-3 text-sm">
+                <span className="text-amber-600 dark:text-amber-400 shrink-0">💎</span>
+                <span className="text-amber-800 dark:text-amber-300">
+                  La integración con FidesBot requiere plan PRO.
+                </span>
+                <a
+                  href="/settings"
+                  className="ml-auto shrink-0 font-semibold text-amber-700 dark:text-amber-300 underline underline-offset-2 hover:no-underline"
+                >
+                  Actualizar →
+                </a>
+              </div>
+            )}
+
+            {/* ── PRO: conectado ────────────────────────────── */}
+            {user.plan !== 'FREE' && tgConnected && !tgLinkData && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-4 py-3">
+                  <span className="text-xl">✅</span>
+                  <div>
+                    <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+                      Cuenta vinculada
+                      {tgUsername && (
+                        <span className="font-normal text-green-700 dark:text-green-400 ml-1">
+                          · @{tgUsername}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-green-700 dark:text-green-500 mt-0.5">
+                      Las apuestas se registran automáticamente desde FidesBot.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleUnlinkTelegram}
+                  disabled={isPending}
+                  className="rounded-md border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/50 disabled:opacity-50 transition-colors"
+                >
+                  {isPending ? 'Desvinculando…' : 'Desvincular FidesBot'}
+                </button>
+              </div>
+            )}
+
+            {/* ── PRO: no conectado — botón inicial ─────────── */}
+            {user.plan !== 'FREE' && !tgConnected && !tgLinkData && (
+              <div className="space-y-3">
+                {tgExpiredMsg && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    ⏱ El enlace anterior ha caducado. Genera uno nuevo.
+                  </p>
+                )}
+                <button
+                  onClick={handleGenerateLink}
+                  disabled={isPending}
+                  className="rounded-md bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+                >
+                  {isPending ? 'Generando enlace…' : '🔗 Conectar FidesBot'}
+                </button>
+              </div>
+            )}
+
+            {/* ── Enlace generado — panel de vinculación ─────── */}
+            {tgLinkData && (
+              <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                <div>
+                  <p className="text-sm font-semibold">
+                    Abre FidesBot en Telegram y pulsa el botón:
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    El enlace caduca en 10 minutos.
+                  </p>
+                </div>
+
+                {/* Deep link button */}
+                <a
+                  href={tgLinkData.deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full rounded-xl bg-[#229ED9] text-white px-6 py-3 text-sm font-bold hover:bg-[#1a8bc2] transition-colors shadow-md"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+                    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                  </svg>
+                  Abrir FidesBot y conectar
+                </a>
+
+                {/* Manual option */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    O escribe esto en FidesBot (menú → /start):
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 min-w-0 rounded-md bg-background border px-3 py-2 text-xs font-mono break-all">
+                      /start {tgLinkData.manualToken}
+                    </code>
+                    <button
+                      onClick={() => {
+                        void navigator.clipboard.writeText(`/start ${tgLinkData.manualToken}`)
+                      }}
+                      className="shrink-0 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleVerifyConnection}
+                    className="flex-1 rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                  >
+                    ✓ Verificar conexión
+                  </button>
+                  <button
+                    onClick={() => { setTgLinkData(null); setTgExpiredMsg(false) }}
+                    className="rounded-md border px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Hint sobre el flujo ───────────────────────────── */}
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground space-y-1.5">
+            <p className="font-medium text-foreground">¿Cómo funciona?</p>
+            <ol className="list-decimal list-inside space-y-1 text-xs">
+              <li>Conecta tu cuenta pulsando el botón de arriba.</li>
+              <li>Cuando llegue una alerta en FidesBot, pulsa <strong className="text-foreground">✅ Hecha</strong>.</li>
+              <li>La apuesta queda en <em>pendientes</em>. Completa los datos reales cuando puedas.</li>
+              <li>El registro aparece aquí automáticamente con P&L, ROI y yield calculados.</li>
+            </ol>
+          </div>
+
         </div>
       )}
 

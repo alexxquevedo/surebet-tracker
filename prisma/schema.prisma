@@ -165,6 +165,10 @@ model User {
   updatedAt   DateTime  @updatedAt
   lastLoginAt DateTime?
 
+  // Vinculación con FidesBot (Telegram)
+  telegramId       String? @unique
+  telegramUsername String?
+
   accounts      Account[]
   sessions      Session[]
   bookmakers    Bookmaker[]
@@ -178,8 +182,10 @@ model User {
   apiKeys       ApiKey[]
   webhooks      Webhook[]
   notifications Notification[]
+  linkTokens    LinkToken[]
 
   @@index([email])
+  @@index([telegramId])
   @@map("users")
 }
 
@@ -393,8 +399,12 @@ model BetRecord {
   datePlaced  DateTime  @default(now())
   dateSettled DateTime?
 
-  createdVia  CreatedVia @default(MANUAL)
-  externalRef String?    // referencia externa (ID de apuesta en el bookmaker, etc.)
+  createdVia    CreatedVia @default(MANUAL)
+  externalRef   String?    // referencia externa (ID de apuesta en el bookmaker, etc.)
+
+  // Integración FidesBot
+  isApproximate Boolean @default(false) // datos de la alerta, no confirmados por el usuario
+  botPendingId  String? @unique          // ID interno del bot — evita registros duplicados
 
   deletedAt DateTime? // soft delete — preserva el historial financiero
 
@@ -712,6 +722,29 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ════════════════════════════════════════════
+// VINCULACIÓN FIDESBOT — TOKENS DE UN USO
+// ════════════════════════════════════════════
+
+// Token temporal para el flujo de vinculación Telegram ↔ DualStats.
+// Se genera en la web, expira en 10 min, uso único.
+// El usuario lo consume pulsando el deep link en FidesBot.
+model LinkToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String    @unique           // 32 bytes hex (64 chars) — generado con randomBytes
+  expiresAt DateTime                    // createdAt + 10 min
+  usedAt    DateTime?                   // null = no usado; non-null = ya vinculado
+
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("link_tokens")
 }
 
 // ════════════════════════════════════════════

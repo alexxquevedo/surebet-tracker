@@ -14,7 +14,10 @@ export default async function SettingsPage() {
   const [user, settingsRow, apiKeys] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where:  { id: userId },
-      select: { name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true },
+      select: {
+        name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true,
+        telegramId: true, telegramUsername: true,
+      },
     }),
     prisma.userSettings.findUnique({
       where:  { userId },
@@ -40,6 +43,10 @@ export default async function SettingsPage() {
       settings={{
         emailLoginAlert: settingsRow?.emailLoginAlert ?? true,
         emailOnSettle:   settingsRow?.emailOnSettle   ?? true,
+      }}
+      telegram={{
+        connected: !!user.telegramId,
+        username:  user.telegramUsername ?? null,
       }}
       apiKeys={apiKeys.map((k) => ({
         id:         k.id,
