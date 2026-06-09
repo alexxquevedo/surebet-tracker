@@ -121,5 +121,29 @@ export async function POST(request: NextRequest) {
     }),
   ])
 
-  return NextResponse.json({ success: true, userId: linkToken.userId, plan: linkToken.user.plan })
+  // ── Si el usuario tiene PRO_TRACKER en la web → activar BotSubscription ──
+  const fullUser = await prisma.user.findUnique({
+    where:  { id: linkToken.userId },
+    select: { plan: true, planExpiresAt: true },
+  })
+
+  if (
+    fullUser &&
+    (fullUser.plan === 'PRO_TRACKER' || fullUser.plan === 'ENTERPRISE') &&
+    fullUser.planExpiresAt &&
+    fullUser.planExpiresAt > new Date()
+  ) {
+    await prisma.botSubscription.upsert({
+      where:  { telegramId: telegramIdStr },
+      create: { telegramId: telegramIdStr, plan: fullUser.plan, expiresAt: fullUser.planExpiresAt },
+      update: { plan: fullUser.plan, expiresAt: fullUser.planExpiresAt },
+    })
+  }
+
+  return NextResponse.json({
+    success:       true,
+    userId:        linkToken.userId,
+    plan:          fullUser?.plan ?? linkToken.user.plan,
+    planExpiresAt: fullUser?.planExpiresAt?.toISOString() ?? null,
+  })
 }

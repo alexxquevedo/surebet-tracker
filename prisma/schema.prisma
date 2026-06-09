@@ -728,6 +728,25 @@ model AuditLog {
 }
 
 // ════════════════════════════════════════════
+// SUSCRIPCIONES BOT — usuarios sin cuenta web
+// ════════════════════════════════════════════
+
+// Almacena suscripciones de usuarios que solo usan FidesBot
+// sin tener cuenta en DualStats Tracker.
+// Los usuarios con cuenta web usan User.plan directamente.
+model BotSubscription {
+  id         String   @id @default(cuid())
+  telegramId String   @unique
+  plan       String   // "PRO" | "PRO_TRACKER"
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([telegramId])
+  @@map("bot_subscriptions")
+}
+
+// ════════════════════════════════════════════
 // VINCULACIÓN FIDESBOT — TOKENS DE UN USO
 // ════════════════════════════════════════════
 
