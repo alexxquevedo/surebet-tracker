@@ -5,11 +5,14 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 })
 
 // ── Price IDs (test) ─────────────────────────────────────────────────────────
+// tracker_web  → DualStats Tracker solo (sin bot)     — 9,99 €
+// tracker_30   → PRO+Tracker bundle (bot + web)        — 49,99 €
+//
+// Los planes del bot (1 sem, 2 sem, PRO 1 mes) se venden solo en el bot
+// mediante transferencia bancaria y NO pasan por Stripe.
 export const PRICE_IDS = {
-  pro_7:      'price_1TgShdLJ1CtJdyu0sfDnqgJS', // 17 € · 1 semana
-  pro_14:     'price_1TgSiALJ1CtJdyu0nrC3KZZt', // 25 € · 2 semanas
-  pro_30:     'price_1TgSfdLJ1CtJdyu0Dp3qEobF', // 45 € · 1 mes
-  tracker_30: 'price_1TgSj9LJ1CtJdyu0UndC5qpX', // 49 € · PRO+Tracker 1 mes
+  tracker_web: 'price_1TgTywLJ1CtJdyu0UwLUw9U6', //  9,99 € · DualStats Tracker solo
+  tracker_30:  'price_1TgSj9LJ1CtJdyu0UndC5qpX', // 49,99 € · PRO+Tracker (bot + web)
 } as const
 
 export type PlanKey = keyof typeof PRICE_IDS
@@ -18,11 +21,9 @@ export const PLAN_CONFIG: Record<
   PlanKey,
   { plan: 'PRO' | 'PRO_TRACKER'; days: number; label: string; amount: number }
 > = {
-  pro_7:      { plan: 'PRO',         days: 7,  label: 'FidesBot PRO · 1 semana',      amount: 1700 },
-  pro_14:     { plan: 'PRO',         days: 14, label: 'FidesBot PRO · 2 semanas',     amount: 2500 },
-  pro_30:     { plan: 'PRO',         days: 30, label: 'FidesBot PRO · 1 mes',         amount: 4500 },
-  tracker_30: { plan: 'PRO_TRACKER', days: 30, label: 'FidesBot PRO+Tracker · 1 mes', amount: 4999 },
+  tracker_web: { plan: 'PRO',         days: 30, label: 'DualStats Tracker · 1 mes',      amount: 999  },
+  tracker_30:  { plan: 'PRO_TRACKER', days: 30, label: 'DualStats PRO+Tracker · 1 mes',  amount: 4999 },
 }
 
-// Cupón de bienvenida: 16 € de descuento → el usuario paga 29 € (solo primer pago, plan mensual)
+// Cupón de bienvenida: 10 € de descuento — solo primera compra, solo en tracker_30
 export const FIRST_MONTH_COUPON = 'PRIMER_MES'

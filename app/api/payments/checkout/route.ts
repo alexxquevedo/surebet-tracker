@@ -34,9 +34,8 @@ export async function POST(req: NextRequest) {
 
   const config = PLAN_CONFIG[planKey]
 
-  // ── Descuento primer mes (planes mensuales, solo primera compra del usuario) ─
-  const isMonthly     = planKey === 'pro_30' || planKey === 'tracker_30'
-  const applyDiscount = isMonthly && !user.hasEverPaid
+  // ── Descuento primer mes: solo PRO+Tracker (49,99€→39,99€), primera compra ─
+  const applyDiscount = planKey === 'tracker_30' && !user.hasEverPaid
 
   // ── Crear sesión de Checkout ──────────────────────────────────────────────
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'

@@ -978,99 +978,52 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
             </div>
           )}
 
+          {/* ── Explicación ────────────────────────────────────────────────── */}
+          <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">¿Qué incluye cada plan?</p>
+            <p>• <strong className="text-foreground">DualStats Tracker</strong> — acceso a la plataforma web: estadísticas, P&L, ROI, historial de apuestas.</p>
+            <p>• <strong className="text-foreground">PRO+Tracker</strong> — lo anterior + integración con <strong className="text-foreground">FidesBot</strong>: las apuestas del bot se registran automáticamente aquí.</p>
+            <p className="text-xs pt-1">💡 Si solo quieres las alertas del bot (sin la web), suscríbete directamente desde FidesBot en Telegram.</p>
+          </div>
+
           {/* ── Tarjetas de planes ─────────────────────────────────────────── */}
           <div className="grid gap-3 sm:grid-cols-2">
 
-            {/* PRO — 1 semana */}
+            {/* DualStats Tracker solo */}
             <div className="rounded-lg border bg-card p-5 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
-                <p className="text-lg font-bold mt-0.5">1 semana</p>
-                <p className="text-2xl font-extrabold text-primary mt-1">17€</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Solo web</p>
+                <p className="text-lg font-bold mt-0.5">DualStats Tracker</p>
+                <p className="text-2xl font-extrabold text-primary mt-1">9,99€<span className="text-sm font-normal text-muted-foreground">/mes</span></p>
                 <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
               </div>
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>✓ Acceso completo a DualStats</li>
                 <li>✓ P&L, ROI y yield en tiempo real</li>
-                <li>✓ Historial ilimitado</li>
+                <li>✓ Historial ilimitado de apuestas</li>
+                <li>✓ Estadísticas avanzadas</li>
               </ul>
               <button
-                onClick={() => handleCheckout('pro_7')}
+                onClick={() => handleCheckout('tracker_web')}
                 disabled={checkoutLoading !== null}
                 className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
               >
-                {checkoutLoading === 'pro_7' ? 'Redirigiendo…' : 'Comprar — 17€'}
-              </button>
-            </div>
-
-            {/* PRO — 2 semanas */}
-            <div className="rounded-lg border bg-card p-5 space-y-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
-                <p className="text-lg font-bold mt-0.5">2 semanas</p>
-                <p className="text-2xl font-extrabold text-primary mt-1">25€</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
-              </div>
-              <ul className="text-xs text-muted-foreground space-y-1">
-                <li>✓ Acceso completo a DualStats</li>
-                <li>✓ P&L, ROI y yield en tiempo real</li>
-                <li>✓ Historial ilimitado</li>
-              </ul>
-              <button
-                onClick={() => handleCheckout('pro_14')}
-                disabled={checkoutLoading !== null}
-                className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
-              >
-                {checkoutLoading === 'pro_14' ? 'Redirigiendo…' : 'Comprar — 25€'}
-              </button>
-            </div>
-
-            {/* PRO — 1 mes (destacado) */}
-            <div className="rounded-lg border-2 border-primary bg-card p-5 space-y-3 relative">
-              <span className="absolute -top-3 left-4 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                ⭐ Más popular
-              </span>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
-                <p className="text-lg font-bold mt-0.5">1 mes</p>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <p className="text-2xl font-extrabold text-primary">
-                    {!user.hasEverPaid ? '35€' : '45€'}
-                  </p>
-                  {!user.hasEverPaid && (
-                    <span className="text-sm text-muted-foreground line-through">45€</span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {!user.hasEverPaid
-                    ? '🎁 Descuento bienvenida · Solo primera vez'
-                    : 'Pago único · Sin renovación'}
-                </p>
-              </div>
-              <ul className="text-xs text-muted-foreground space-y-1">
-                <li>✓ Acceso completo a DualStats</li>
-                <li>✓ P&L, ROI y yield en tiempo real</li>
-                <li>✓ Historial ilimitado</li>
-              </ul>
-              <button
-                onClick={() => handleCheckout('pro_30')}
-                disabled={checkoutLoading !== null}
-                className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
-              >
-                {checkoutLoading === 'pro_30'
-                  ? 'Redirigiendo…'
-                  : `Comprar — ${!user.hasEverPaid ? '35€' : '45€'}`}
+                {checkoutLoading === 'tracker_web' ? 'Redirigiendo…' : 'Comprar — 9,99€'}
               </button>
             </div>
 
             {/* PRO+Tracker — 1 mes */}
-            <div className="rounded-lg border border-indigo-300 dark:border-indigo-700 bg-card p-5 space-y-3">
+            <div className="rounded-lg border-2 border-indigo-400 dark:border-indigo-600 bg-card p-5 space-y-3 relative">
+              <span className="absolute -top-3 left-4 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                ⭐ Recomendado
+              </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">PRO+Tracker</p>
-                <p className="text-lg font-bold mt-0.5">1 mes</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Web + FidesBot</p>
+                <p className="text-lg font-bold mt-0.5">PRO+Tracker</p>
                 <div className="flex items-baseline gap-2 mt-1">
                   <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">
                     {!user.hasEverPaid ? '39,99€' : '49,99€'}
+                    <span className="text-sm font-normal text-muted-foreground">/mes</span>
                   </p>
                   {!user.hasEverPaid && (
                     <span className="text-sm text-muted-foreground line-through">49,99€</span>
@@ -1079,13 +1032,14 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {!user.hasEverPaid
                     ? '🎁 Descuento bienvenida · Solo primera vez'
-                    : 'Pago único · Sin renovación'}
+                    : 'Bot 45€ + Tracker 4,99€ · Sin renovación'}
                 </p>
               </div>
               <ul className="text-xs text-muted-foreground space-y-1">
-                <li>✓ Todo lo de PRO</li>
-                <li>✓ <strong className="text-foreground">Integración FidesBot</strong></li>
+                <li>✓ Todo lo de DualStats Tracker</li>
+                <li>✓ <strong className="text-foreground">FidesBot PRO</strong> — alertas ilimitadas</li>
                 <li>✓ Registro automático de apuestas</li>
+                <li>✓ Botones ✅/❌ en cada alerta del bot</li>
               </ul>
               <button
                 onClick={() => handleCheckout('tracker_30')}
