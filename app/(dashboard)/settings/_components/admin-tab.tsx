@@ -201,6 +201,19 @@ export function AdminTab({ initialStats, initialUsers }: AdminTabProps) {
                           ✕
                         </button>
                       )}
+                      {/* Toggle admin */}
+                      <button
+                        onClick={() => handleToggleAdmin(u.id, !u.isAdmin)}
+                        disabled={isPending}
+                        title={u.isAdmin ? 'Quitar admin' : 'Hacer admin'}
+                        className={`rounded border px-1.5 py-0.5 text-[10px] disabled:opacity-50 ${
+                          u.isAdmin
+                            ? 'border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100'
+                            : 'border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-500'
+                        }`}
+                      >
+                        👑
+                      </button>
                     </div>
                   </td>
                 </tr>
