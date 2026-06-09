@@ -23,7 +23,7 @@ import type { AdminStats, AdminUser } from '@/lib/actions/admin'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'admin' | 'peligro'
+type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'suscripcion' | 'admin' | 'peligro'
 
 interface ApiKeyData {
   id: string
@@ -54,6 +54,8 @@ export interface SettingsClientProps {
     currency: string
     hasPassword: boolean
     isAdmin: boolean
+    hasEverPaid: boolean
+    planExpiresAt: string | null
   }
   settings: {
     emailLoginAlert: boolean
@@ -65,6 +67,9 @@ export interface SettingsClientProps {
   }
   admin: { stats: AdminStats; users: AdminUser[] } | null
   apiKeys: ApiKeyData[]
+  initialTab?: string
+  paymentSuccess?: boolean
+  paymentCanceled?: boolean
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -198,11 +203,12 @@ const TIMEZONES = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function SettingsClient({ user, settings, telegram, admin, apiKeys }: SettingsClientProps) {
+export function SettingsClient({ user, settings, telegram, admin, apiKeys, initialTab, paymentSuccess, paymentCanceled }: SettingsClientProps) {
   const router   = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab]    = useState<Tab>('perfil')
+  const [activeTab, setActiveTab]    = useState<Tab>((initialTab as Tab) ?? 'perfil')
   const [toast, setToast]            = useState<SettingsResult | null>(null)
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
   // Profile
   const [name, setName] = useState(user.name ?? '')
@@ -362,6 +368,28 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys }: Set
     })
   }
 
+  // ── Checkout ─────────────────────────────────────────────────────────────
+  async function handleCheckout(planKey: string) {
+    setCheckoutLoading(planKey)
+    try {
+      const res = await fetch('/api/payments/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planKey }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !data.url) {
+        showToast({ success: false, error: data.error ?? 'Error al iniciar el pago' })
+        return
+      }
+      window.location.href = data.url
+    } catch {
+      showToast({ success: false, error: 'Error de red al conectar con el servidor de pago' })
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }
+
   function handleVerifyConnection() {
     // Recarga la página para ver si ya se vinculó desde el bot
     setTgLinkData(null)
@@ -376,6 +404,7 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys }: Set
     { id: 'notificaciones',  label: 'Notificaciones',  icon: '🔔' },
     { id: 'api-keys',        label: 'API Keys',        icon: '🔑' },
     { id: 'integraciones',   label: 'Integraciones',   icon: '🔗' },
+    { id: 'suscripcion',     label: 'Suscripción',     icon: '💎' },
     ...(user.isAdmin ? [{ id: 'admin' as Tab, label: 'Admin', icon: '👑' }] : []),
     { id: 'peligro',         label: 'Zona de peligro', icon: '⚠️', danger: true },
   ]
@@ -906,6 +935,161 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys }: Set
             </ol>
           </div>
 
+        </div>
+      )}
+
+      {/* ── Suscripción ───────────────────────────────────────────────────── */}
+      {activeTab === 'suscripcion' && (
+        <div className="space-y-4">
+
+          {/* Notificaciones de pago */}
+          {(paymentSuccess || paymentCanceled) && (
+            <div className={`rounded-md px-4 py-3 text-sm border ${
+              paymentSuccess
+                ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-950/40 dark:border-green-800 dark:text-green-300'
+                : 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
+            }`}>
+              {paymentSuccess
+                ? '✅ ¡Pago completado! Tu plan ha sido activado. Puede tardar unos segundos en actualizarse.'
+                : '↩️ Pago cancelado. No se ha realizado ningún cargo.'}
+            </div>
+          )}
+
+          {/* Plan actual */}
+          {user.plan !== 'FREE' && (
+            <div className="rounded-lg border bg-card p-4 flex items-center gap-3">
+              <span className="text-2xl">✨</span>
+              <div>
+                <p className="text-sm font-semibold">
+                  Plan activo:{' '}
+                  <span className="text-primary">
+                    {user.plan === 'PRO_TRACKER' ? 'PRO+Tracker' : user.plan}
+                  </span>
+                </p>
+                {user.planExpiresAt && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Expira el{' '}
+                    {new Date(user.planExpiresAt).toLocaleDateString('es-ES', {
+                      day: 'numeric', month: 'long', year: 'numeric',
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Tarjetas de planes ─────────────────────────────────────────── */}
+          <div className="grid gap-3 sm:grid-cols-2">
+
+            {/* PRO — 1 semana */}
+            <div className="rounded-lg border bg-card p-5 space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
+                <p className="text-lg font-bold mt-0.5">1 semana</p>
+                <p className="text-2xl font-extrabold text-primary mt-1">17€</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
+              </div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>✓ Acceso completo a DualStats</li>
+                <li>✓ P&L, ROI y yield en tiempo real</li>
+                <li>✓ Historial ilimitado</li>
+              </ul>
+              <button
+                onClick={() => handleCheckout('pro_7')}
+                disabled={checkoutLoading !== null}
+                className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+              >
+                {checkoutLoading === 'pro_7' ? 'Redirigiendo…' : 'Comprar — 17€'}
+              </button>
+            </div>
+
+            {/* PRO — 2 semanas */}
+            <div className="rounded-lg border bg-card p-5 space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
+                <p className="text-lg font-bold mt-0.5">2 semanas</p>
+                <p className="text-2xl font-extrabold text-primary mt-1">25€</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
+              </div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>✓ Acceso completo a DualStats</li>
+                <li>✓ P&L, ROI y yield en tiempo real</li>
+                <li>✓ Historial ilimitado</li>
+              </ul>
+              <button
+                onClick={() => handleCheckout('pro_14')}
+                disabled={checkoutLoading !== null}
+                className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+              >
+                {checkoutLoading === 'pro_14' ? 'Redirigiendo…' : 'Comprar — 25€'}
+              </button>
+            </div>
+
+            {/* PRO — 1 mes (destacado) */}
+            <div className="rounded-lg border-2 border-primary bg-card p-5 space-y-3 relative">
+              <span className="absolute -top-3 left-4 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                ⭐ Más popular
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRO</p>
+                <p className="text-lg font-bold mt-0.5">1 mes</p>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <p className="text-2xl font-extrabold text-primary">
+                    {!user.hasEverPaid ? '29€' : '45€'}
+                  </p>
+                  {!user.hasEverPaid && (
+                    <span className="text-sm text-muted-foreground line-through">45€</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {!user.hasEverPaid
+                    ? '🎁 Descuento bienvenida · Solo primera vez'
+                    : 'Pago único · Sin renovación'}
+                </p>
+              </div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>✓ Acceso completo a DualStats</li>
+                <li>✓ P&L, ROI y yield en tiempo real</li>
+                <li>✓ Historial ilimitado</li>
+              </ul>
+              <button
+                onClick={() => handleCheckout('pro_30')}
+                disabled={checkoutLoading !== null}
+                className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+              >
+                {checkoutLoading === 'pro_30'
+                  ? 'Redirigiendo…'
+                  : `Comprar — ${!user.hasEverPaid ? '29€' : '45€'}`}
+              </button>
+            </div>
+
+            {/* PRO+Tracker — 1 mes */}
+            <div className="rounded-lg border border-indigo-300 dark:border-indigo-700 bg-card p-5 space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">PRO+Tracker</p>
+                <p className="text-lg font-bold mt-0.5">1 mes</p>
+                <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-1">49€</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Pago único · Sin renovación</p>
+              </div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>✓ Todo lo de PRO</li>
+                <li>✓ <strong className="text-foreground">Integración FidesBot</strong></li>
+                <li>✓ Registro automático de apuestas</li>
+              </ul>
+              <button
+                onClick={() => handleCheckout('tracker_30')}
+                disabled={checkoutLoading !== null}
+                className="w-full rounded-md bg-indigo-600 text-white py-2 text-sm font-semibold disabled:opacity-50 hover:bg-indigo-700 transition-colors"
+              >
+                {checkoutLoading === 'tracker_30' ? 'Redirigiendo…' : 'Comprar — 49€'}
+              </button>
+            </div>
+
+          </div>
+
+          <p className="text-xs text-center text-muted-foreground">
+            Pago seguro con Stripe · Sin suscripción · Sin cargos inesperados
+          </p>
         </div>
       )}
 

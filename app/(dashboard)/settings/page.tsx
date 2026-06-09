@@ -7,10 +7,20 @@ import { getAdminDataAction } from '@/lib/actions/admin'
 
 export const metadata: Metadata = { title: 'Configuración — DualStats Tracker' }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string; success?: string; canceled?: string }>
+}) {
   const session = await auth()
   const userId = session?.user?.id
   if (!userId) redirect('/login')
+
+  const sp: { tab?: string; success?: string; canceled?: string } =
+    await (searchParams ?? Promise.resolve({}))
+  const initialTab      = sp.tab ?? 'perfil'
+  const paymentSuccess  = sp.success === '1'
+  const paymentCanceled = sp.canceled === '1'
 
   const [user, settingsRow, apiKeys] = await Promise.all([
     prisma.user.findUniqueOrThrow({
@@ -18,6 +28,7 @@ export default async function SettingsPage() {
       select: {
         name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true,
         telegramId: true, telegramUsername: true, isAdmin: true,
+        hasEverPaid: true, planExpiresAt: true,
       },
     }),
     prisma.userSettings.findUnique({
@@ -37,14 +48,19 @@ export default async function SettingsPage() {
   return (
     <SettingsClient
       user={{
-        name:        user.name,
-        email:       user.email,
-        plan:        session.user.plan ?? 'FREE',
-        timezone:    user.timezone,
-        currency:    user.currency,
-        hasPassword: !!user.passwordHash,
-        isAdmin:     user.isAdmin,
+        name:           user.name,
+        email:          user.email,
+        plan:           session.user.plan ?? 'FREE',
+        timezone:       user.timezone,
+        currency:       user.currency,
+        hasPassword:    !!user.passwordHash,
+        isAdmin:        user.isAdmin,
+        hasEverPaid:    user.hasEverPaid,
+        planExpiresAt:  user.planExpiresAt?.toISOString() ?? null,
       }}
+      initialTab={initialTab}
+      paymentSuccess={paymentSuccess}
+      paymentCanceled={paymentCanceled}
       settings={{
         emailLoginAlert: settingsRow?.emailLoginAlert ?? true,
         emailOnSettle:   settingsRow?.emailOnSettle   ?? true,
