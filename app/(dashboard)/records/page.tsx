@@ -152,6 +152,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
   const FREE_BET_LIMIT = 50
 
+  const userTz = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } })
+  const tz = userTz?.timezone ?? 'Europe/Madrid'
+
   const [records, bookmakers, totalBetCount] = await Promise.all([
     prisma.betRecord.findMany({
       where,
@@ -383,8 +386,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
                 const sm      = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
                 const dateObj = new Date(r.datePlaced)
-                const dateFmt = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
-                const timeFmt = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+                const dateFmt = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
+                const timeFmt = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
 
                 // Build bet info for settle modal
                 const betForSettle = {
@@ -483,8 +486,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker?.name ?? '—')
             const sm         = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
             const dateObj    = new Date(r.datePlaced)
-            const dateFmt    = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
-            const timeFmt    = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+            const dateFmt    = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
+            const timeFmt    = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
 
             const betForSettle = {
               id:                 r.id,
