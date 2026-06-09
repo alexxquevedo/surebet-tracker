@@ -157,6 +157,7 @@ model User {
 
   plan          UserPlan @default(FREE)
   planExpiresAt DateTime?
+  isAdmin       Boolean  @default(false)
 
   timezone String @default("Europe/Madrid")
   currency String @default("EUR")

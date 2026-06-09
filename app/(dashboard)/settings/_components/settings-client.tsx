@@ -18,10 +18,12 @@ import {
   generateLinkTokenAction,
   unlinkTelegramAction,
 } from '@/lib/actions/telegram'
+import { AdminTab } from './admin-tab'
+import type { AdminStats, AdminUser } from '@/lib/actions/admin'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'peligro'
+type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'admin' | 'peligro'
 
 interface ApiKeyData {
   id: string
@@ -51,6 +53,7 @@ export interface SettingsClientProps {
     timezone: string
     currency: string
     hasPassword: boolean
+    isAdmin: boolean
   }
   settings: {
     emailLoginAlert: boolean
@@ -60,6 +63,7 @@ export interface SettingsClientProps {
     connected: boolean
     username: string | null
   }
+  admin: { stats: AdminStats; users: AdminUser[] } | null
   apiKeys: ApiKeyData[]
 }
 
@@ -194,7 +198,7 @@ const TIMEZONES = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsClientProps) {
+export function SettingsClient({ user, settings, telegram, admin, apiKeys }: SettingsClientProps) {
   const router   = useRouter()
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab]    = useState<Tab>('perfil')
@@ -372,6 +376,7 @@ export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsCl
     { id: 'notificaciones',  label: 'Notificaciones',  icon: '🔔' },
     { id: 'api-keys',        label: 'API Keys',        icon: '🔑' },
     { id: 'integraciones',   label: 'Integraciones',   icon: '🔗' },
+    ...(user.isAdmin ? [{ id: 'admin' as Tab, label: 'Admin', icon: '👑' }] : []),
     { id: 'peligro',         label: 'Zona de peligro', icon: '⚠️', danger: true },
   ]
 
@@ -902,6 +907,11 @@ export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsCl
           </div>
 
         </div>
+      )}
+
+      {/* ── Admin ─────────────────────────────────────────────────────────── */}
+      {activeTab === 'admin' && user.isAdmin && admin && (
+        <AdminTab initialStats={admin.stats} initialUsers={admin.users} />
       )}
 
       {/* ── Zona de peligro ───────────────────────────────────────────────── */}

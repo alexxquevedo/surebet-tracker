@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { SettingsClient } from './_components/settings-client'
+import { getAdminDataAction } from '@/lib/actions/admin'
 
 export const metadata: Metadata = { title: 'Configuración — DualStats Tracker' }
 
@@ -16,7 +17,7 @@ export default async function SettingsPage() {
       where:  { id: userId },
       select: {
         name: true, email: true, plan: true, timezone: true, currency: true, passwordHash: true,
-        telegramId: true, telegramUsername: true,
+        telegramId: true, telegramUsername: true, isAdmin: true,
       },
     }),
     prisma.userSettings.findUnique({
@@ -30,6 +31,9 @@ export default async function SettingsPage() {
     }),
   ])
 
+  // Si es admin, cargar datos del panel
+  const adminData = user.isAdmin ? await getAdminDataAction() : null
+
   return (
     <SettingsClient
       user={{
@@ -39,6 +43,7 @@ export default async function SettingsPage() {
         timezone:    user.timezone,
         currency:    user.currency,
         hasPassword: !!user.passwordHash,
+        isAdmin:     user.isAdmin,
       }}
       settings={{
         emailLoginAlert: settingsRow?.emailLoginAlert ?? true,
@@ -48,6 +53,7 @@ export default async function SettingsPage() {
         connected: !!user.telegramId,
         username:  user.telegramUsername ?? null,
       }}
+      admin={adminData?.success ? { stats: adminData.stats, users: adminData.users } : null}
       apiKeys={apiKeys.map((k) => ({
         id:         k.id,
         name:       k.name,
