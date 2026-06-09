@@ -20,7 +20,7 @@ export default async function BotPaymentPage({
               Tu suscripción a FidesBot se ha activado. Recibirás una confirmación en Telegram en unos segundos.
             </p>
             <a
-              href="https://t.me/FidesAlertBot"
+              href="https://t.me/perpleSurebetBot"
               className="inline-block w-full rounded-xl bg-[#229ED9] text-white px-6 py-3 font-bold text-sm hover:bg-[#1a8bc2] transition-colors"
             >
               Volver a FidesBot →
@@ -34,7 +34,7 @@ export default async function BotPaymentPage({
               No se ha realizado ningún cargo. Puedes volver al bot cuando quieras.
             </p>
             <a
-              href="https://t.me/FidesAlertBot"
+              href="https://t.me/perpleSurebetBot"
               className="inline-block w-full rounded-xl border px-6 py-3 font-medium text-sm hover:bg-muted transition-colors"
             >
               Volver a FidesBot
