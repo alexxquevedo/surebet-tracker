@@ -121,5 +121,5 @@ export async function POST(request: NextRequest) {
     }),
   ])
 
-  return NextResponse.json({ success: true, userId: linkToken.userId })
+  return NextResponse.json({ success: true, userId: linkToken.userId, plan: linkToken.user.plan })
 }
