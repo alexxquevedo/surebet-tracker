@@ -238,6 +238,7 @@ export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsCl
     deepLink: string; manualToken: string; expiresAt: string
   } | null>(null)
   const [tgExpiredMsg, setTgExpiredMsg]   = useState(false)
+  const [copiedToken,  setCopiedToken]    = useState(false)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -856,10 +857,16 @@ export function SettingsClient({ user, settings, telegram, apiKeys }: SettingsCl
                     <button
                       onClick={() => {
                         void navigator.clipboard.writeText(`/start ${tgLinkData.manualToken}`)
+                        setCopiedToken(true)
+                        setTimeout(() => setCopiedToken(false), 2000)
                       }}
-                      className="shrink-0 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                      className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        copiedToken
+                          ? 'bg-green-100 border-green-300 text-green-700'
+                          : 'bg-background hover:bg-muted'
+                      }`}
                     >
-                      Copiar
+                      {copiedToken ? '✓ Copiado' : 'Copiar'}
                     </button>
                   </div>
                 </div>
