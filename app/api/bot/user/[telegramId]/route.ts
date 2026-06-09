@@ -35,7 +35,7 @@ export async function GET(
   }
 
   const hasActivePro =
-    (user.plan === 'PRO' || user.plan === 'ENTERPRISE') &&
+    (user.plan === 'PRO' || user.plan === 'PRO_TRACKER' || user.plan === 'ENTERPRISE') &&
     (!user.planExpiresAt || user.planExpiresAt > new Date())
 
   return NextResponse.json({

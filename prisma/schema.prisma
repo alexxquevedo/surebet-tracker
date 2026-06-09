@@ -15,6 +15,7 @@ datasource db {
 enum UserPlan {
   FREE
   PRO
+  PRO_TRACKER
   ENTERPRISE
 }
 

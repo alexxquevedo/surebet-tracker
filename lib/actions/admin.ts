@@ -97,7 +97,7 @@ export async function getAdminDataAction(): Promise<
 
   const stats: AdminStats = {
     totalUsers:   users.length,
-    proUsers:     users.filter((u) => u.plan === 'PRO' || u.plan === 'ENTERPRISE').length,
+    proUsers:     users.filter((u) => u.plan === 'PRO' || u.plan === 'PRO_TRACKER' || u.plan === 'ENTERPRISE').length,
     freeUsers:    users.filter((u) => u.plan === 'FREE').length,
     adminUsers:   users.filter((u) => u.isAdmin).length,
     totalBets,
@@ -113,6 +113,7 @@ export async function getAdminDataAction(): Promise<
 export async function activateProAction(
   targetUserId: string,
   days: number = 30,
+  planType: 'PRO' | 'PRO_TRACKER' = 'PRO',
 ): Promise<AdminActionResult> {
   const adminId = await requireAdmin()
   if (!adminId) return { success: false, error: 'No autorizado' }
@@ -125,14 +126,14 @@ export async function activateProAction(
   if (!target) return { success: false, error: 'Usuario no encontrado' }
 
   // Si ya tiene PRO activo, extender desde la fecha actual de expiración
-  const base = (target.plan === 'PRO' && target.planExpiresAt && target.planExpiresAt > new Date())
+  const base = ((target.plan === 'PRO' || target.plan === 'PRO_TRACKER') && target.planExpiresAt && target.planExpiresAt > new Date())
     ? target.planExpiresAt
     : new Date()
   const expiresAt = new Date(base.getTime() + days * 24 * 3600 * 1000)
 
   await prisma.user.update({
     where: { id: targetUserId },
-    data:  { plan: 'PRO', planExpiresAt: expiresAt },
+    data:  { plan: planType, planExpiresAt: expiresAt },
   })
 
   revalidatePath('/settings')

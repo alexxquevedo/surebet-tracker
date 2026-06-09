@@ -4,7 +4,7 @@
 // Client Components y archivos de prueba sin efectos secundarios)
 // ════════════════════════════════════════════════════════════════════
 
-export type UserPlan = 'FREE' | 'PRO' | 'ENTERPRISE'
+export type UserPlan = 'FREE' | 'PRO' | 'PRO_TRACKER' | 'ENTERPRISE'
 
 export type BookmakerStatus = 'ACTIVE' | 'LIMITED' | 'GUBBED' | 'CLOSED' | 'SUSPENDED'
 
