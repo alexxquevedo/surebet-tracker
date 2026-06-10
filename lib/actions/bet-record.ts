@@ -943,6 +943,35 @@ export async function deleteOperationAction(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// deleteDraftAction — elimina un borrador sin tocar saldos (capital nunca movido)
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function deleteDraftAction(
+  betRecordId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  try {
+    const draft = await prisma.betRecord.findFirst({
+      where: { id: betRecordId, userId, status: 'DRAFT', deletedAt: null },
+      select: { id: true },
+    })
+    if (!draft) return { success: false, error: 'Borrador no encontrado' }
+
+    await prisma.betRecord.update({
+      where: { id: betRecordId },
+      data:  { deletedAt: new Date() },
+    })
+
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al eliminar el borrador' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // updateBetMetadataAction — edita metadatos y cuotas (sin tocar el ledger)
 // ════════════════════════════════════════════════════════════════════════════
 

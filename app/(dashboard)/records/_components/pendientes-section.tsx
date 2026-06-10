@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { confirmDraftAction } from '@/lib/actions/bet-record'
+import { toast } from 'sonner'
+import { confirmDraftAction, deleteDraftAction } from '@/lib/actions/bet-record'
 
 export interface DraftBet {
   id:         string
@@ -62,8 +63,10 @@ export function PendientesSection({ drafts }: Props) {
 function DraftCard({ draft }: { draft: DraftBet }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [busy,  setBusy]  = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [busy,        setBusy]        = useState(false)
+  const [deleting,    setDeleting]    = useState(false)
+  const [confirmDel,  setConfirmDel]  = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
 
   const missingBookmakers = draft.legs
     .filter((l) => l.bookmaker.initialCapital === null)
@@ -85,6 +88,19 @@ function DraftCard({ draft }: { draft: DraftBet }) {
       startTransition(() => router.refresh())
     } else {
       setError(res.error)
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    const res = await deleteDraftAction(draft.id)
+    setDeleting(false)
+    if (res.success) {
+      toast.success('Borrador eliminado')
+      startTransition(() => router.refresh())
+    } else {
+      toast.error(res.error)
+      setConfirmDel(false)
     }
   }
 
@@ -127,16 +143,46 @@ function DraftCard({ draft }: { draft: DraftBet }) {
           </div>
         </div>
 
-        {/* Stake + confirm */}
+        {/* Stake + acciones */}
         <div className="flex flex-col items-end gap-2 shrink-0">
           <p className="text-sm font-bold tabular-nums">{fmt(draft.totalStake)}</p>
-          <button
-            onClick={handleConfirm}
-            disabled={busy || !canConfirm}
-            className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {busy ? 'Confirmando...' : 'Confirmar'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Confirmar */}
+            <button
+              onClick={handleConfirm}
+              disabled={busy || deleting || !canConfirm}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {busy ? 'Confirmando...' : 'Confirmar'}
+            </button>
+            {/* Eliminar */}
+            {confirmDel ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {deleting ? '...' : '¿Borrar?'}
+                </button>
+                <button
+                  onClick={() => setConfirmDel(false)}
+                  className="rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDel(true)}
+                disabled={busy || deleting}
+                title="Eliminar borrador"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+              >
+                🗑️
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
