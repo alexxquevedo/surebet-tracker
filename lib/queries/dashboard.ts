@@ -634,19 +634,26 @@ export async function getBankrollEvolution(
   const since = new Date()
   since.setDate(since.getDate() - days)
 
-  // ── Intentar DailySnapshot primero ───────────────────────────────────────
-  const snapshots = await prisma.dailySnapshot.findMany({
-    where: { userId, date: { gte: since } },
-    select: { date: true, totalEffectiveBalance: true, cumulativeProfit: true },
-    orderBy: { date: 'asc' },
-  })
-
   // ── Capital inicial (necesario para la línea de referencia) ──────────────
   const capitalSum = await prisma.bookmakerTransaction.aggregate({
     where: { userId, type: 'INITIAL_DEPOSIT' },
     _sum: { amount: true },
   })
   const initialCapital = D(capitalSum._sum.amount).toDecimalPlaces(2).toNumber()
+
+  // ── Intentar DailySnapshot primero ───────────────────────────────────────
+  // wrapped in try/catch: table might not exist yet if db push hasn't run in prod
+  type SnapshotRow = { date: Date; totalEffectiveBalance: { toString(): string }; cumulativeProfit: { toString(): string } }
+  let snapshots: SnapshotRow[] = []
+  try {
+    snapshots = await prisma.dailySnapshot.findMany({
+      where: { userId, date: { gte: since } },
+      select: { date: true, totalEffectiveBalance: true, cumulativeProfit: true },
+      orderBy: { date: 'asc' },
+    })
+  } catch {
+    // DailySnapshot table not yet created in this env — fall through to BetRecord fallback
+  }
 
   if (snapshots.length >= 2) {
     const points = snapshots.map((s) => {
