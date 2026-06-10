@@ -7,6 +7,7 @@ import {
   toggleBookmakerStatusAction,
   adjustBookmakerBalanceAction,
   assignBankrollAction,
+  setInitialCapitalAction,
 } from '@/lib/actions/bookmaker'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -18,12 +19,13 @@ interface BankrollOption {
 }
 
 interface BookmakerForManage {
-  id:            string
-  name:          string
-  notes:         string | null
-  status:        string
-  bankrollId:    string | null
+  id:             string
+  name:           string
+  notes:          string | null
+  status:         string
+  bankrollId:     string | null
   currentBalance: number
+  initialCapital: number | null
 }
 
 interface Props {
@@ -38,9 +40,12 @@ interface Props {
 export function ManageBookmaker({ bookmaker, bankrolls }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [editOpen,   setEditOpen]   = useState(false)
-  const [adjustOpen, setAdjustOpen] = useState(false)
-  const [isPending,  setIsPending]  = useState(false)
+  const [editOpen,    setEditOpen]    = useState(false)
+  const [adjustOpen,  setAdjustOpen]  = useState(false)
+  const [capitalOpen, setCapitalOpen] = useState(false)
+  const [isPending,   setIsPending]   = useState(false)
+
+  const missingCapital = bookmaker.initialCapital === null
 
   const isSuspended = bookmaker.status === 'SUSPENDED'
 
@@ -109,9 +114,26 @@ export function ManageBookmaker({ bookmaker, bankrolls }: Props) {
         💰
       </button>
 
+      {/* Capital inicial button */}
+      <button
+        onClick={() => setCapitalOpen(true)}
+        title={missingCapital ? 'Registrar capital inicial (requerido para el bot)' : `Capital inicial: ${bookmaker.initialCapital?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} — actualizar`}
+        className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors text-sm relative ${
+          missingCapital
+            ? 'text-amber-600 hover:bg-amber-50 ring-1 ring-amber-400'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+        }`}
+      >
+        🏦
+        {missingCapital && (
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />
+        )}
+      </button>
+
       {/* Modals */}
-      {editOpen   && <EditModal   bookmaker={bookmaker} onClose={() => { setEditOpen(false);   refresh() }} />}
-      {adjustOpen && <AdjustModal bookmaker={bookmaker} onClose={() => { setAdjustOpen(false); refresh() }} />}
+      {editOpen    && <EditModal    bookmaker={bookmaker} onClose={() => { setEditOpen(false);    refresh() }} />}
+      {adjustOpen  && <AdjustModal  bookmaker={bookmaker} onClose={() => { setAdjustOpen(false);  refresh() }} />}
+      {capitalOpen && <CapitalModal bookmaker={bookmaker} onClose={() => { setCapitalOpen(false); refresh() }} />}
     </div>
   )
 }
@@ -287,6 +309,77 @@ function AdjustModal({ bookmaker, onClose }: { bookmaker: BookmakerForManage; on
           </button>
           <button type="submit" disabled={busy || !isValid} className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors">
             {busy ? 'Aplicando...' : 'Aplicar ajuste'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// ─── Capital Inicial Modal ────────────────────────────────────────────────────
+
+function CapitalModal({ bookmaker, onClose }: { bookmaker: BookmakerForManage; onClose: () => void }) {
+  const isUpdate = bookmaker.initialCapital !== null
+  const [amount, setAmount] = useState(
+    bookmaker.initialCapital !== null ? String(bookmaker.initialCapital) : '',
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [busy,  setBusy]  = useState(false)
+
+  const amountNum = parseFloat(amount)
+  const isValid   = !isNaN(amountNum) && amountNum >= 0
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!isValid) return
+    setBusy(true)
+    const res = await setInitialCapitalAction(bookmaker.id, amountNum)
+    setBusy(false)
+    if (res.success) onClose()
+    else setError(res.error)
+  }
+
+  const fmt = (n: number) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+
+  return (
+    <Modal title={isUpdate ? 'Actualizar capital inicial' : 'Registrar capital inicial'} onClose={onClose}>
+      <div className="text-xs text-muted-foreground bg-muted/40 border rounded-lg px-3 py-2.5 leading-relaxed">
+        El capital inicial es el saldo que tenías en <span className="font-semibold">{bookmaker.name}</span> antes de empezar a registrar apuestas aquí. Sin él, las apuestas del bot se guardan como <span className="font-semibold text-amber-700">borradores</span>.
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Capital inicial (€)</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            required
+            autoFocus
+            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          {isValid && (
+            <p className="text-xs text-muted-foreground">= {fmt(amountNum)}</p>
+          )}
+        </div>
+
+        {!isUpdate && (
+          <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800">
+            Una vez registrado, las nuevas apuestas del bot se procesarán directamente — no irán a borradores.
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={busy || !isValid} className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors">
+            {busy ? 'Guardando...' : isUpdate ? 'Actualizar' : 'Registrar'}
           </button>
         </div>
       </form>

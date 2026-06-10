@@ -176,6 +176,26 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // ── Verificar capital inicial antes de entrar en la transacción ────────────
+  // Si algún bookmaker (ya existente) no tiene initialCapital → DRAFT
+  // Los bookmakers nuevos (creados por first-time) también irán a DRAFT.
+  // Nota: la comprobación es por nombre — usamos findFirst igual que en la tx.
+  const existingBms = await Promise.all(
+    apuesta.legs.map((l) =>
+      prisma.bookmaker.findFirst({
+        where:  { userId, name: { equals: l.bookmaker.trim(), mode: 'insensitive' } },
+        select: { id: true, name: true, initialCapital: true },
+      }),
+    ),
+  )
+  // Un bookmaker nuevo (no encontrado) no tiene capital inicial por definición
+  const bmsMissingCapital = apuesta.legs
+    .map((l, i) => ({ name: l.bookmaker.trim(), bm: existingBms[i] }))
+    .filter(({ bm }) => !bm || bm.initialCapital === null)
+    .map(({ name }) => name)
+
+  const isDraft = bmsMissingCapital.length > 0
+
   // Pre-calcular todas las cifras de las piernas (evita indexado T|undefined)
   const legCalcs: LegCalc[] = apuesta.legs.map((l) => {
     const stake    = D(l.stake).toDecimalPlaces(2)
@@ -243,7 +263,7 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           type:           betType,
-          status:         'PLACED',
+          status:         isDraft ? 'DRAFT' : 'PLACED',
           totalStake,
           potentialReturn,
           eventName:      apuesta.evento  ?? null,
@@ -260,78 +280,21 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       })
 
-      // ── Crear piernas + actualizar bookmakers ────────────
+      // ── Crear piernas + (si no es DRAFT) actualizar bookmakers ─────────────
       for (let i = 0; i < legCalcs.length; i++) {
-        const lc   = legCalcs[i] as LegCalc   // siempre definido — loop hasta length
-        const bmId = bmIds[i] as string        // siempre definido — mismo length
+        const lc   = legCalcs[i] as LegCalc
+        const bmId = bmIds[i] as string
 
-        // Leer saldo antes del decremento
-        const bmNow = await tx.bookmaker.findUniqueOrThrow({
-          where:  { id: bmId },
-          select: { currentBalance: true },
-        })
-        let balBefore = D(bmNow.currentBalance)
-
-        // ── Auto-ajuste: si el stake supera el saldo actual, subir el balance ──
-        // Evita que el bookmaker quede en negativo cuando el usuario no había
-        // introducido todavía su saldo inicial.
-        if (balBefore.lt(lc.stake)) {
-          const deficit = lc.stake.minus(balBefore).toDecimalPlaces(2)
-          await tx.bookmaker.update({
-            where: { id: bmId },
-            data:  { currentBalance: { increment: deficit.toNumber() } },
-          })
-          await tx.bookmakerTransaction.create({
-            data: {
-              userId,
-              bookmakerId:   bmId,
-              type:          'MANUAL_ADJUSTMENT',
-              amount:        deficit,
-              balanceBefore: balBefore,
-              balanceAfter:  balBefore.plus(deficit),
-              notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
-              referenceType: 'AutoAdjust',
-            },
-          })
-          balBefore = balBefore.plus(deficit)
-        }
-
-        const balAfter = balBefore.minus(lc.stake).toDecimalPlaces(2)
-
-        // Pierna
+        // Pierna (siempre se crea, DRAFT o no)
         await tx.betLeg.create({
           data: {
-            betRecordId:    betRecord.id,
-            bookmakerId:    bmId,
-            selection:      lc.selection,
-            odds:           lc.odds,
-            stake:          lc.stake,
+            betRecordId:     betRecord.id,
+            bookmakerId:     bmId,
+            selection:       lc.selection,
+            odds:            lc.odds,
+            stake:           lc.stake,
             potentialReturn: lc.potReturn,
-            status:         'PLACED',
-          },
-        })
-
-        // Estadísticas del bookmaker
-        await tx.bookmaker.update({
-          where: { id: bmId },
-          data:  {
-            currentBalance: { decrement: lc.stake.toNumber() },
-            totalStaked:    { increment: lc.stake.toNumber() },
-            operationCount: { increment: 1 },
-          },
-        })
-
-        // Ledger (inmutable)
-        await tx.bookmakerTransaction.create({
-          data: {
-            bookmakerId:   bmId,
-            userId,
-            type:          'BET_PLACED',
-            amount:        lc.stake.negated(),
-            balanceBefore: balBefore,
-            balanceAfter:  balAfter,
-            referenceId:   betRecord.id,
-            referenceType: 'BetRecord',
+            status:          isDraft ? 'PLACED' : 'PLACED',
           },
         })
 
@@ -343,12 +306,68 @@ export async function POST(request: NextRequest) {
             stakeAllocated: lc.stake,
           },
         })
+
+        if (!isDraft) {
+          // Leer saldo antes del decremento
+          const bmNow = await tx.bookmaker.findUniqueOrThrow({
+            where:  { id: bmId },
+            select: { currentBalance: true },
+          })
+          let balBefore = D(bmNow.currentBalance)
+
+          // Auto-ajuste si el stake supera el saldo
+          if (balBefore.lt(lc.stake)) {
+            const deficit = lc.stake.minus(balBefore).toDecimalPlaces(2)
+            await tx.bookmaker.update({
+              where: { id: bmId },
+              data:  { currentBalance: { increment: deficit.toNumber() } },
+            })
+            await tx.bookmakerTransaction.create({
+              data: {
+                userId, bookmakerId: bmId,
+                type:          'MANUAL_ADJUSTMENT',
+                amount:        deficit,
+                balanceBefore: balBefore,
+                balanceAfter:  balBefore.plus(deficit),
+                notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+                referenceId:   betRecord.id,
+                referenceType: 'AutoAdjust',
+              },
+            })
+            balBefore = balBefore.plus(deficit)
+          }
+
+          const balAfter = balBefore.minus(lc.stake).toDecimalPlaces(2)
+          await tx.bookmaker.update({
+            where: { id: bmId },
+            data:  {
+              currentBalance: { decrement: lc.stake.toNumber() },
+              totalStaked:    { increment: lc.stake.toNumber() },
+              operationCount: { increment: 1 },
+            },
+          })
+          await tx.bookmakerTransaction.create({
+            data: {
+              bookmakerId: bmId, userId,
+              type:          'BET_PLACED',
+              amount:        lc.stake.negated(),
+              balanceBefore: balBefore,
+              balanceAfter:  balAfter,
+              referenceId:   betRecord.id,
+              referenceType: 'BetRecord',
+            },
+          })
+        }
       }
 
       return betRecord
     })
 
-    return NextResponse.json({ success: true, id: record.id }, { status: 201 })
+    return NextResponse.json({
+      success: true,
+      id:      record.id,
+      ...(isDraft ? { draft: true, missing_capital: bmsMissingCapital } : {}),
+    }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/bot/records]', err)
     return NextResponse.json(

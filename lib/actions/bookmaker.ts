@@ -221,6 +221,41 @@ export async function adjustBookmakerBalanceAction(formData: FormData): Promise<
 // assignBankrollAction — vincular/desvincular una casa de un bankroll
 // ════════════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════════════
+// setInitialCapitalAction — registrar / actualizar el capital inicial declarado
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function setInitialCapitalAction(
+  bookmakerId: string,
+  amount: number,
+): Promise<BookmakerActionResult> {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  if (isNaN(amount) || amount < 0) {
+    return { success: false, error: 'Importe inválido (debe ser ≥ 0)' }
+  }
+
+  try {
+    const bm = await prisma.bookmaker.findFirst({
+      where:  { id: bookmakerId, userId },
+      select: { id: true },
+    })
+    if (!bm) return { success: false, error: 'Casa no encontrada' }
+
+    await prisma.bookmaker.update({
+      where: { id: bookmakerId },
+      data:  { initialCapital: D(amount) },
+    })
+    revalidatePath('/bookmakers')
+    return { success: true, id: bookmakerId }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al guardar capital inicial' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 export async function assignBankrollAction(
   bookmakerId: string,
   bankrollId: string | null,

@@ -674,6 +674,110 @@ export async function moveBetsToBankrollAction(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// confirmDraftAction — convierte DRAFT → PLACED procesando saldos de bookmakers
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function confirmDraftAction(
+  betIds: string[],
+): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+  if (!betIds.length) return { success: false, error: 'Sin apuestas seleccionadas' }
+
+  try {
+    const drafts = await prisma.betRecord.findMany({
+      where:   { id: { in: betIds }, userId, status: 'DRAFT', deletedAt: null },
+      include: {
+        legs: {
+          where: { deletedAt: null },
+          select: { id: true, bookmakerId: true, stake: true },
+        },
+      },
+    })
+    if (!drafts.length) return { success: false, error: 'No se encontraron borradores válidos' }
+
+    // Verificar que todos los bookmakers tienen capital inicial registrado
+    const allBmIds = [...new Set(drafts.flatMap((d) => d.legs.map((l) => l.bookmakerId)))]
+    const bmsWithoutCapital = await prisma.bookmaker.findMany({
+      where:  { id: { in: allBmIds }, initialCapital: null },
+      select: { name: true },
+    })
+    if (bmsWithoutCapital.length > 0) {
+      const names = bmsWithoutCapital.map((b) => b.name).join(', ')
+      return { success: false, error: `Registra primero el capital inicial de: ${names}` }
+    }
+
+    let confirmed = 0
+    for (const draft of drafts) {
+      await prisma.$transaction(async (tx) => {
+        for (const leg of draft.legs) {
+          const stake = D(leg.stake)
+
+          // Auto-ajuste si el saldo es insuficiente
+          const bmNow = await tx.bookmaker.findUniqueOrThrow({
+            where:  { id: leg.bookmakerId },
+            select: { currentBalance: true },
+          })
+          let balBefore = D(bmNow.currentBalance)
+          if (balBefore.lt(stake)) {
+            const deficit = stake.minus(balBefore).toDecimalPlaces(2)
+            await tx.bookmaker.update({
+              where: { id: leg.bookmakerId },
+              data:  { currentBalance: { increment: deficit.toNumber() } },
+            })
+            await tx.bookmakerTransaction.create({
+              data: {
+                userId, bookmakerId: leg.bookmakerId,
+                type:          'MANUAL_ADJUSTMENT',
+                amount:        deficit,
+                balanceBefore: balBefore,
+                balanceAfter:  balBefore.plus(deficit),
+                notes:         'Ajuste automático al confirmar borrador',
+                referenceId:   draft.id,
+                referenceType: 'AutoAdjust',
+              },
+            })
+            balBefore = balBefore.plus(deficit)
+          }
+
+          const balAfter = balBefore.minus(stake).toDecimalPlaces(2)
+          await tx.bookmaker.update({
+            where: { id: leg.bookmakerId },
+            data: {
+              currentBalance: { decrement: stake.toNumber() },
+              totalStaked:    { increment: stake.toNumber() },
+              operationCount: { increment: 1 },
+            },
+          })
+          await tx.bookmakerTransaction.create({
+            data: {
+              userId, bookmakerId: leg.bookmakerId,
+              type:          'BET_PLACED',
+              amount:        stake.negated(),
+              balanceBefore: balBefore,
+              balanceAfter:  balAfter,
+              referenceId:   draft.id,
+              referenceType: 'BetRecord',
+            },
+          })
+        }
+
+        await tx.betRecord.update({
+          where: { id: draft.id },
+          data:  { status: 'PLACED' },
+        })
+        confirmed++
+      })
+    }
+
+    return { success: true, count: confirmed }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al confirmar borrador' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // deleteOperationAction  — soft-delete (sets deletedAt, invisible en stats)
 // ════════════════════════════════════════════════════════════════════════════
 

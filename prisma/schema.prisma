@@ -39,6 +39,7 @@ enum BetType {
 
 // Estado unificado — aplica a BetRecord y también a cada BetLeg individual
 enum BetStatus {
+  DRAFT       // borrador — capital inicial no registrado en alguna casa
   PLACED      // en juego, pendiente de resultado
   WON         // ganada (grossProfit > 0)
   LOST        // perdida (grossProfit < 0)
@@ -312,6 +313,9 @@ model Bookmaker {
   bankroll    Bankroll? @relation(fields: [bankrollId], references: [id])
 
   status BookmakerStatus @default(ACTIVE)
+
+  // Capital inicial declarado por el usuario. null = no registrado → apuestas nuevas irán a DRAFT
+  initialCapital Decimal? @db.Decimal(12, 2)
 
   // CRÍTICO: NUNCA actualizar directamente.
   // Usar { increment } / { decrement } atómicos para evitar race conditions.

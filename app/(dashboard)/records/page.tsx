@@ -3,9 +3,11 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
-import { RecordsFilters } from './_components/records-filters'
-import { RecordsSection } from './_components/records-section'
+import { RecordsFilters }     from './_components/records-filters'
+import { RecordsSection }     from './_components/records-section'
 import type { SerializedRecord } from './_components/records-section'
+import { PendientesSection }  from './_components/pendientes-section'
+import type { DraftBet }      from './_components/pendientes-section'
 
 export const metadata: Metadata = { title: 'Operaciones — DualStats Tracker' }
 
@@ -60,12 +62,14 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterTo     = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
   const filterSort   = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
 
-  // Build where clause
+  // Build where clause — DRAFTs siempre excluidos (se muestran en su propia sección)
   const where: Prisma.BetRecordWhereInput = {
     userId,
     deletedAt: null,
-    ...(filterSport  ? { sport:  filterSport  as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
-    ...(filterStatus ? { status: filterStatus as Prisma.EnumBetStatusFilter['equals'] } : {}),
+    status: filterStatus
+      ? filterStatus as Prisma.EnumBetStatusFilter['equals']
+      : { not: 'DRAFT' as const },
+    ...(filterSport  ? { sport: filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
     ...(filterLive === 'false' ? { isLive: false } : {}),
     ...(filterBm ? {
@@ -96,7 +100,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const userTz = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } })
   const tz = userTz?.timezone ?? 'Europe/Madrid'
 
-  const [records, bookmakers, bankrolls, totalBetCount] = await Promise.all([
+  const [records, bookmakers, bankrolls, totalBetCount, draftRecords] = await Promise.all([
     prisma.betRecord.findMany({
       where,
       orderBy,
@@ -140,6 +144,21 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     userPlan === 'FREE'
       ? prisma.betRecord.count({ where: { userId, deletedAt: null } })
       : Promise.resolve(null),
+    prisma.betRecord.findMany({
+      where:   { userId, status: 'DRAFT', deletedAt: null },
+      orderBy: { datePlaced: 'desc' },
+      select: {
+        id: true, type: true, sport: true, title: true, totalStake: true, datePlaced: true,
+        legs: {
+          where:   { deletedAt: null },
+          orderBy: { id: 'asc' },
+          select: {
+            id: true, stake: true, odds: true,
+            bookmaker: { select: { id: true, name: true, etiqueta: true, initialCapital: true } },
+          },
+        },
+      },
+    }),
   ])
 
   // ─── Serializar registros (Decimal → number, Date → ISO) ─────────────────
@@ -176,6 +195,27 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
   const totalPlaced = records.filter((r) => r.status === 'PLACED').length
   const totalPnl    = records.reduce((acc, r) => acc + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0), 0)
+
+  // ─── Serializar DRAFTs ────────────────────────────────────────────────────
+  const serializedDrafts: DraftBet[] = draftRecords.map((d) => ({
+    id:         d.id,
+    type:       d.type,
+    sport:      d.sport,
+    title:      d.title,
+    totalStake: parseFloat(d.totalStake.toString()),
+    datePlaced: d.datePlaced.toISOString(),
+    legs: d.legs.map((l) => ({
+      id:    l.id,
+      stake: parseFloat(l.stake.toString()),
+      odds:  parseFloat(l.odds.toString()),
+      bookmaker: {
+        id:             l.bookmaker.id,
+        name:           l.bookmaker.name,
+        etiqueta:       l.bookmaker.etiqueta,
+        initialCapital: l.bookmaker.initialCapital !== null ? parseFloat(l.bookmaker.initialCapital.toString()) : null,
+      },
+    })),
+  }))
 
   // ─── Build date preset URLs ───────────────────────────────────────────────
   const presets    = getDatePresets()
@@ -300,6 +340,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           </form>
         </div>
       </div>
+
+      {/* ─── Pendientes (DRAFTs del bot) ────────────────────────────────── */}
+      {serializedDrafts.length > 0 && (
+        <PendientesSection drafts={serializedDrafts} />
+      )}
 
       {/* ─── Filters (auto-apply con debounce 300ms) ────────────────────── */}
       <RecordsFilters

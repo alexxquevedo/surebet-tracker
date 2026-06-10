@@ -29,7 +29,7 @@ export default async function BookmakersPage() {
         id: true, name: true, etiqueta: true, color: true, status: true, currency: true,
         notes: true, bankrollId: true,
         currentBalance: true, totalStaked: true, totalProfit: true, totalReturn: true,
-        operationCount: true,
+        operationCount: true, initialCapital: true,
       },
     }),
     prisma.bankroll.findMany({
@@ -188,6 +188,7 @@ export default async function BookmakersPage() {
                   status:         bm.status,
                   bankrollId:     bm.bankrollId,
                   currentBalance: balance,
+                  initialCapital: bm.initialCapital !== null ? parseFloat(bm.initialCapital.toString()) : null,
                 }
 
                 return (
