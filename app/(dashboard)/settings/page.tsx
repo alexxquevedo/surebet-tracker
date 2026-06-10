@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { SettingsClient } from './_components/settings-client'
-import { getAdminDataAction } from '@/lib/actions/admin'
 
 export const metadata: Metadata = { title: 'Configuración — DualStats Tracker' }
 
@@ -42,11 +41,7 @@ export default async function SettingsPage({
     }),
   ])
 
-  // Si no existe el usuario en DB (sesión obsoleta), limpiar y redirigir
   if (!user) redirect('/login')
-
-  // Si es admin, cargar datos del panel
-  const adminData = user.isAdmin ? await getAdminDataAction() : null
 
   return (
     <SettingsClient
@@ -72,7 +67,6 @@ export default async function SettingsPage({
         connected: !!user.telegramId,
         username:  user.telegramUsername ?? null,
       }}
-      admin={adminData?.success ? { stats: adminData.stats, users: adminData.users } : null}
       apiKeys={apiKeys.map((k) => ({
         id:         k.id,
         name:       k.name,

@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
+import { UserActions } from './_components/user-actions'
 
 export const metadata: Metadata = { title: 'Admin · Usuarios — DualStats Tracker' }
 
@@ -229,7 +229,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Ops.</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Registro</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden xl:table-cell">Último login</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide"></th>
+                  <th className="px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -289,12 +289,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
                         {fmtDate(u.lastLoginAt)}
                       </td>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/settings?tab=admin&uid=${u.id}`}
-                          className="text-[11px] text-primary hover:underline font-medium"
-                        >
-                          Gestionar →
-                        </Link>
+                        <UserActions userId={u.id} plan={u.plan} isAdmin={u.isAdmin} />
                       </td>
                     </tr>
                   )
@@ -333,12 +328,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
                       </span>
                     )}
                   </div>
-                  <Link
-                    href={`/settings?tab=admin&uid=${u.id}`}
-                    className="inline-flex items-center text-xs text-primary hover:underline font-medium"
-                  >
-                    Gestionar →
-                  </Link>
+                  <UserActions userId={u.id} plan={u.plan} isAdmin={u.isAdmin} />
                 </div>
               )
             })}

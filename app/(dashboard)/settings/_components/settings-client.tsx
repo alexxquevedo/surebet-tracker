@@ -18,12 +18,10 @@ import {
   generateLinkTokenAction,
   unlinkTelegramAction,
 } from '@/lib/actions/telegram'
-import { AdminTab } from './admin-tab'
-import type { AdminStats, AdminUser } from '@/lib/actions/admin'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'suscripcion' | 'admin' | 'peligro'
+type Tab = 'perfil' | 'preferencias' | 'notificaciones' | 'api-keys' | 'integraciones' | 'suscripcion' | 'peligro'
 
 interface ApiKeyData {
   id: string
@@ -65,7 +63,6 @@ export interface SettingsClientProps {
     connected: boolean
     username: string | null
   }
-  admin: { stats: AdminStats; users: AdminUser[] } | null
   apiKeys: ApiKeyData[]
   initialTab?: string
   paymentSuccess?: boolean
@@ -203,7 +200,7 @@ const TIMEZONES = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function SettingsClient({ user, settings, telegram, admin, apiKeys, initialTab, paymentSuccess, paymentCanceled }: SettingsClientProps) {
+export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, paymentSuccess, paymentCanceled }: SettingsClientProps) {
   const router   = useRouter()
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab]    = useState<Tab>((initialTab as Tab) ?? 'perfil')
@@ -405,7 +402,6 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
     { id: 'api-keys',        label: 'API Keys',        icon: '🔑' },
     { id: 'integraciones',   label: 'Integraciones',   icon: '🔗' },
     { id: 'suscripcion',     label: 'Suscripción',     icon: '💎' },
-    ...(user.isAdmin ? [{ id: 'admin' as Tab, label: 'Admin', icon: '👑' }] : []),
     { id: 'peligro',         label: 'Zona de peligro', icon: '⚠️', danger: true },
   ]
 
@@ -1058,11 +1054,6 @@ export function SettingsClient({ user, settings, telegram, admin, apiKeys, initi
             Pago seguro con Stripe · Sin suscripción · Sin cargos inesperados
           </p>
         </div>
-      )}
-
-      {/* ── Admin ─────────────────────────────────────────────────────────── */}
-      {activeTab === 'admin' && user.isAdmin && admin && (
-        <AdminTab initialStats={admin.stats} initialUsers={admin.users} />
       )}
 
       {/* ── Zona de peligro ───────────────────────────────────────────────── */}
