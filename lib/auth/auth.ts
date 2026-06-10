@@ -49,6 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               image: true,
               passwordHash: true,
               plan: true,
+              isAdmin: true,
             },
           })
 
@@ -69,6 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: user.name,
             image: user.image,
             plan: user.plan,
+            isAdmin: user.isAdmin,
           }
         } catch (error) {
           console.error('[Auth] authorize error:', error)
@@ -80,8 +82,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user, trigger, session }) {
       if (user) {
-        token.id = user.id
-        token.plan = (user as { plan?: string }).plan ?? 'FREE'
+        token.id      = user.id
+        token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false
+        // Los admins tienen automáticamente acceso PRO_TRACKER completo
+        const rawPlan = (user as { plan?: string }).plan ?? 'FREE'
+        token.plan    = token.isAdmin ? 'PRO_TRACKER' : rawPlan
       }
       if (trigger === 'update' && session?.plan) {
         token.plan = session.plan
@@ -90,8 +95,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.id as string
-        session.user.plan = token.plan as string
+        session.user.id      = token.id as string
+        session.user.plan    = token.plan as string
+        session.user.isAdmin = token.isAdmin as boolean
       }
       return session
     },

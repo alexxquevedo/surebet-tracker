@@ -3,48 +3,11 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
-import { SettleButton } from './_components/settle-button'
-import type { LegInfo } from './_components/settle-button'
-import { DeleteButton } from './_components/delete-button'
 import { RecordsFilters } from './_components/records-filters'
+import { RecordsSection } from './_components/records-section'
+import type { SerializedRecord } from './_components/records-section'
 
 export const metadata: Metadata = { title: 'Operaciones — DualStats Tracker' }
-
-// ─── Labels ──────────────────────────────────────────────────────────────────
-
-const BET_TYPE_LABEL: Record<string, string> = {
-  ARBITRAGE: '⚡ Surebets',
-  MIDDLE:    '🎯 Middlebet',
-  SINGLE:    '⚽ Single',
-  COMBO:     '📋 Combo',
-  CASINO:    '🎰 Casino',
-  CUSTOM:    '📝 Custom',
-}
-
-const STATUS_META: Record<string, { label: string; cls: string }> = {
-  PLACED:      { label: 'En juego',  cls: 'bg-amber-100 text-amber-700 border border-amber-200'  },
-  WON:         { label: 'Ganada',    cls: 'bg-green-100 text-green-700 border border-green-200'  },
-  LOST:        { label: 'Perdida',   cls: 'bg-red-100 text-red-700 border border-red-200'        },
-  VOID:        { label: 'Anulada',   cls: 'bg-gray-100 text-gray-600 border border-gray-200'     },
-  CASHOUT:     { label: 'Cashout',   cls: 'bg-blue-100 text-blue-700 border border-blue-200'     },
-  PARTIAL_WIN: { label: 'Parcial',   cls: 'bg-teal-100 text-teal-700 border border-teal-200'     },
-}
-
-const SPORT_LABEL: Record<string, string> = {
-  FOOTBALL:   '⚽ Fútbol',
-  BASKETBALL: '🏀 Baloncesto',
-  TENNIS:     '🎾 Tenis',
-  HOCKEY:     '🏒 Hockey Hielo',
-  BASEBALL:   '⚾ Béisbol',
-  RUGBY:      '🏉 Rugby',
-  CRICKET:    '🏏 Cricket',
-  GOLF:       '⛳ Golf',
-  MMA:        '🥋 MMA',
-  BOXING:     '🥊 Boxeo',
-  MOTORSPORT: '🏎️ Motorsport',
-  ESPORTS:    '🎮 eSports',
-  OTHER:      '🎯 Otro',
-}
 
 // ─── Date preset helpers ──────────────────────────────────────────────────────
 
@@ -75,29 +38,6 @@ function getDatePresets() {
 
 function buildPresetUrl(base: string, from: string, to: string, extra: string) {
   return `${base}?dateFrom=${from}&dateTo=${to}${extra}`
-}
-
-function buildSortUrl(
-  key: string,
-  current: string,
-  filters: { sport?: string; bm?: string; status?: string; live?: string; dateFrom?: string; dateTo?: string },
-): string {
-  const next = current === `${key}-desc` ? `${key}-asc` : `${key}-desc`
-  const p    = new URLSearchParams()
-  if (filters.dateFrom) p.set('dateFrom', filters.dateFrom)
-  if (filters.dateTo)   p.set('dateTo',   filters.dateTo)
-  if (filters.sport)    p.set('sport',    filters.sport)
-  if (filters.bm)       p.set('bm',       filters.bm)
-  if (filters.status)   p.set('status',   filters.status)
-  if (filters.live)     p.set('live',     filters.live)
-  p.set('sort', next)
-  return `/records?${p.toString()}`
-}
-
-function SortIcon({ col, current }: { col: string; current: string }) {
-  if (current === `${col}-desc`) return <span className="ml-1 opacity-70">↓</span>
-  if (current === `${col}-asc`)  return <span className="ml-1 opacity-70">↑</span>
-  return <span className="ml-1 opacity-30">↕</span>
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -156,7 +96,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const userTz = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } })
   const tz = userTz?.timezone ?? 'Europe/Madrid'
 
-  const [records, bookmakers, totalBetCount] = await Promise.all([
+  const [records, bookmakers, bankrolls, totalBetCount] = await Promise.all([
     prisma.betRecord.findMany({
       where,
       orderBy,
@@ -183,6 +123,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           orderBy: { id: 'asc' },
           select: { id: true, bookmakerId: true, stake: true, odds: true, potentialReturn: true, bookmaker: { select: { name: true, etiqueta: true } } },
         },
+        bankrollId: true,
+        bankroll: { select: { id: true, name: true, color: true } },
       },
     }),
     prisma.bookmaker.findMany({
@@ -190,37 +132,47 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       select: { id: true, name: true, etiqueta: true },
       orderBy: { name: 'asc' },
     }),
+    prisma.bankroll.findMany({
+      where: { userId, isActive: true },
+      select: { id: true, name: true, color: true },
+      orderBy: { name: 'asc' },
+    }),
     userPlan === 'FREE'
       ? prisma.betRecord.count({ where: { userId, deletedAt: null } })
       : Promise.resolve(null),
   ])
 
-  // ─── Helper: formato de nombre de bookmaker con etiqueta opcional ───────────
-  function bmLabel(bm: { name: string; etiqueta?: string | null } | null | undefined): string {
-    if (!bm) return ''
-    return bm.etiqueta ? `${bm.name} · ${bm.etiqueta}` : bm.name
-  }
-
-  // ─── Helper: bookmaker que "ganó" la operación ─────────────────────────────
-  type RecordRow = typeof records[number]
-  function getCasaGanada(r: RecordRow): string | null {
-    if (r.status === 'PLACED') return null
-    if (r.type === 'ARBITRAGE' && r.arbitrageDetail?.winningLegId) {
-      const leg = r.legs.find((l) => l.id === r.arbitrageDetail!.winningLegId)
-      return leg ? bmLabel(leg.bookmaker) : null
-    }
-    if (r.type === 'MIDDLE') {
-      if (r.middleDetail?.middleHit === true) return r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
-      if (r.middleDetail?.winningLegId) {
-        const leg = r.legs.find((l) => l.id === r.middleDetail!.winningLegId)
-        return leg ? bmLabel(leg.bookmaker) : null
-      }
-    }
-    if (r.status === 'WON' || r.status === 'PARTIAL_WIN' || r.status === 'CASHOUT') {
-      return r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : null
-    }
-    return null
-  }
+  // ─── Serializar registros (Decimal → number, Date → ISO) ─────────────────
+  const serializedRecords: SerializedRecord[] = records.map((r) => ({
+    id:                 r.id,
+    type:               r.type,
+    status:             r.status,
+    sport:              r.sport,
+    isLive:             r.isLive,
+    totalStake:         parseFloat(r.totalStake.toString()),
+    grossProfit:        r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null,
+    potentialReturn:    r.potentialReturn !== null ? parseFloat(r.potentialReturn.toString()) : null,
+    datePlaced:         r.datePlaced.toISOString(),
+    dateSettled:        r.dateSettled ? r.dateSettled.toISOString() : null,
+    title:              r.title,
+    primaryBookmakerId: r.primaryBookmakerId,
+    primaryBookmaker:   r.primaryBookmaker ?? null,
+    singleBetDetail:    r.singleBetDetail
+      ? { selection: r.singleBetDetail.selection, odds: r.singleBetDetail.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null }
+      : null,
+    arbitrageDetail:    r.arbitrageDetail ?? null,
+    middleDetail:       r.middleDetail ?? null,
+    legs:               r.legs.map((l) => ({
+      id:              l.id,
+      bookmakerId:     l.bookmakerId,
+      stake:           parseFloat(l.stake.toString()),
+      odds:            parseFloat(l.odds.toString()),
+      potentialReturn: parseFloat(l.potentialReturn.toString()),
+      bookmaker:       l.bookmaker,
+    })),
+    bankrollId:         r.bankrollId,
+    bankroll:           r.bankroll ?? null,
+  }))
 
   const totalPlaced = records.filter((r) => r.status === 'PLACED').length
   const totalPnl    = records.reduce((acc, r) => acc + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0), 0)
@@ -360,7 +312,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         filterTo={filterTo}
       />
 
-      {/* ─── Table ──────────────────────────────────────────────────────── */}
+      {/* ─── Registros ──────────────────────────────────────────────────── */}
       {records.length === 0 && (
         <div className="rounded-xl border border-dashed p-12 text-center">
           <p className="text-3xl mb-3">📋</p>
@@ -373,269 +325,20 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      {/* ─── Tabla (escritorio) ─────────────────────────────────────────── */}
-      {records.length > 0 && (
-        <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40">
-              <tr>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Tipo</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">Selección</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Estado</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa ganada</th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
-                  <a href={buildSortUrl('stake', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
-                    Stake<SortIcon col="stake" current={filterSort} />
-                  </a>
-                </th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
-                  <a href={buildSortUrl('profit', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
-                    P&L<SortIcon col="profit" current={filterSort} />
-                  </a>
-                </th>
-                <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">
-                  <a href={buildSortUrl('date', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
-                    Fecha<SortIcon col="date" current={filterSort} />
-                  </a>
-                </th>
-                <th className="px-4 py-3 text-xs uppercase tracking-wide"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {records.map((r) => {
-                const profit    = r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null
-                const profitCls = profit === null
-                  ? 'text-muted-foreground'
-                  : profit > 0 ? 'text-green-600 font-semibold' : profit < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'
-
-                const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
-                const legNames   = r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
-                const houseLabel = r.legs.length > 0
-                  ? legNames
-                  : r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—'
-
-                const sm      = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
-                const dateObj = new Date(r.datePlaced)
-                const dateFmt = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
-                const timeFmt = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
-
-                // Build bet info for settle modal
-                const betForSettle = {
-                  id:                 r.id,
-                  type:               r.type,
-                  totalStake:         parseFloat(r.totalStake.toString()),
-                  primaryBookmakerId: r.primaryBookmakerId,
-                  singleOdds:         r.singleBetDetail?.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null,
-                  legs:               r.legs.map((l): LegInfo => ({
-                    id:              l.id,
-                    bookmakerId:     l.bookmakerId,
-                    bookmakerName:   bmLabel(l.bookmaker),
-                    stake:           parseFloat(l.stake.toString()),
-                    odds:            parseFloat(l.odds.toString()),
-                    potentialReturn: parseFloat(l.potentialReturn.toString()),
-                  })),
-                }
-
-                const casaGanada = getCasaGanada(r)
-
-                return (
-                  <tr key={r.id} className="hover:bg-muted/20 transition-colors group">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        {r.isLive && (
-                          <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full leading-tight">
-                            LIVE
-                          </span>
-                        )}
-                        <span className="text-xs font-semibold">{BET_TYPE_LABEL[r.type] ?? r.type}</span>
-                      </div>
-                      {r.sport && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{SPORT_LABEL[r.sport] ?? r.sport}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell max-w-[180px]">
-                      <span className="text-xs text-muted-foreground truncate block">{selText}</span>
-                      {r.singleBetDetail?.odds && (
-                        <span className="text-xs font-mono text-muted-foreground">
-                          @{parseFloat(r.singleBetDetail.odds.toString()).toFixed(2)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <div className="flex items-center gap-1.5">
-                        {r.primaryBookmaker?.color && r.legs.length === 0 && (
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.primaryBookmaker.color }} />
-                        )}
-                        <span className="text-xs">{houseLabel}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5 ${sm.cls}`}>
-                        {sm.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      {casaGanada ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-2 py-0.5 rounded-full">
-                          🏆 {casaGanada}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-xs">
-                      {parseFloat(r.totalStake.toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs ${profitCls}`}>
-                      {profit === null
-                        ? <span className="text-muted-foreground">{parseFloat((r.potentialReturn ?? r.totalStake).toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
-                        : `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
-                      }
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs text-muted-foreground hidden sm:table-cell">
-                      <span className="block">{dateFmt}</span>
-                      <span className="block text-muted-foreground/60">{timeFmt}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        {r.status === 'PLACED' && (
-                          <SettleButton bet={betForSettle} />
-                        )}
-                        <DeleteButton betRecordId={r.id} />
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ─── Tarjetas (móvil) ───────────────────────────────────────────── */}
-      {records.length > 0 && (
-        <div className="block md:hidden space-y-3">
-          {records.map((r) => {
-            const profit    = r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null
-            const pnlCls    =
-              profit === null
-                ? 'text-muted-foreground'
-                : profit > 0
-                  ? 'text-green-600 font-bold'
-                  : profit < 0
-                    ? 'text-red-600 font-bold'
-                    : 'text-muted-foreground'
-            const selText      = r.title ?? r.singleBetDetail?.selection ?? '—'
-            const legNames     = r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
-            const casaGanadaMob = getCasaGanada(r)
-            const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—')
-            const sm         = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
-            const dateObj    = new Date(r.datePlaced)
-            const dateFmt    = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
-            const timeFmt    = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
-
-            const betForSettle = {
-              id:                 r.id,
-              type:               r.type,
-              totalStake:         parseFloat(r.totalStake.toString()),
-              primaryBookmakerId: r.primaryBookmakerId,
-              singleOdds:         r.singleBetDetail?.odds
-                ? parseFloat(r.singleBetDetail.odds.toString())
-                : null,
-              legs: r.legs.map((l): LegInfo => ({
-                id:              l.id,
-                bookmakerId:     l.bookmakerId,
-                bookmakerName:   bmLabel(l.bookmaker),
-                stake:           parseFloat(l.stake.toString()),
-                odds:            parseFloat(l.odds.toString()),
-                potentialReturn: parseFloat(l.potentialReturn.toString()),
-              })),
-            }
-
-            return (
-              <div key={r.id} className="rounded-xl border bg-card shadow-sm overflow-hidden">
-
-                {/* ── Cabecera: tipo · evento · estado badge ─────────── */}
-                <div className="flex items-start justify-between gap-3 px-4 py-3 border-b bg-muted/20 min-h-[44px]">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {r.isLive && (
-                      <span className="shrink-0 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full leading-tight">
-                        LIVE
-                      </span>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold leading-tight truncate">{selText}</p>
-                      <p className="text-xs text-muted-foreground">{BET_TYPE_LABEL[r.type] ?? r.type}</p>
-                    </div>
-                  </div>
-                  <span className={`shrink-0 inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-1 ${sm.cls}`}>
-                    {sm.label}
-                  </span>
-                </div>
-
-                {/* ── Cuerpo: casa · stake · cuota · P&L ────────────── */}
-                <div className="flex items-center justify-between gap-3 px-4 py-3 min-h-[44px]">
-                  <div className="min-w-0 space-y-0.5 flex-1">
-                    <p className="text-xs font-medium text-foreground truncate">{houseLabel}</p>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-                      <span className="font-mono">
-                        {parseFloat(r.totalStake.toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                      </span>
-                      {r.singleBetDetail?.odds && (
-                        <>
-                          <span>·</span>
-                          <span className="font-mono">
-                            @{parseFloat(r.singleBetDetail.odds.toString()).toFixed(2)}
-                          </span>
-                        </>
-                      )}
-                      {r.sport && (
-                        <>
-                          <span>·</span>
-                          <span>{SPORT_LABEL[r.sport] ?? r.sport}</span>
-                        </>
-                      )}
-                    </div>
-                    {casaGanadaMob && (
-                      <p className="text-[11px] font-medium text-green-700 dark:text-green-400">
-                        🏆 Casa ganada: {casaGanadaMob}
-                      </p>
-                    )}
-                    <p className="text-[11px] text-muted-foreground/70">{dateFmt} · {timeFmt}</p>
-                  </div>
-
-                  {/* P&L / retorno potencial */}
-                  <div className="shrink-0 text-right">
-                    <p className={`text-base tabular-nums ${pnlCls}`}>
-                      {profit === null
-                        ? parseFloat(
-                            (r.potentialReturn ?? r.totalStake).toString(),
-                          ).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
-                        : `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
-                      }
-                    </p>
-                    {profit === null && (
-                      <p className="text-[10px] text-muted-foreground">Potencial</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── Pie: acciones ─────────────────────────────────── */}
-                <div className="px-4 pb-3 border-t pt-2 bg-muted/10 flex items-center justify-between gap-2">
-                  <div>
-                    {r.status === 'PLACED' && (
-                      <SettleButton bet={betForSettle} />
-                    )}
-                  </div>
-                  <DeleteButton betRecordId={r.id} />
-                </div>
-
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <RecordsSection
+        records={serializedRecords}
+        bankrolls={bankrolls}
+        tz={tz}
+        filterSort={filterSort}
+        filterParams={{
+          ...(filterFrom   ? { dateFrom: filterFrom   } : {}),
+          ...(filterTo     ? { dateTo:   filterTo     } : {}),
+          ...(filterSport  ? { sport:    filterSport  } : {}),
+          ...(filterBm     ? { bm:       filterBm     } : {}),
+          ...(filterStatus ? { status:   filterStatus } : {}),
+          ...(filterLive   ? { live:     filterLive   } : {}),
+        }}
+      />
     </div>
   )
 }

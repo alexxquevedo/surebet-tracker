@@ -139,9 +139,9 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail, isAdmin }: P
           {/* Admin — solo visible para admins */}
           {isAdmin && (
             <Link
-              href="/settings?tab=admin"
+              href="/admin/users"
               className={`flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
-                pathname === '/settings' && typeof window !== 'undefined' && window.location.search.includes('tab=admin')
+                pathname.startsWith('/admin')
                   ? 'bg-primary/10 text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}

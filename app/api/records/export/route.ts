@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
 import ExcelJS from 'exceljs'
+import { sendCsvExportEmail } from '@/lib/services/email'
 
 const STATUS_LABEL: Record<string, string> = {
   PLACED:      'En juego',
@@ -280,6 +281,11 @@ export async function GET(request: NextRequest) {
 
   const buffer   = await workbook.xlsx.writeBuffer()
   const filename = buildFilename(username, filterFrom, filterTo)
+
+  // Enviar email con el archivo adjunto (fire-and-forget — no bloquea la descarga)
+  if (userData?.email) {
+    void sendCsvExportEmail(userData.email, userData.name, filename, buffer).catch(console.error)
+  }
 
   return new NextResponse(Buffer.from(buffer), {
     headers: {

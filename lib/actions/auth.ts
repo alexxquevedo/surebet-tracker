@@ -1,5 +1,6 @@
 'use server'
 import bcrypt from 'bcryptjs'
+import dns from 'dns/promises'
 import { AuthError } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { signIn } from '@/lib/auth/auth'
@@ -48,6 +49,21 @@ export async function registerAction(
     return { error: parsed.error.errors[0]?.message ?? 'Datos inválidos' }
   }
 
+  // Verificar que el dominio del email tiene servidores de correo (MX)
+  const emailDomain = parsed.data.email.split('@')[1]!
+  try {
+    const mxRecords = await dns.resolveMx(emailDomain)
+    if (!mxRecords || mxRecords.length === 0) {
+      return { error: 'El dominio del email no acepta correos. Comprueba que el email sea válido.' }
+    }
+  } catch (e: unknown) {
+    const code = (e as { code?: string }).code
+    if (code === 'ENOTFOUND' || code === 'ENODATA' || code === 'ENONAME' || code === 'ESERVFAIL') {
+      return { error: 'El dominio del email no existe. Usa un email válido.' }
+    }
+    // Timeout u otros errores transitorios: dejar pasar para evitar falsos positivos
+  }
+
   // DB operations — separate try-catch so errors don't escape as redirects
   try {
     const existing = await prisma.user.findUnique({
@@ -55,6 +71,12 @@ export async function registerAction(
       select: { id: true },
     })
     if (existing) return { error: 'Este email ya está registrado' }
+
+    const existingName = await prisma.user.findFirst({
+      where: { name: { equals: parsed.data.name, mode: 'insensitive' } },
+      select: { id: true },
+    })
+    if (existingName) return { error: 'Este nombre de usuario ya está en uso, elige otro' }
 
     const passwordHash = await bcrypt.hash(parsed.data.password, 12)
     await prisma.user.create({
