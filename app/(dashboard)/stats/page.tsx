@@ -84,38 +84,22 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
   return (
     <div className="space-y-6">
 
-      {/* ── KPI Row (6 tarjetas) ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
+      {/* ── KPI Row (6 tarjetas · 2 filas de 3) ─────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        {/* Fila 1 */}
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ops. liquidadas</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{stats.totalSettled}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">de {stats.totalAll} registradas</p>
         </div>
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Win Rate</p>
           <p className={`text-2xl font-bold mt-2 tabular-nums ${stats.winRate >= 50 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
             {stats.winRate.toFixed(1)}%
           </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">excluye anuladas</p>
         </div>
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stake promedio</p>
-          <p className="text-2xl font-bold mt-2 tabular-nums">
-            {stats.avgStake.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
-          </p>
-        </div>
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">P&L total</p>
-          <p className={`text-2xl font-bold mt-2 tabular-nums ${profitCls(stats.totalProfit)}`}>
-            {fmtProfit(stats.totalProfit)}
-          </p>
-        </div>
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ROI</p>
-          <p className={`text-2xl font-bold mt-2 tabular-nums ${profitCls(stats.totalRoi)}`}>
-            {stats.totalRoi > 0 ? '+' : ''}{stats.totalRoi.toFixed(2)}%
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">sobre stake liquidado</p>
-        </div>
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Racha actual</p>
           {streak ? (
             <>
@@ -129,6 +113,34 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
           ) : (
             <p className="text-2xl font-bold mt-2 text-muted-foreground">—</p>
           )}
+        </div>
+        {/* Fila 2 */}
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">P&L total</p>
+          <p
+            className={`text-xl font-bold mt-2 tabular-nums truncate ${profitCls(stats.totalProfit)}`}
+            title={fmtProfit(stats.totalProfit)}
+          >
+            {fmtProfit(stats.totalProfit)}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">beneficio neto</p>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ROI</p>
+          <p className={`text-xl font-bold mt-2 tabular-nums ${profitCls(stats.totalRoi)}`}>
+            {stats.totalRoi > 0 ? '+' : ''}{stats.totalRoi.toFixed(2)}%
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">sobre stake liquidado</p>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stake promedio</p>
+          <p
+            className="text-xl font-bold mt-2 tabular-nums truncate"
+            title={stats.avgStake.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+          >
+            {stats.avgStake.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">por operación</p>
         </div>
       </div>
 
@@ -215,7 +227,10 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
           {stats.bestWin && (
             <div className="rounded-xl border bg-card p-5 shadow-sm space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">🏆 Mejor operación</p>
-              <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">
+              <p
+                className="text-xl font-bold tabular-nums text-green-600 dark:text-green-400 truncate"
+                title={fmtProfit(stats.bestWin.profit)}
+              >
                 {fmtProfit(stats.bestWin.profit)}
               </p>
               <p className="text-xs text-muted-foreground truncate" title={stats.bestWin.title}>
@@ -226,7 +241,10 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
           {stats.worstLoss && (
             <div className="rounded-xl border bg-card p-5 shadow-sm space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">📉 Peor operación</p>
-              <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
+              <p
+                className="text-xl font-bold tabular-nums text-red-600 dark:text-red-400 truncate"
+                title={fmtProfit(stats.worstLoss.profit)}
+              >
                 {fmtProfit(stats.worstLoss.profit)}
               </p>
               <p className="text-xs text-muted-foreground truncate" title={stats.worstLoss.title}>
