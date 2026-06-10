@@ -383,7 +383,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">Selección</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Estado</th>
-                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden xl:table-cell">Casa ganada</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa ganada</th>
                 <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
                   <a href={buildSortUrl('stake', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
                     Stake<SortIcon col="stake" current={filterSort} />
@@ -475,7 +475,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                         {sm.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 hidden xl:table-cell">
+                    <td className="px-4 py-3 hidden lg:table-cell">
                       {casaGanada ? (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-2 py-0.5 rounded-full">
                           🏆 {casaGanada}

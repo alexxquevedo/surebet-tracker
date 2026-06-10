@@ -153,11 +153,28 @@ export async function POST(request: NextRequest) {
   const sport      = toSportType(apuesta.sport)
   const isApprox   = apuesta.aproximado === true || apuesta.fuente === 'auto'
 
-  // ── Buscar bankroll FidesBot del usuario (creado al vincular Telegram) ────
-  const fidesBot = await prisma.bankroll.findFirst({
+  // ── Buscar (o crear) bankroll FidesBot del usuario ───────────────────────
+  // Normalmente se crea al vincular Telegram (/api/bot/connect), pero si el
+  // usuario ya estaba vinculado antes de que se añadiera esta feature, lo
+  // creamos aquí la primera vez que registre una apuesta.
+  let fidesBot = await prisma.bankroll.findFirst({
     where:  { userId, isBot: true },
     select: { id: true },
   })
+  if (!fidesBot) {
+    fidesBot = await prisma.bankroll.create({
+      data: {
+        userId,
+        name:        'FidesBot',
+        description: 'Apuestas registradas desde el bot de Telegram',
+        color:       '#2563eb',
+        isBot:       true,
+        isDefault:   false,
+        isActive:    true,
+      },
+      select: { id: true },
+    })
+  }
 
   // Pre-calcular todas las cifras de las piernas (evita indexado T|undefined)
   const legCalcs: LegCalc[] = apuesta.legs.map((l) => {

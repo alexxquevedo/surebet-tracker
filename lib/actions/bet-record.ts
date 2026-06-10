@@ -384,6 +384,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
     let returnBookmakerId: string | null   = null
     let returnAmount: Decimal | null       = null
     let txType: string | null             = null
+    let winningLegIdToSave: string | null = null  // for ARB / MIDDLE (non-BOTH)
 
     if (outcome === 'VOID') {
       // Anulada — devuelve el stake
@@ -420,20 +421,22 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         // Update both bookmakers
         txType            = null // handled separately below
       } else if (winningLeg === '1') {
-        grossProfit       = ret1.minus(totalStake).toDecimalPlaces(2)
-        totalReturn       = ret1
-        finalStatus       = grossProfit.gte(0) ? 'WON' : 'LOST'
-        returnBookmakerId = leg1.bookmakerId
-        returnAmount      = ret1
-        txType            = 'BET_RETURN'
+        grossProfit          = ret1.minus(totalStake).toDecimalPlaces(2)
+        totalReturn          = ret1
+        finalStatus          = grossProfit.gte(0) ? 'WON' : 'LOST'
+        returnBookmakerId    = leg1.bookmakerId
+        returnAmount         = ret1
+        txType               = 'BET_RETURN'
+        winningLegIdToSave   = leg1.id
       } else {
         // winningLeg === '2'
-        grossProfit       = ret2.minus(totalStake).toDecimalPlaces(2)
-        totalReturn       = ret2
-        finalStatus       = grossProfit.gte(0) ? 'WON' : 'LOST'
-        returnBookmakerId = leg2.bookmakerId
-        returnAmount      = ret2
-        txType            = 'BET_RETURN'
+        grossProfit          = ret2.minus(totalStake).toDecimalPlaces(2)
+        totalReturn          = ret2
+        finalStatus          = grossProfit.gte(0) ? 'WON' : 'LOST'
+        returnBookmakerId    = leg2.bookmakerId
+        returnAmount         = ret2
+        txType               = 'BET_RETURN'
+        winningLegIdToSave   = leg2.id
       }
 
       // Special: middle BOTH — handle in transaction
@@ -499,6 +502,13 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
           totalReturn,
           roi: totalStake.isZero() ? D(0) : grossProfit.div(totalStake).mul(100).toDecimalPlaces(4),
           dateSettled: now,
+          // Persist winning leg so "Casa ganada" column can be populated
+          ...(betType === 'ARBITRAGE' && winningLegIdToSave
+            ? { arbitrageDetail: { update: { winningLegId: winningLegIdToSave } } }
+            : {}),
+          ...(betType === 'MIDDLE' && winningLegIdToSave
+            ? { middleDetail: { update: { winningLegId: winningLegIdToSave } } }
+            : {}),
         },
       })
 
@@ -563,15 +573,127 @@ export async function deleteOperationAction(
   if (!userId) return { success: false, error: 'No autenticado' }
 
   try {
-    const record = await prisma.betRecord.findFirst({
+    const bet = await prisma.betRecord.findFirst({
       where:  { id: betRecordId, userId, deletedAt: null },
-      select: { id: true },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        totalStake: true,
+        grossProfit: true,
+        totalReturn: true,
+        primaryBookmakerId: true,
+        legs: {
+          where: { deletedAt: null },
+          select: { id: true, bookmakerId: true, stake: true, potentialReturn: true },
+        },
+        arbitrageDetail: { select: { winningLegId: true } },
+        middleDetail:    { select: { winningLegId: true, middleHit: true } },
+      },
     })
-    if (!record) return { success: false, error: 'Operación no encontrada' }
+    if (!bet) return { success: false, error: 'Operación no encontrada' }
 
-    await prisma.betRecord.update({
-      where: { id: betRecordId },
-      data:  { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      // ── 1. Soft delete ──────────────────────────────────────────────────────
+      await tx.betRecord.update({
+        where: { id: betRecordId },
+        data:  { deletedAt: new Date() },
+      })
+
+      // ── 2. Reverse placement — restore stake + undo totalStaked ────────────
+      if (bet.legs.length > 0) {
+        for (const leg of bet.legs) {
+          await tx.bookmaker.update({
+            where: { id: leg.bookmakerId },
+            data: {
+              currentBalance: { increment: D(leg.stake).toNumber() },
+              totalStaked:    { decrement: D(leg.stake).toNumber() },
+            },
+          })
+        }
+      } else if (bet.primaryBookmakerId) {
+        // Single / Casino / Combo / Custom — no explicit legs
+        await tx.bookmaker.update({
+          where: { id: bet.primaryBookmakerId },
+          data: {
+            currentBalance: { increment: D(bet.totalStake).toNumber() },
+            totalStaked:    { decrement: D(bet.totalStake).toNumber() },
+          },
+        })
+      }
+
+      // ── 3. Reverse settlement — undo return credits and profit stats ────────
+      if (bet.status === 'PLACED' || bet.grossProfit === null) return
+
+      const grossProfit = D(bet.grossProfit)
+
+      // Primary source: check bookmakerTransaction ledger for return records
+      // (created by settleBetAction for all non-LOST outcomes)
+      const returnTxs = await tx.bookmakerTransaction.findMany({
+        where: {
+          referenceId: betRecordId,
+          type: { in: ['BET_RETURN', 'BET_VOID_RETURN', 'CASHOUT'] },
+        },
+        select: { bookmakerId: true, amount: true },
+      })
+
+      if (returnTxs.length === 1) {
+        // Single return: ARB, MIDDLE one winner, SINGLE WON, VOID, CASHOUT
+        const rtx    = returnTxs[0]!
+        const retAmt = D(rtx.amount)
+        await tx.bookmaker.update({
+          where: { id: rtx.bookmakerId },
+          data: {
+            currentBalance: { decrement: retAmt.toNumber() },
+            totalProfit:    { decrement: grossProfit.toNumber() },
+            totalReturn:    { decrement: retAmt.toNumber() },
+          },
+        })
+      } else if (returnTxs.length > 1) {
+        // Multiple returns: MIDDLE both legs hit
+        for (const rtx of returnTxs) {
+          const retAmt = D(rtx.amount)
+          const leg    = bet.legs.find(l => l.bookmakerId === rtx.bookmakerId)
+          // For per-leg middle hit, profit = return - own stake (not total bet profit)
+          const legPnl = leg ? retAmt.minus(D(leg.stake)) : grossProfit
+          await tx.bookmaker.update({
+            where: { id: rtx.bookmakerId },
+            data: {
+              currentBalance: { decrement: retAmt.toNumber() },
+              totalProfit:    { decrement: legPnl.toNumber() },
+              totalReturn:    { decrement: retAmt.toNumber() },
+            },
+          })
+        }
+      } else {
+        // No ledger entries — fallback (LOST single/casino/combo, or old bets pre-ledger)
+        const totalRet = D(bet.totalReturn ?? 0)
+        const winningLegId =
+          bet.type === 'ARBITRAGE' ? bet.arbitrageDetail?.winningLegId :
+          bet.type === 'MIDDLE'    ? bet.middleDetail?.winningLegId    : null
+        const returnBmId =
+          (winningLegId ? bet.legs.find(l => l.id === winningLegId)?.bookmakerId : null) ??
+          bet.primaryBookmakerId
+
+        if (returnBmId) {
+          if (totalRet.gt(0)) {
+            await tx.bookmaker.update({
+              where: { id: returnBmId },
+              data: {
+                currentBalance: { decrement: totalRet.toNumber() },
+                totalProfit:    { decrement: grossProfit.toNumber() },
+                totalReturn:    { decrement: totalRet.toNumber() },
+              },
+            })
+          } else {
+            // Pure LOST (no return at all) — only totalProfit was affected
+            await tx.bookmaker.update({
+              where: { id: returnBmId },
+              data: { totalProfit: { decrement: grossProfit.toNumber() } },
+            })
+          }
+        }
+      }
     })
 
     return { success: true }
