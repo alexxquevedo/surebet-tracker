@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db/client'
 import { getDashboardMetrics, getRecentBetRecords, getProfitTimeSeries } from '@/lib/queries/dashboard'
 import { ProfitLineChart } from './_components/profit-line-chart'
 import { StrategyChart } from './_components/strategy-chart'
+import { SetupProgress } from './_components/setup-progress'
 import { formatCurrency, formatPercentage, formatDate } from '@/lib/utils/format'
 import type {
   BankrollMetrics,
@@ -86,7 +87,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const params     = await searchParams
   const bankrollId = typeof params['bankroll'] === 'string' ? params['bankroll'] : undefined
 
-  const [metrics, recentRecords, profitSeries, bankrolls] = await Promise.all([
+  const [metrics, recentRecords, profitSeries, bankrolls, setupData] = await Promise.all([
     getDashboardMetrics(userId, bankrollId),
     getRecentBetRecords(userId, 5),
     getProfitTimeSeries(userId),
@@ -95,7 +96,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       select:  { id: true, name: true, color: true },
       orderBy: { name: 'asc' },
     }),
+    prisma.user.findUnique({
+      where:  { id: userId },
+      select: {
+        telegramId: true,
+        bookmakers: {
+          where:   { deletedAt: null, status: 'ACTIVE' },
+          select:  { initialCapital: true },
+          take:    50,
+        },
+      },
+    }),
   ])
+
+  const setupStep1 = (setupData?.bookmakers.length ?? 0) > 0
+  const setupStep2 = setupStep1 && (setupData?.bookmakers.every((b) => b.initialCapital !== null) ?? false)
+  const setupStep3 = !!setupData?.telegramId
 
   const { bankroll, byType, byBookmaker, advanced } = metrics
   const hasSettled = advanced.settledOperations > 0
@@ -117,6 +133,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <p>{advanced.settledOperations} liquidadas · {advanced.placedOperations} en juego</p>
         </div>
       </div>
+
+      {/* ── Setup progress ──────────────────────────────────────────────── */}
+      <SetupProgress step1Done={setupStep1} step2Done={setupStep2} step3Done={setupStep3} />
 
       {/* ── Bankroll filter tabs ────────────────────────────────────────── */}
       {bankrolls.length > 0 && (
