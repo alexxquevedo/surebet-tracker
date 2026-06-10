@@ -3,8 +3,8 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
-import { getDashboardMetrics, getRecentBetRecords, getProfitTimeSeries } from '@/lib/queries/dashboard'
-import { ProfitLineChart } from './_components/profit-line-chart'
+import { getDashboardMetrics, getRecentBetRecords, getBankrollEvolution } from '@/lib/queries/dashboard'
+import { BankrollEvolutionChart } from '@/app/(dashboard)/stats/_components/bankroll-evolution-chart'
 import { StrategyChart } from './_components/strategy-chart'
 import { SetupProgress } from './_components/setup-progress'
 import { formatCurrency, formatPercentage, formatDate } from '@/lib/utils/format'
@@ -87,10 +87,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const params     = await searchParams
   const bankrollId = typeof params['bankroll'] === 'string' ? params['bankroll'] : undefined
 
-  const [metrics, recentRecords, profitSeries, bankrolls, setupData] = await Promise.all([
+  const [metrics, recentRecords, evolution, bankrolls, setupData] = await Promise.all([
     getDashboardMetrics(userId, bankrollId),
     getRecentBetRecords(userId, 5),
-    getProfitTimeSeries(userId),
+    getBankrollEvolution(userId, 90),
     prisma.bankroll.findMany({
       where:   { userId, isActive: true },
       select:  { id: true, name: true, color: true },
@@ -177,15 +177,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       <section>
         <SectionHeading>Bankroll Global</SectionHeading>
         <BankrollSection bankroll={bankroll} />
-        {/* P&L line chart */}
+        {/* Bankroll evolution chart (DailySnapshot) */}
         <div className="mt-4 rounded-lg border bg-card p-5">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
-            Evolución del P&L Acumulado
+            Evolución del Bankroll
           </p>
           <p className="text-xs text-muted-foreground mb-3">
-            Últimas 60 días · solo operaciones liquidadas
+            Saldo total a cierre de día · últimos 90 días
           </p>
-          <ProfitLineChart data={profitSeries} />
+          <BankrollEvolutionChart
+            data={evolution.points}
+            initialCapital={evolution.initialCapital}
+          />
         </div>
       </section>
 
