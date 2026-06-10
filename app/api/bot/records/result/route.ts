@@ -32,12 +32,13 @@ export async function POST(request: NextRequest) {
   }
 
   let body: {
-    telegram_id?:    unknown
-    apuesta_id?:     string
-    resultado?:      string
-    ganancia_real?:  number
-    cashout_amount?: number   // importe total recibido en el cashout
-    legs_resultado?: Array<{ leg: number; estado: string }>
+    telegram_id?:     unknown
+    apuesta_id?:      string
+    resultado?:       string
+    ganancia_real?:   number
+    cashout_amount?:  number   // importe total (fallback)
+    per_leg_cashout?: Array<{ leg: number; amount: number }>  // cashout por pierna
+    legs_resultado?:  Array<{ leg: number; estado: string }>
   }
   try {
     body = await request.json()
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { telegram_id, apuesta_id, resultado, ganancia_real, cashout_amount, legs_resultado } = body
+  const { telegram_id, apuesta_id, resultado, ganancia_real, cashout_amount, per_leg_cashout, legs_resultado } = body
 
   if (!telegram_id || !apuesta_id || !resultado) {
     return NextResponse.json(
@@ -113,8 +114,12 @@ export async function POST(request: NextRequest) {
 
   const totalStake = D(betRecord.totalStake)
 
-  if (newStatus === 'CASHOUT' && cashout_amount !== undefined && cashout_amount !== null) {
-    // Cashout: el bot envía el importe total recibido
+  if (newStatus === 'CASHOUT' && per_leg_cashout !== undefined && per_leg_cashout.length > 0) {
+    // Cashout per-pierna: sumar todos los importes
+    totalReturn = per_leg_cashout.reduce((a, plc) => a.plus(D(plc.amount)), D(0)).toDecimalPlaces(2)
+    grossProfit = totalReturn.minus(totalStake).toDecimalPlaces(2)
+  } else if (newStatus === 'CASHOUT' && cashout_amount !== undefined && cashout_amount !== null) {
+    // Cashout total (fallback para clientes legacy)
     totalReturn = D(cashout_amount).toDecimalPlaces(2)
     grossProfit = totalReturn.minus(totalStake).toDecimalPlaces(2)
   } else if (ganancia_real !== undefined && ganancia_real !== null) {
@@ -163,6 +168,28 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // ── Guardar pierna ganadora en el detalle del tipo ───
+      if (betRecord.type === 'ARBITRAGE') {
+        const winnerIdx = betRecord.legs.findIndex((_, i) => (legStatusMap.get(i) ?? newStatus) === 'WON')
+        const winningLegId = winnerIdx >= 0 ? (betRecord.legs[winnerIdx]?.id ?? null) : null
+        if (winningLegId) {
+          await tx.arbitrageDetail.updateMany({
+            where: { betRecordId: betRecord.id },
+            data:  { winningLegId },
+          })
+        }
+      } else if (betRecord.type === 'MIDDLE') {
+        const wonLegs   = betRecord.legs.filter((_, i) => (legStatusMap.get(i) ?? newStatus) === 'WON')
+        const middleHit = wonLegs.length === betRecord.legs.length && betRecord.legs.length >= 2
+        await tx.middleDetail.updateMany({
+          where: { betRecordId: betRecord.id },
+          data:  {
+            middleHit,
+            winningLegId: middleHit ? null : (wonLegs[0]?.id ?? null),
+          },
+        })
+      }
+
       // ── Actualizar piernas y bookmakers ──────────────────
       for (let i = 0; i < betRecord.legs.length; i++) {
         const leg       = betRecord.legs[i]
@@ -180,9 +207,16 @@ export async function POST(request: NextRequest) {
           legReturn = D(leg.potentialReturn).toDecimalPlaces(2)
         } else if (legStatus === 'VOID') {
           legReturn = D(leg.stake).toDecimalPlaces(2) // stake devuelto
-        } else if (newStatus === 'CASHOUT' && totalReturn.gt(0) && !totalStake.isZero()) {
-          // Cashout: distribuir el importe recibido proporcionalmente al stake de cada pierna
-          legReturn = totalReturn.mul(D(leg.stake).div(totalStake)).toDecimalPlaces(2)
+        } else if (newStatus === 'CASHOUT') {
+          // Cashout: usar importe por pierna si se envió, si no distribuir proporcional
+          const plcEntry = per_leg_cashout?.find(plc => plc.leg === i)
+          if (plcEntry !== undefined) {
+            legReturn = D(plcEntry.amount).toDecimalPlaces(2)
+          } else if (totalReturn.gt(0) && !totalStake.isZero()) {
+            legReturn = totalReturn.mul(D(leg.stake).div(totalStake)).toDecimalPlaces(2)
+          } else {
+            legReturn = D(0)
+          }
         } else {
           legReturn = D(0)
         }

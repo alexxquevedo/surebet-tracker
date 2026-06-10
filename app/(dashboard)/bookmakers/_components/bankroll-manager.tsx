@@ -7,13 +7,15 @@ import { createBankrollAction, updateBankrollAction, deleteBankrollAction } from
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface BankrollData {
-  id:             string
-  name:           string
-  description:    string | null
-  color:          string
-  _count:         { bookmakers: number }
-  totalBalance:   number
-  totalProfit:    number
+  id:          string
+  name:        string
+  description: string | null
+  color:       string
+  _count:      { bookmakers: number }
+  totalStaked: number
+  totalProfit: number
+  totalBets:   number
+  activeBets:  number
 }
 
 interface Props {
@@ -95,21 +97,24 @@ export function BankrollManager({ bankrolls }: Props) {
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-2 pt-1 border-t">
                   <div>
-                    <p className="text-xs text-muted-foreground">Saldo total</p>
-                    <p className="text-sm font-bold tabular-nums mt-0.5">{fmt(br.totalBalance)}</p>
-                  </div>
-                  <div>
                     <p className="text-xs text-muted-foreground">P&L</p>
                     <p className={`text-sm font-bold tabular-nums mt-0.5 ${profitCls}`}>
                       {br.totalProfit >= 0 ? '+' : ''}{fmt(br.totalProfit)}
                     </p>
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Stakeado</p>
+                    <p className="text-sm font-bold tabular-nums mt-0.5">{fmt(br.totalStaked)}</p>
+                  </div>
                 </div>
 
-                {/* Bookmaker count */}
-                <p className="text-xs text-muted-foreground">
-                  {br._count.bookmakers} {br._count.bookmakers === 1 ? 'casa' : 'casas'} vinculadas
-                </p>
+                {/* Ops */}
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{br.totalBets} ops · {br.activeBets} en juego</span>
+                  {br._count.bookmakers > 0 && (
+                    <span>{br._count.bookmakers} {br._count.bookmakers === 1 ? 'casa' : 'casas'}</span>
+                  )}
+                </div>
               </div>
             )
           })}

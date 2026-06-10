@@ -21,7 +21,7 @@ export default async function BookmakersPage() {
   const userId  = session?.user?.id
   if (!userId) redirect('/login')
 
-  const [bookmakers, bankrolls] = await Promise.all([
+  const [bookmakers, bankrolls, betStatsByBankroll, activeBetsByBankroll] = await Promise.all([
     prisma.bookmaker.findMany({
       where:   { userId },
       orderBy: [{ status: 'asc' }, { name: 'asc' }],
@@ -38,8 +38,20 @@ export default async function BookmakersPage() {
       select: {
         id: true, name: true, description: true, color: true,
         _count: { select: { bookmakers: true } },
-        bookmakers: { select: { currentBalance: true, totalProfit: true } },
       },
+    }),
+    // P&L y stake por bankroll calculados desde BetRecords
+    prisma.betRecord.groupBy({
+      by:    ['bankrollId'],
+      where: { userId, bankrollId: { not: null }, deletedAt: null },
+      _sum:   { totalStake: true, grossProfit: true },
+      _count: { _all: true },
+    }),
+    // Apuestas en juego por bankroll
+    prisma.betRecord.groupBy({
+      by:    ['bankrollId'],
+      where: { userId, bankrollId: { not: null }, deletedAt: null, status: 'PLACED' },
+      _count: { _all: true },
     }),
   ])
 
@@ -51,16 +63,22 @@ export default async function BookmakersPage() {
   const activeCount   = bookmakers.filter((b) => b.status === 'ACTIVE').length
   const FREE_BM_LIMIT = 3
 
-  // Enrich bankrolls with computed balances
-  const bankrollsForManager = bankrolls.map((br) => ({
-    id:           br.id,
-    name:         br.name,
-    description:  br.description,
-    color:        br.color,
-    _count:       br._count,
-    totalBalance: br.bookmakers.reduce((s, bm) => s + parseFloat(bm.currentBalance.toString()), 0),
-    totalProfit:  br.bookmakers.reduce((s, bm) => s + parseFloat(bm.totalProfit.toString()),    0),
-  }))
+  // Enrich bankrolls with bet-based metrics
+  const bankrollsForManager = bankrolls.map((br) => {
+    const stats  = betStatsByBankroll.find((s) => s.bankrollId === br.id)
+    const active = activeBetsByBankroll.find((s) => s.bankrollId === br.id)
+    return {
+      id:          br.id,
+      name:        br.name,
+      description: br.description,
+      color:       br.color,
+      _count:      br._count,
+      totalStaked: parseFloat((stats?._sum.totalStake?.toString()   ?? '0')),
+      totalProfit: parseFloat((stats?._sum.grossProfit?.toString()  ?? '0')),
+      totalBets:   stats?._count._all  ?? 0,
+      activeBets:  active?._count._all ?? 0,
+    }
+  })
 
   const bankrollOptions = bankrolls.map((br) => ({ id: br.id, name: br.name, color: br.color }))
 
