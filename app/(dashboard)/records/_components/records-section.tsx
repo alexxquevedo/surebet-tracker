@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { SettleButton, type LegInfo } from './settle-button'
 import { DeleteButton } from './delete-button'
+import { EditButton } from './edit-button'
 import { moveBetsToBankrollAction } from '@/lib/actions/bet-record'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,6 +24,9 @@ export interface SerializedRecord {
   status: string
   sport: string | null
   isLive: boolean
+  notes: string | null
+  competition: string | null
+  eventName: string | null
   totalStake: number
   grossProfit: number | null
   potentialReturn: number | null
@@ -37,6 +41,7 @@ export interface SerializedRecord {
   legs: SerializedLeg[]
   bankrollId: string | null
   bankroll: { id: string; name: string; color: string | null } | null
+  isApproximate: boolean
 }
 
 export interface BankrollOption {
@@ -289,9 +294,16 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5 ${sm.cls}`}>
-                        {sm.label}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5 ${sm.cls}`}>
+                          {sm.label}
+                        </span>
+                        {r.isApproximate && (
+                          <span className="inline-flex items-center text-[10px] font-medium rounded-full px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 w-fit">
+                            ⚠️ Aprox.
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       {casaGanada ? (
@@ -320,6 +332,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                         {r.status === 'PLACED' && (
                           <SettleButton bet={betForSettle} />
                         )}
+                        <EditButton record={r} />
                         <DeleteButton betRecordId={r.id} />
                       </div>
                     </td>
@@ -398,9 +411,16 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       <p className="text-xs text-muted-foreground">{BET_TYPE_LABEL[r.type] ?? r.type}</p>
                     </div>
                   </div>
-                  <span className={`shrink-0 inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-1 ${sm.cls}`}>
-                    {sm.label}
-                  </span>
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-1 ${sm.cls}`}>
+                      {sm.label}
+                    </span>
+                    {r.isApproximate && (
+                      <span className="inline-flex items-center text-[10px] font-medium rounded-full px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200">
+                        ⚠️ Aprox.
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Cuerpo: casa · stake · cuota · P&L */}
@@ -451,7 +471,10 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       <SettleButton bet={betForSettle} />
                     )}
                   </div>
-                  <DeleteButton betRecordId={r.id} />
+                  <div className="flex items-center gap-1">
+                    <EditButton record={r} />
+                    <DeleteButton betRecordId={r.id} />
+                  </div>
                 </div>
               </div>
             )

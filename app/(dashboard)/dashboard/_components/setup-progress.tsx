@@ -7,31 +7,21 @@ interface Props {
 }
 
 export function SetupProgress({ step1Done, step2Done, step3Done }: Props) {
-  if (step1Done && step2Done && step3Done) return null
+  // Banner disappears once core steps are done (step 3 is optional)
+  if (step1Done && step2Done) return null
 
   const steps = [
     {
       label: 'Añade una casa de apuestas',
       done:  step1Done,
-      href:  '/bookmakers',
-      cta:   'Ir a Casas →',
     },
     {
       label: 'Registra el capital inicial',
       done:  step2Done,
-      href:  '/bookmakers',
-      cta:   'Registrar capital →',
-    },
-    {
-      label: 'Vincula FidesBot (Telegram)',
-      done:  step3Done,
-      href:  '/settings?tab=integraciones',
-      cta:   'Vincular →',
     },
   ]
 
-  const doneCount  = steps.filter((s) => s.done).length
-  const firstPending = steps.find((s) => !s.done)
+  const doneCount = steps.filter((s) => s.done).length
 
   return (
     <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 space-y-4">
@@ -40,7 +30,7 @@ export function SetupProgress({ step1Done, step2Done, step3Done }: Props) {
         <div>
           <p className="text-sm font-semibold">Completa la configuración</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {doneCount}/3 pasos · Tu cuenta necesita estos pasos para funcionar correctamente
+            {doneCount}/2 pasos · Tu cuenta necesita estos pasos para funcionar correctamente
           </p>
         </div>
         <Link

@@ -69,7 +69,16 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     } : {}),
   }
 
-  const [users, totalUsers, proCount, freeCount, tgCount] = await Promise.all([
+  const now        = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const weekAgo    = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const in7Days    = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  const [
+    users, totalUsers, proCount, freeCount, tgCount,
+    everPaidCount, activePro, activeProTracker,
+    newThisMonth, activeThisWeek, expiringIn7, churnedCount,
+  ] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -86,7 +95,19 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     prisma.user.count({ where: { plan: { not: 'FREE' } } }),
     prisma.user.count({ where: { plan: 'FREE' } }),
     prisma.user.count({ where: { telegramId: { not: null } } }),
+    prisma.user.count({ where: { hasEverPaid: true } }),
+    prisma.user.count({ where: { plan: 'PRO',         OR: [{ planExpiresAt: null }, { planExpiresAt: { gte: now } }] } }),
+    prisma.user.count({ where: { plan: 'PRO_TRACKER', OR: [{ planExpiresAt: null }, { planExpiresAt: { gte: now } }] } }),
+    prisma.user.count({ where: { createdAt:    { gte: monthStart } } }),
+    prisma.user.count({ where: { lastLoginAt:  { gte: weekAgo    } } }),
+    prisma.user.count({ where: { planExpiresAt:{ gte: now, lte: in7Days } } }),
+    prisma.user.count({ where: { hasEverPaid: true, plan: 'FREE' } }),
   ])
+
+  const mrrCents      = activePro * 999 + activeProTracker * 4999
+  const mrrStr        = (mrrCents / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const conversionPct = totalUsers > 0 ? ((everPaidCount / totalUsers) * 100).toFixed(1) : '0.0'
+  const monthName     = monthStart.toLocaleString('es-ES', { month: 'long' })
 
   // Build CSV export URL with current filters
   const csvParams = new URLSearchParams()
@@ -117,19 +138,43 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         </a>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total usuarios', value: totalUsers },
-          { label: 'Planes activos', value: proCount   },
-          { label: 'Plan Free',      value: freeCount  },
-          { label: 'Con Telegram',   value: tgCount    },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl border bg-card px-4 py-3 shadow-sm">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-2xl font-bold text-foreground leading-tight mt-0.5">{value}</p>
-          </div>
-        ))}
+      {/* Business metrics */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Métricas de negocio</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          {[
+            { label: 'MRR estimado',     value: `€${mrrStr}`,        sub: 'PRO 9,99 · PRO+T 49,99' },
+            { label: 'Conversión F→P',   value: `${conversionPct}%`, sub: `${everPaidCount} han pagado alguna vez` },
+            { label: 'Nuevos este mes',  value: newThisMonth,         sub: monthName },
+            { label: 'Activos 7 días',   value: activeThisWeek,       sub: 'Con inicio de sesión' },
+            { label: 'Churn',            value: churnedCount,         sub: 'Pagaron, ahora Free' },
+            { label: 'Expiran en 7d',    value: expiringIn7,          sub: 'Requieren renovación' },
+          ].map(({ label, value, sub }) => (
+            <div key={label} className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-2xl font-bold text-foreground leading-tight mt-0.5">{value}</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1">{sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* User base */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Base de usuarios</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total usuarios', value: totalUsers },
+            { label: 'Planes activos', value: proCount   },
+            { label: 'Plan Free',      value: freeCount  },
+            { label: 'Con Telegram',   value: tgCount    },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-2xl font-bold text-foreground leading-tight mt-0.5">{value}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Filters */}

@@ -30,8 +30,8 @@ export default async function OnboardingPage() {
   const step2Done  = step1Done && bookmakers.every((b) => b.initialCapital !== null)
   const step3Done  = !!user.telegramId
 
-  // All done → go straight to dashboard
-  if (step1Done && step2Done && step3Done) redirect('/dashboard')
+  // Core steps done → go straight to dashboard (step 3 is optional)
+  if (step1Done && step2Done) redirect('/dashboard')
 
   return (
     <OnboardingWizard

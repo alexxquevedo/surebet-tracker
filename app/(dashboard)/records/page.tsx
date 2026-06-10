@@ -111,6 +111,10 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         status: true,
         sport: true,
         isLive: true,
+        notes: true,
+        competition: true,
+        eventName: true,
+        isApproximate: true,
         totalStake: true,
         grossProfit: true,
         potentialReturn: true,
@@ -168,6 +172,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     status:             r.status,
     sport:              r.sport,
     isLive:             r.isLive,
+    notes:              r.notes,
+    competition:        r.competition,
+    eventName:          r.eventName,
     totalStake:         parseFloat(r.totalStake.toString()),
     grossProfit:        r.grossProfit !== null ? parseFloat(r.grossProfit.toString()) : null,
     potentialReturn:    r.potentialReturn !== null ? parseFloat(r.potentialReturn.toString()) : null,
@@ -191,6 +198,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     })),
     bankrollId:         r.bankrollId,
     bankroll:           r.bankroll ?? null,
+    isApproximate:      r.isApproximate,
   }))
 
   const totalPlaced = records.filter((r) => r.status === 'PLACED').length

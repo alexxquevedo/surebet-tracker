@@ -941,3 +941,104 @@ export async function deleteOperationAction(
     return { success: false, error: err instanceof Error ? err.message : 'Error al eliminar la operación' }
   }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// updateBetMetadataAction — edita metadatos y cuotas (sin tocar el ledger)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type UpdateMetadataResult = { success: true } | { success: false; error: string }
+
+export async function updateBetMetadataAction(
+  betId: string,
+  data: {
+    title?:       string | null
+    notes?:       string | null
+    competition?: string | null
+    eventName?:   string | null
+    sport?:       string | null
+    isLive?:      boolean
+    datePlaced?:  string
+    // Odds (solo para PLACED — no modifica balances, solo potentialReturn)
+    legUpdates?:  Array<{ id: string; odds: number }>
+    singleOdds?:  number | null
+  },
+): Promise<UpdateMetadataResult> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  try {
+    const bet = await prisma.betRecord.findFirst({
+      where:  { id: betId, userId, deletedAt: null },
+      select: {
+        id: true, type: true, status: true, totalStake: true,
+        legs: { where: { deletedAt: null }, select: { id: true, stake: true } },
+      },
+    })
+    if (!bet) return { success: false, error: 'Apuesta no encontrada' }
+
+    // Base metadata — no tocar el ledger
+    // Editing an approximate record confirms it (clears the approximate flag)
+    const base: Record<string, unknown> = { isApproximate: false }
+    if (data.title       !== undefined) base.title       = data.title       || null
+    if (data.notes       !== undefined) base.notes       = data.notes       || null
+    if (data.competition !== undefined) base.competition = data.competition || null
+    if (data.eventName   !== undefined) base.eventName   = data.eventName   || null
+    if (data.sport       !== undefined) base.sport       = data.sport       || null
+    if (data.isLive      !== undefined) base.isLive      = data.isLive
+    if (data.datePlaced  !== undefined) {
+      const d = new Date(data.datePlaced)
+      if (!isNaN(d.getTime())) base.datePlaced = d
+    }
+
+    // Actualizar cuotas por pierna (ARB / MIDDLE PLACED)
+    if (bet.status === 'PLACED' && data.legUpdates?.length) {
+      await prisma.$transaction(async (tx) => {
+        for (const lu of data.legUpdates!) {
+          const leg = bet.legs.find((l) => l.id === lu.id)
+          if (!leg) continue
+          const odds  = D(lu.odds)
+          const stake = D(leg.stake)
+          await tx.betLeg.update({
+            where: { id: lu.id },
+            data:  { odds, potentialReturn: stake.mul(odds) },
+          })
+        }
+        // Recalcular potentialReturn del BetRecord = mínimo de los retornos de las piernas
+        const updatedLegs = await tx.betLeg.findMany({
+          where:  { betRecordId: betId, deletedAt: null },
+          select: { potentialReturn: true },
+        })
+        if (updatedLegs.length) {
+          const minReturn = updatedLegs.reduce(
+            (min, l) => D(l.potentialReturn).lt(min) ? D(l.potentialReturn) : min,
+            D(updatedLegs[0].potentialReturn),
+          )
+          base.potentialReturn = minReturn
+        }
+        await tx.betRecord.update({ where: { id: betId }, data: base })
+      })
+      return { success: true }
+    }
+
+    // Actualizar cuota de apuesta simple (SINGLE PLACED)
+    if (bet.status === 'PLACED' && bet.type === 'SINGLE' && data.singleOdds != null) {
+      const odds  = D(data.singleOdds)
+      const stake = D(bet.totalStake)
+      base.potentialReturn = stake.mul(odds)
+      await prisma.$transaction([
+        prisma.betRecord.update({ where: { id: betId }, data: base }),
+        prisma.singleBetDetail.update({
+          where: { betRecordId: betId },
+          data:  { odds },
+        }),
+      ])
+      return { success: true }
+    }
+
+    await prisma.betRecord.update({ where: { id: betId }, data: base })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al actualizar la apuesta' }
+  }
+}

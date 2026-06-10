@@ -43,9 +43,9 @@ function StepBadge({ n, done, active }: { n: number; done: boolean; active: bool
   )
 }
 
-// ── Step 1 — Add bookmaker ─────────────────────────────────────────────────
+// ── Step 1 — Add bookmakers (one or many) ─────────────────────────────────
 
-function Step1({ onDone }: { onDone: () => void }) {
+function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => void }) {
   const [selected,  setSelected]  = useState<BookmakerPreset | null>(null)
   const [balance,   setBalance]   = useState('')
   const [error,     setError]     = useState<string | null>(null)
@@ -61,16 +61,39 @@ function Step1({ onDone }: { onDone: () => void }) {
     if (isNaN(bal) || bal < 0) { setError('Introduce un saldo válido (≥ 0)'); return }
     start(async () => {
       const r = await addPresetBookmakerAction(selected, bal)
-      if (r.success) { router.refresh(); onDone() }
-      else setError(r.error)
+      if (r.success) {
+        router.refresh()
+        setSelected(null)
+        setBalance('')
+        setError(null)
+      } else {
+        setError(r.error)
+      }
     })
   }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Selecciona una casa de apuestas para empezar a trackear tu bankroll.
+        Selecciona todas las casas en las que tienes saldo. Puedes añadir cuantas quieras antes de continuar.
       </p>
+
+      {/* Already added */}
+      {bookmakers.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Casas añadidas</p>
+          <div className="flex flex-wrap gap-2">
+            {bookmakers.map((b) => (
+              <span
+                key={b.id}
+                className="flex items-center gap-1.5 rounded-full bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800 px-3 py-1 text-xs font-medium"
+              >
+                ✓ {b.etiqueta ? `${b.name} · ${b.etiqueta}` : b.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Preset grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -122,12 +145,27 @@ function Step1({ onDone }: { onDone: () => void }) {
             disabled={pending || !balance}
             className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors shrink-0"
           >
-            {pending ? 'Añadiendo…' : 'Añadir →'}
+            {pending ? 'Añadiendo…' : 'Añadir'}
           </button>
         </div>
       )}
 
       {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+      {/* Continue — only visible once at least one bookmaker added */}
+      {bookmakers.length > 0 && (
+        <div className="flex items-center justify-between pt-2 border-t">
+          <p className="text-xs text-muted-foreground">
+            {bookmakers.length === 1 ? '1 casa añadida' : `${bookmakers.length} casas añadidas`}
+          </p>
+          <button
+            onClick={onDone}
+            className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            Siguiente paso →
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -295,9 +333,10 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
   const [localStep1, setLocalStep1] = useState(step1Done)
   const [localStep2, setLocalStep2] = useState(step2Done)
 
-  const currentStep = !localStep1 ? 1 : !localStep2 ? 2 : 3
+  // Only core steps (1+2) determine the current active step
+  const currentStep = !localStep1 ? 1 : !localStep2 ? 2 : 0
 
-  const stepsConfig = [
+  const coreSteps = [
     {
       n:    1,
       done: localStep1,
@@ -310,15 +349,10 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
       label: 'Registra el capital inicial',
       sub:  'Necesario para que el sistema de apuestas funcione',
     },
-    {
-      n:    3,
-      done: step3Done,
-      label: 'Vincula FidesBot',
-      sub:  'Conecta Telegram para recibir alertas',
-    },
   ]
 
-  const allDone = localStep1 && localStep2 && step3Done
+  // Core done = steps 1+2 complete (step 3 is optional)
+  const coreDone = localStep1 && localStep2
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 py-4">
@@ -326,18 +360,18 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
       {/* Header */}
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">
-          {allDone ? '🎉 ¡Todo listo!' : '👋 Bienvenido a DualStats Tracker'}
+          {coreDone ? '🎉 ¡Listo para empezar!' : '👋 Bienvenido a DualStats Tracker'}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {allDone
-            ? 'Tu cuenta está completamente configurada. ¡Empieza a trackear!'
-            : 'Completa estos pasos para empezar a trackear tu bankroll correctamente.'}
+          {coreDone
+            ? 'Tu cuenta está configurada. Puedes vincular FidesBot cuando quieras o ir directo al Dashboard.'
+            : 'Completa estos 2 pasos para empezar a trackear tu bankroll correctamente.'}
         </p>
       </div>
 
-      {/* Progress pills */}
+      {/* Progress pills — only core steps */}
       <div className="flex items-center justify-center gap-2">
-        {stepsConfig.map((s, i) => (
+        {coreSteps.map((s) => (
           <div key={s.n} className="flex items-center gap-2">
             <div className={`h-2 rounded-full transition-all ${
               s.done ? 'bg-green-500 w-8' : currentStep === s.n ? 'bg-primary w-8' : 'bg-muted w-5'
@@ -345,13 +379,13 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
           </div>
         ))}
         <span className="text-xs text-muted-foreground ml-1">
-          {stepsConfig.filter(s => s.done).length}/3 completados
+          {coreSteps.filter(s => s.done).length}/2 completados
         </span>
       </div>
 
       {/* Steps */}
       <div className="space-y-3">
-        {stepsConfig.map((s) => {
+        {coreSteps.map((s) => {
           const isActive = currentStep === s.n && !s.done
           const isLocked = !s.done && currentStep < s.n
 
@@ -387,7 +421,7 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
               {isActive && (
                 <div className="px-5 pb-5 pt-0 border-t">
                   <div className="pt-4">
-                    {s.n === 1 && <Step1 onDone={() => setLocalStep1(true)} />}
+                    {s.n === 1 && <Step1 bookmakers={bookmakers} onDone={() => setLocalStep1(true)} />}
                     {s.n === 2 && <Step2 bookmakers={bookmakers} onDone={() => setLocalStep2(true)} />}
                     {s.n === 3 && <Step3 plan={plan} />}
                   </div>
@@ -398,18 +432,56 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
         })}
       </div>
 
+      {/* Optional Step 3 — FidesBot */}
+      <div className={`rounded-xl border bg-card shadow-sm transition-all ${
+        step3Done
+          ? 'border-green-200 dark:border-green-800 opacity-75'
+          : coreDone
+            ? 'border-primary/20'
+            : 'border opacity-40 pointer-events-none'
+      }`}>
+        <div className="flex items-center gap-3 px-5 py-4">
+          <StepBadge n={3} done={step3Done} active={coreDone && !step3Done} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className={`text-sm font-semibold ${step3Done ? 'line-through text-muted-foreground' : ''}`}>
+                Vincula FidesBot
+              </p>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Opcional
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Conecta Telegram para recibir alertas y registrar apuestas automáticamente
+            </p>
+          </div>
+          {step3Done && (
+            <span className="text-xs font-medium text-green-600 shrink-0">Completado</span>
+          )}
+        </div>
+        {coreDone && !step3Done && (
+          <div className="px-5 pb-5 pt-0 border-t">
+            <div className="pt-4">
+              <Step3 plan={plan} />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Footer */}
       <div className="flex items-center justify-between pt-2">
-        <a
-          href="/dashboard"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {allDone ? '' : 'Saltar por ahora →'}
-        </a>
-        {allDone && (
+        {!coreDone && (
           <a
             href="/dashboard"
-            className="rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Saltar por ahora →
+          </a>
+        )}
+        {coreDone && (
+          <a
+            href="/dashboard"
+            className="ml-auto rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
             Ir al Dashboard →
           </a>
