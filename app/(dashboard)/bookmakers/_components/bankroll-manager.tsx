@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { createBankrollAction, updateBankrollAction, deleteBankrollAction } from '@/lib/actions/bankroll'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -153,8 +154,13 @@ function DeleteButton({
     setBusy(true)
     const res = await deleteBankrollAction(bankrollId)
     setBusy(false)
-    if (res.success) onDeleted()
-    else { alert(res.error); setConfirming(false) }
+    if (res.success) {
+      toast.success(`Bankroll "${name}" eliminado`)
+      onDeleted()
+    } else {
+      toast.error(res.error ?? 'No se pudo eliminar el bankroll')
+      setConfirming(false)
+    }
   }
 
   if (confirming) {
@@ -217,8 +223,12 @@ function BankrollFormModal({
       : await createBankrollAction(fd)
 
     setBusy(false)
-    if (res.success) onClose()
-    else setError(res.error)
+    if (res.success) {
+      toast.success(initial ? `Bankroll "${name.trim()}" actualizado` : `Bankroll "${name.trim()}" creado`)
+      onClose()
+    } else {
+      setError(res.error ?? 'Error al guardar')
+    }
   }
 
   return (
