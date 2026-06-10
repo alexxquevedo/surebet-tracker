@@ -119,10 +119,12 @@ export async function GET(request: NextRequest) {
       title:           true,
       primaryBookmaker: { select: { name: true } },
       singleBetDetail:  { select: { selection: true, odds: true } },
+      arbitrageDetail:  { select: { winningLegId: true } },
+      middleDetail:     { select: { winningLegId: true, middleHit: true } },
       legs: {
         where:   { deletedAt: null },
         orderBy: { id: 'asc' },
-        select:  { bookmaker: { select: { name: true } }, stake: true, odds: true },
+        select:  { id: true, bookmaker: { select: { name: true } }, stake: true, odds: true },
       },
     },
   })
@@ -153,8 +155,9 @@ export async function GET(request: NextRequest) {
     { header: 'Cuota 2',             key: 'cuota2',     width: 10 },
     { header: 'Stake 1 (€)',         key: 'stake1',     width: 12 },
     { header: 'Stake 2 (€)',         key: 'stake2',     width: 12 },
-    { header: 'P&L (€)',             key: 'pnl',        width: 11 },
-    { header: 'Retorno potencial (€)', key: 'retorno',  width: 20 },
+    { header: 'P&L (€)',             key: 'pnl',          width: 11 },
+    { header: 'Casa ganada',          key: 'casaGanada',   width: 18 },
+    { header: 'Retorno potencial (€)', key: 'retorno',     width: 20 },
   ]
 
   // Estilo de cabecera
@@ -171,6 +174,31 @@ export async function GET(request: NextRequest) {
     }
   })
   headerRow.height = 22
+
+  // ── Helper: bookmaker que "ganó" la operación ────────────────────────────
+  function getCasaGanada(r: typeof records[number]): string {
+    if (r.status === 'PLACED') return ''
+    // ARBITRAGE: winningLegId apunta a la pierna que ganó
+    if (r.type === 'ARBITRAGE' && r.arbitrageDetail?.winningLegId) {
+      const leg = r.legs.find((l) => l.id === r.arbitrageDetail!.winningLegId)
+      return leg?.bookmaker.name ?? ''
+    }
+    // MIDDLE: si middleHit ambas ganan; si no, la pierna indicada
+    if (r.type === 'MIDDLE') {
+      if (r.middleDetail?.middleHit === true) {
+        return r.legs.map((l) => l.bookmaker.name).join(' + ')
+      }
+      if (r.middleDetail?.winningLegId) {
+        const leg = r.legs.find((l) => l.id === r.middleDetail!.winningLegId)
+        return leg?.bookmaker.name ?? ''
+      }
+    }
+    // SINGLE / COMBO / CASINO / CUSTOM: solo si ganó
+    if (r.status === 'WON' || r.status === 'PARTIAL_WIN' || r.status === 'CASHOUT') {
+      return r.primaryBookmaker?.name ?? ''
+    }
+    return ''
+  }
 
   // Filas de datos
   records.forEach((r, idx) => {
@@ -207,6 +235,7 @@ export async function GET(request: NextRequest) {
       stake1,
       stake2,
       pnl,
+      casaGanada: getCasaGanada(r),
       retorno: ret,
     })
 

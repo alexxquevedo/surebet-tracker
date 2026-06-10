@@ -175,6 +175,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         primaryBookmakerId: true,
         primaryBookmaker: { select: { name: true, color: true } },
         singleBetDetail:  { select: { selection: true, odds: true } },
+        arbitrageDetail:  { select: { winningLegId: true } },
+        middleDetail:     { select: { winningLegId: true, middleHit: true } },
         legs: {
           where: { deletedAt: null },
           orderBy: { id: 'asc' },
@@ -191,6 +193,27 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       ? prisma.betRecord.count({ where: { userId, deletedAt: null } })
       : Promise.resolve(null),
   ])
+
+  // ─── Helper: bookmaker que "ganó" la operación ─────────────────────────────
+  type RecordRow = typeof records[number]
+  function getCasaGanada(r: RecordRow): string | null {
+    if (r.status === 'PLACED') return null
+    if (r.type === 'ARBITRAGE' && r.arbitrageDetail?.winningLegId) {
+      const leg = r.legs.find((l) => l.id === r.arbitrageDetail!.winningLegId)
+      return leg?.bookmaker.name ?? null
+    }
+    if (r.type === 'MIDDLE') {
+      if (r.middleDetail?.middleHit === true) return r.legs.map((l) => l.bookmaker.name).join(' + ')
+      if (r.middleDetail?.winningLegId) {
+        const leg = r.legs.find((l) => l.id === r.middleDetail!.winningLegId)
+        return leg?.bookmaker.name ?? null
+      }
+    }
+    if (r.status === 'WON' || r.status === 'PARTIAL_WIN' || r.status === 'CASHOUT') {
+      return r.primaryBookmaker?.name ?? null
+    }
+    return null
+  }
 
   const totalPlaced = records.filter((r) => r.status === 'PLACED').length
   const totalPnl    = records.reduce((acc, r) => acc + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0), 0)
@@ -353,6 +376,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">Selección</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">Casa</th>
                 <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Estado</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden xl:table-cell">Casa ganada</th>
                 <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
                   <a href={buildSortUrl('stake', filterSort, { sport: filterSport, bm: filterBm, status: filterStatus, live: filterLive, dateFrom: filterFrom, dateTo: filterTo })} className="hover:text-foreground transition-colors">
                     Stake<SortIcon col="stake" current={filterSort} />
@@ -406,6 +430,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   })),
                 }
 
+                const casaGanada = getCasaGanada(r)
+
                 return (
                   <tr key={r.id} className="hover:bg-muted/20 transition-colors group">
                     <td className="px-4 py-3">
@@ -441,6 +467,15 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                       <span className={`inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5 ${sm.cls}`}>
                         {sm.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 hidden xl:table-cell">
+                      {casaGanada ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-2 py-0.5 rounded-full">
+                          🏆 {casaGanada}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-xs">
                       {parseFloat(r.totalStake.toString()).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
@@ -481,8 +516,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   : profit < 0
                     ? 'text-red-600 font-bold'
                     : 'text-muted-foreground'
-            const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
-            const legNames   = r.legs.map((l) => l.bookmaker.name).join(' + ')
+            const selText      = r.title ?? r.singleBetDetail?.selection ?? '—'
+            const legNames     = r.legs.map((l) => l.bookmaker.name).join(' + ')
+            const casaGanadaMob = getCasaGanada(r)
             const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker?.name ?? '—')
             const sm         = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
             const dateObj    = new Date(r.datePlaced)
@@ -551,6 +587,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                         </>
                       )}
                     </div>
+                    {casaGanadaMob && (
+                      <p className="text-[11px] font-medium text-green-700 dark:text-green-400">
+                        🏆 Casa ganada: {casaGanadaMob}
+                      </p>
+                    )}
                     <p className="text-[11px] text-muted-foreground/70">{dateFmt} · {timeFmt}</p>
                   </div>
 

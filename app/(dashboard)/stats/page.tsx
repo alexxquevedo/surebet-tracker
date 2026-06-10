@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth/auth'
 import { getStatsData } from '@/lib/queries/stats'
 import { DistributionChart } from './_components/distribution-chart'
 import { WinRateBars } from './_components/win-rate-bars'
+import { MonthlyPnlChart } from './_components/monthly-pnl-chart'
 
 export const metadata: Metadata = { title: 'Estadísticas — DualStats Tracker' }
 
@@ -40,8 +41,9 @@ function UpgradeOverlay() {
         <ul className="text-left space-y-2 text-sm">
           {[
             '📊 Distribución de resultados',
-            '🏆 Win rate por deporte',
-            '🏦 Rendimiento por casa',
+            '📈 Evolución mensual del P&L',
+            '🏆 Win rate por deporte y estrategia',
+            '🏦 Rendimiento por casa de apuestas',
             '💰 Análisis de P&L detallado',
           ].map((f) => (
             <li key={f} className="flex items-center gap-2 text-muted-foreground">
@@ -77,10 +79,13 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
     )
   }
 
+  const streak = stats.currentStreak
+
   return (
     <div className="space-y-6">
-      {/* ── KPI Row ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+
+      {/* ── KPI Row (6 tarjetas) ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="rounded-xl border bg-card p-5 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ops. liquidadas</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{stats.totalSettled}</p>
@@ -103,6 +108,39 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
             {fmtProfit(stats.totalProfit)}
           </p>
         </div>
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ROI</p>
+          <p className={`text-2xl font-bold mt-2 tabular-nums ${profitCls(stats.totalRoi)}`}>
+            {stats.totalRoi > 0 ? '+' : ''}{stats.totalRoi.toFixed(2)}%
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">sobre stake liquidado</p>
+        </div>
+        <div className="rounded-xl border bg-card p-5 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Racha actual</p>
+          {streak ? (
+            <>
+              <p className={`text-2xl font-bold mt-2 tabular-nums ${streak.type === 'won' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {streak.count}
+              </p>
+              <p className={`text-[10px] mt-0.5 font-medium ${streak.type === 'won' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                {streak.type === 'won' ? '✅ victorias' : '❌ derrotas'}
+              </p>
+            </>
+          ) : (
+            <p className="text-2xl font-bold mt-2 text-muted-foreground">—</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Evolución mensual P&L ─────────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Evolución mensual del P&L</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Últimos 12 meses · Verde = beneficio · Rojo = pérdida
+          </p>
+        </div>
+        <MonthlyPnlChart data={stats.monthlyPnl} />
       </div>
 
       {/* ── Distribución + Win rate por deporte ──────────────────────────── */}
@@ -127,6 +165,77 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
           <WinRateBars data={stats.bySport} label="deporte" />
         </div>
       </div>
+
+      {/* ── P&L por estrategia ───────────────────────────────────────────── */}
+      {stats.byType.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b bg-muted/30">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Rendimiento por estrategia
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead className="border-b bg-muted/20">
+                <tr>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estrategia</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ops.</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ganadas</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">P&L</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">ROI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {stats.byType.map((row) => (
+                  <tr key={row.type} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 font-medium">{row.label}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.count}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.won}</td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${row.winRate >= 55 ? 'text-green-600 dark:text-green-400' : row.winRate >= 45 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {row.winRate.toFixed(1)}%
+                    </td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.profit)}`}>
+                      {fmtProfit(row.profit)}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.roi)}`}>
+                      {row.roi > 0 ? '+' : ''}{row.roi.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mejor / peor operación ───────────────────────────────────────── */}
+      {(stats.bestWin || stats.worstLoss) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {stats.bestWin && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">🏆 Mejor operación</p>
+              <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">
+                {fmtProfit(stats.bestWin.profit)}
+              </p>
+              <p className="text-xs text-muted-foreground truncate" title={stats.bestWin.title}>
+                {stats.bestWin.title}
+              </p>
+            </div>
+          )}
+          {stats.worstLoss && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">📉 Peor operación</p>
+              <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
+                {fmtProfit(stats.worstLoss.profit)}
+              </p>
+              <p className="text-xs text-muted-foreground truncate" title={stats.worstLoss.title}>
+                {stats.worstLoss.title}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Win rate por casa ─────────────────────────────────────────────── */}
       {stats.byBookmaker.length > 0 && (
@@ -179,6 +288,7 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
           </div>
         </div>
       )}
+
     </div>
   )
 }
