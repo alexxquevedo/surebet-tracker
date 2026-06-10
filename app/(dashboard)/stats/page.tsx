@@ -2,9 +2,11 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { getStatsData } from '@/lib/queries/stats'
+import { getBankrollEvolution } from '@/lib/queries/dashboard'
 import { DistributionChart } from './_components/distribution-chart'
 import { WinRateBars } from './_components/win-rate-bars'
 import { MonthlyPnlChart } from './_components/monthly-pnl-chart'
+import { BankrollEvolutionChart } from './_components/bankroll-evolution-chart'
 
 export const metadata: Metadata = { title: 'Estadísticas — DualStats Tracker' }
 
@@ -64,7 +66,13 @@ function UpgradeOverlay() {
 
 // ─── Contenido de estadísticas ────────────────────────────────────────────────
 
-function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData>> }) {
+function StatsContent({
+  stats,
+  evolution,
+}: {
+  stats: Awaited<ReturnType<typeof getStatsData>>
+  evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
+}) {
   const noData = stats.totalAll === 0
 
   if (noData) {
@@ -83,6 +91,30 @@ function StatsContent({ stats }: { stats: Awaited<ReturnType<typeof getStatsData
 
   return (
     <div className="space-y-6">
+
+      {/* ── Evolución del bankroll ───────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-1">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold">Evolución del bankroll</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Saldo total a cierre de cada día · línea punteada = capital inicial
+            </p>
+          </div>
+          {evolution.initialCapital > 0 && (
+            <div className="text-right shrink-0">
+              <p className="text-xs text-muted-foreground">Capital inicial</p>
+              <p className="text-sm font-bold tabular-nums">
+                {evolution.initialCapital.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+              </p>
+            </div>
+          )}
+        </div>
+        <BankrollEvolutionChart
+          data={evolution.points}
+          initialCapital={evolution.initialCapital}
+        />
+      </div>
 
       {/* ── KPI Row (6 tarjetas · 2 filas de 3) ─────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -322,7 +354,10 @@ export default async function StatsPage() {
   const isFree   = userPlan === 'FREE'
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const stats = await getStatsData(userId)
+  const [stats, evolution] = await Promise.all([
+    getStatsData(userId),
+    getBankrollEvolution(userId, 90),
+  ])
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -346,7 +381,7 @@ export default async function StatsPage() {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} />
+            <StatsContent stats={stats} evolution={evolution} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -354,7 +389,7 @@ export default async function StatsPage() {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} />
+        <StatsContent stats={stats} evolution={evolution} />
       )}
 
     </div>

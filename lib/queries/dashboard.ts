@@ -615,6 +615,93 @@ export async function getBookmakerBreakdown(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// getBankrollEvolution
+// Devuelve la evolución del saldo total del bankroll día a día.
+// Fuente primaria: DailySnapshot (pre-computado por el cron diario).
+// Fallback: reconstrucción desde BetRecord + INITIAL_DEPOSIT si no hay snapshots.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface BalancePoint {
+  date:    string  // 'dd/MM'
+  balance: number  // saldo efectivo total a cierre del día
+  pnl:     number  // P&L acumulado hasta ese día
+}
+
+export async function getBankrollEvolution(
+  userId: string,
+  days = 90,
+): Promise<{ points: BalancePoint[]; initialCapital: number }> {
+  const since = new Date()
+  since.setDate(since.getDate() - days)
+
+  // ── Intentar DailySnapshot primero ───────────────────────────────────────
+  const snapshots = await prisma.dailySnapshot.findMany({
+    where: { userId, date: { gte: since } },
+    select: { date: true, totalEffectiveBalance: true, cumulativeProfit: true },
+    orderBy: { date: 'asc' },
+  })
+
+  // ── Capital inicial (necesario para la línea de referencia) ──────────────
+  const capitalSum = await prisma.bookmakerTransaction.aggregate({
+    where: { userId, type: 'INITIAL_DEPOSIT' },
+    _sum: { amount: true },
+  })
+  const initialCapital = D(capitalSum._sum.amount).toDecimalPlaces(2).toNumber()
+
+  if (snapshots.length >= 2) {
+    const points = snapshots.map((s) => {
+      const parts = s.date.toISOString().slice(0, 10).split('-')
+      return {
+        date:    `${parts[2]}/${parts[1]}`,
+        balance: D(s.totalEffectiveBalance).toDecimalPlaces(2).toNumber(),
+        pnl:     D(s.cumulativeProfit).toDecimalPlaces(2).toNumber(),
+      }
+    })
+    return { points, initialCapital }
+  }
+
+  // ── Fallback: reconstruir desde BetRecord ─────────────────────────────────
+  const records = await prisma.betRecord.findMany({
+    where: {
+      userId,
+      deletedAt: null,
+      dateSettled: { gte: since },
+      status:      { in: ['WON', 'LOST', 'CASHOUT'] },
+      grossProfit: { not: null },
+    },
+    select: { dateSettled: true, grossProfit: true },
+    orderBy: { dateSettled: 'asc' },
+  })
+
+  if (records.length === 0) return { points: [], initialCapital }
+
+  const dailyMap = new Map<string, Decimal>()
+  for (const r of records) {
+    if (!r.dateSettled || r.grossProfit === null) continue
+    const key  = r.dateSettled.toISOString().slice(0, 10)
+    const prev = dailyMap.get(key) ?? D(0)
+    dailyMap.set(key, prev.plus(D(r.grossProfit)))
+  }
+
+  const sortedKeys = Array.from(dailyMap.keys()).sort()
+  let cumPnl = D(0)
+  const points: BalancePoint[] = []
+
+  for (const key of sortedKeys) {
+    const daily = dailyMap.get(key) ?? D(0)
+    cumPnl = cumPnl.plus(daily).toDecimalPlaces(2)
+    const parts = key.split('-')
+    points.push({
+      date:    `${parts[2]}/${parts[1]}`,
+      balance: D(initialCapital).plus(cumPnl).toDecimalPlaces(2).toNumber(),
+      pnl:     cumPnl.toNumber(),
+    })
+  }
+
+  return { points, initialCapital }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // getProfitTimeSeries
 // Devuelve puntos de P&L acumulado día a día para el LineChart del dashboard.
 // Solo considera operaciones liquidadas (con dateSettled y grossProfit).
