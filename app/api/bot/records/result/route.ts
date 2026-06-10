@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     apuesta_id?:     string
     resultado?:      string
     ganancia_real?:  number
+    cashout_amount?: number   // importe total recibido en el cashout
     legs_resultado?: Array<{ leg: number; estado: string }>
   }
   try {
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { telegram_id, apuesta_id, resultado, ganancia_real, legs_resultado } = body
+  const { telegram_id, apuesta_id, resultado, ganancia_real, cashout_amount, legs_resultado } = body
 
   if (!telegram_id || !apuesta_id || !resultado) {
     return NextResponse.json(
@@ -112,7 +113,11 @@ export async function POST(request: NextRequest) {
 
   const totalStake = D(betRecord.totalStake)
 
-  if (ganancia_real !== undefined && ganancia_real !== null) {
+  if (newStatus === 'CASHOUT' && cashout_amount !== undefined && cashout_amount !== null) {
+    // Cashout: el bot envía el importe total recibido
+    totalReturn = D(cashout_amount).toDecimalPlaces(2)
+    grossProfit = totalReturn.minus(totalStake).toDecimalPlaces(2)
+  } else if (ganancia_real !== undefined && ganancia_real !== null) {
     grossProfit = D(ganancia_real).toDecimalPlaces(2)
     totalReturn = totalStake.plus(grossProfit).toDecimalPlaces(2)
   } else if (newStatus === 'LOST') {
@@ -175,6 +180,9 @@ export async function POST(request: NextRequest) {
           legReturn = D(leg.potentialReturn).toDecimalPlaces(2)
         } else if (legStatus === 'VOID') {
           legReturn = D(leg.stake).toDecimalPlaces(2) // stake devuelto
+        } else if (newStatus === 'CASHOUT' && totalReturn.gt(0) && !totalStake.isZero()) {
+          // Cashout: distribuir el importe recibido proporcionalmente al stake de cada pierna
+          legReturn = totalReturn.mul(D(leg.stake).div(totalStake)).toDecimalPlaces(2)
         } else {
           legReturn = D(0)
         }
@@ -214,7 +222,7 @@ export async function POST(request: NextRequest) {
             data: {
               bookmakerId:   leg.bookmakerId,
               userId:        betRecord.userId,
-              type:          legStatus === 'VOID' ? 'BET_VOID_RETURN' : 'BET_RETURN',
+              type:          legStatus === 'VOID' ? 'BET_VOID_RETURN' : newStatus === 'CASHOUT' ? 'CASHOUT' : 'BET_RETURN',
               amount:        legReturn,
               balanceBefore: balBefore,
               balanceAfter:  balAfter,
