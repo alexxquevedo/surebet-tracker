@@ -9,9 +9,8 @@ interface Props {
   existingNames: string[]
 }
 
-export function AddBookmakerModal({ existingNames }: Props) {
+export function AddBookmakerModal({ existingNames: _existingNames }: Props) {
   const [open, setOpen] = useState(false)
-  const available = BOOKMAKER_PRESETS.filter((p) => !existingNames.includes(p.name))
 
   return (
     <>
@@ -21,20 +20,35 @@ export function AddBookmakerModal({ existingNames }: Props) {
       >
         + Añadir casa
       </button>
-      {open && <Modal available={available} onClose={() => setOpen(false)} />}
+      {open && <Modal onClose={() => setOpen(false)} />}
     </>
   )
 }
 
-function Modal({ available, onClose }: { available: BookmakerPreset[]; onClose: () => void }) {
+function Modal({ onClose }: { onClose: () => void }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
+  const [step, setStep]             = useState<1 | 2>(1)
   const [selected, setSelected]     = useState<BookmakerPreset | null>(null)
+  const [etiqueta, setEtiqueta]     = useState('')
   const [balance, setBalance]       = useState('')
   const [isPending, setIsPending]   = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [success, setSuccess]       = useState(false)
+
+  function handleSelectPreset(p: BookmakerPreset) {
+    setSelected(p)
+    setEtiqueta('')
+    setBalance('')
+    setError(null)
+    setStep(2)
+  }
+
+  function handleBack() {
+    setStep(1)
+    setError(null)
+  }
 
   async function handleAdd() {
     if (!selected) return
@@ -46,7 +60,7 @@ function Modal({ available, onClose }: { available: BookmakerPreset[]; onClose: 
       setIsPending(false)
       return
     }
-    const result = await addPresetBookmakerAction(selected, initialBalance)
+    const result = await addPresetBookmakerAction(selected, initialBalance, etiqueta.trim() || undefined)
     setIsPending(false)
     if (result.success) {
       setSuccess(true)
@@ -61,79 +75,143 @@ function Modal({ available, onClose }: { available: BookmakerPreset[]; onClose: 
     if (e.target === e.currentTarget) onClose()
   }
 
+  const displayName = selected
+    ? etiqueta.trim()
+      ? `${selected.name} · ${etiqueta.trim()}`
+      : selected.name
+    : ''
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleBackdrop}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={handleBackdrop}
+    >
       <div className="bg-card border rounded-xl shadow-xl w-full max-w-md p-6 space-y-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Añadir Casa de Apuestas</h2>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors text-xl">×</button>
+          <div className="flex items-center gap-2">
+            {step === 2 && !success && (
+              <button
+                onClick={handleBack}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors text-lg"
+                title="Volver"
+              >
+                ←
+              </button>
+            )}
+            <h2 className="text-lg font-semibold">Añadir Casa de Apuestas</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors text-xl"
+          >
+            ×
+          </button>
         </div>
+
+        {/* Step indicator */}
+        {!success && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${step >= 1 ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>1</span>
+            <span>Elige la casa</span>
+            <span className="mx-1 text-border">›</span>
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${step >= 2 ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>2</span>
+            <span>Etiqueta y saldo</span>
+          </div>
+        )}
 
         {success ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <span className="text-5xl">🏦</span>
             <p className="font-semibold text-lg">¡Casa añadida!</p>
+            {displayName && (
+              <p className="text-sm text-muted-foreground">{displayName}</p>
+            )}
+          </div>
+        ) : step === 1 ? (
+          /* ── Paso 1: seleccionar casa ─────────────────────── */
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Selecciona una casa</p>
+            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+              {BOOKMAKER_PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => handleSelectPreset(p)}
+                  className="flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                  <span className="truncate">{p.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
-          <>
+          /* ── Paso 2: etiqueta + saldo ─────────────────────── */
+          <div className="space-y-4">
+            {/* Selected bookmaker header */}
+            {selected && (
+              <div className="flex items-center gap-2.5 rounded-lg border bg-muted/30 px-3 py-2.5">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selected.color }} />
+                <span className="font-medium text-sm">{selected.name}</span>
+              </div>
+            )}
+
             {error && (
               <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
             )}
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Selecciona una casa</p>
-              {available.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">Ya tienes todas las casas disponibles.</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                  {available.map((p) => (
-                    <button
-                      key={p.name}
-                      type="button"
-                      onClick={() => setSelected(p)}
-                      className={`flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                        selected?.name === p.name
-                          ? 'border-primary bg-primary/10 text-primary font-medium'
-                          : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                      <span className="truncate">{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+            {/* Etiqueta */}
+            <div className="space-y-1.5">
+              <label htmlFor="bm-etiqueta" className="block text-sm font-medium">
+                Etiqueta <span className="text-muted-foreground font-normal">(opcional)</span>
+              </label>
+              <input
+                id="bm-etiqueta"
+                type="text"
+                value={etiqueta}
+                onChange={(e) => setEtiqueta(e.target.value)}
+                placeholder="Ej. Escalera, Surebets, Bonos…"
+                maxLength={40}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">
+                Permite tener la misma casa dos veces con distinto propósito.
+                {etiqueta.trim() && (
+                  <span className="ml-1 font-medium text-foreground">
+                    Se mostrará como &quot;{selected?.name} · {etiqueta.trim()}&quot;
+                  </span>
+                )}
+              </p>
             </div>
 
-            {selected && (
-              <div className="space-y-2">
-                <label htmlFor="bm-balance" className="block text-sm font-medium">
-                  Saldo inicial en {selected.name} (€)
-                </label>
-                <input
-                  id="bm-balance"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={balance}
-                  onChange={(e) => setBalance(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Puedes dejarlo en 0 si aún no has depositado.
-                </p>
-              </div>
-            )}
+            {/* Balance */}
+            <div className="space-y-1.5">
+              <label htmlFor="bm-balance" className="block text-sm font-medium">
+                Saldo inicial (€)
+              </label>
+              <input
+                id="bm-balance"
+                type="number"
+                step="0.01"
+                min="0"
+                value={balance}
+                onChange={(e) => setBalance(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">
+                Puedes dejarlo en 0 si aún no has depositado.
+              </p>
+            </div>
 
             <button
               onClick={handleAdd}
-              disabled={isPending || !selected}
+              disabled={isPending}
               className="w-full rounded-md bg-primary text-primary-foreground px-3 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isPending ? 'Añadiendo...' : selected ? `Añadir ${selected.name}` : 'Selecciona una casa'}
+              {isPending ? 'Añadiendo…' : `Añadir ${displayName}`}
             </button>
-          </>
+          </div>
         )}
       </div>
     </div>

@@ -26,7 +26,7 @@ export default async function BookmakersPage() {
       where:   { userId },
       orderBy: [{ status: 'asc' }, { name: 'asc' }],
       select: {
-        id: true, name: true, color: true, status: true, currency: true,
+        id: true, name: true, etiqueta: true, color: true, status: true, currency: true,
         notes: true, bankrollId: true,
         currentBalance: true, totalStaked: true, totalProfit: true, totalReturn: true,
         operationCount: true,
@@ -180,7 +180,9 @@ export default async function BookmakersPage() {
                           <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: bm.color }} />
                         )}
                         <div>
-                          <p className="font-semibold">{bm.name}</p>
+                          <p className="font-semibold">
+                            {bm.name}{bm.etiqueta ? ` · ${bm.etiqueta}` : ''}
+                          </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="text-xs text-muted-foreground">{bm.currency}</p>
                             {bankroll && (

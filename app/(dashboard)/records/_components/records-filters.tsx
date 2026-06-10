@@ -19,7 +19,7 @@ const SPORT_LABEL: Record<string, string> = {
   OTHER:      'Otro',
 }
 
-interface Bookmaker { id: string; name: string }
+interface Bookmaker { id: string; name: string; etiqueta?: string | null }
 
 interface Props {
   bookmakers:    Bookmaker[]
@@ -102,7 +102,9 @@ export function RecordsFilters({
         >
           <option value="">Todas las casas</option>
           {bookmakers.map((bm) => (
-            <option key={bm.id} value={bm.id}>{bm.name}</option>
+            <option key={bm.id} value={bm.id}>
+              {bm.etiqueta ? `${bm.name} · ${bm.etiqueta}` : bm.name}
+            </option>
           ))}
         </select>
       </div>

@@ -276,11 +276,13 @@ model Bankroll {
   color       String      @default("#6366f1")
   isDefault   Boolean     @default(false)
   isActive    Boolean     @default(true)
+  isBot       Boolean     @default(false) // true = creado automáticamente al vincular Telegram
 
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   bookmakers  Bookmaker[]
+  betRecords  BetRecord[] @relation("BetRecordBankroll")
 
   @@index([userId])
   @@map("bankrolls")
@@ -297,6 +299,8 @@ model Bookmaker {
   user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   name       String
+  etiqueta   String          @default("")  // etiqueta opcional: "Escalera", "Surebets"…
+  isBot      Boolean         @default(false) // true = creado automáticamente por FidesBot
   country    String?
   currency   String          @default("EUR")
   color      String?
@@ -405,6 +409,10 @@ model BetRecord {
   createdVia    CreatedVia @default(MANUAL)
   externalRef   String?    // referencia externa (ID de apuesta en el bookmaker, etc.)
 
+  // Bankroll al que pertenece (FidesBot u otro)
+  bankrollId    String?
+  bankroll      Bankroll? @relation("BetRecordBankroll", fields: [bankrollId], references: [id])
+
   // Integración FidesBot
   isApproximate Boolean @default(false) // datos de la alerta, no confirmados por el usuario
   botPendingId  String? @unique          // ID interno del bot — evita registros duplicados
@@ -440,6 +448,7 @@ model BetRecord {
   @@index([userId, type, status])
   @@index([userId, sport])
   @@index([userId, deletedAt])
+  @@index([bankrollId])
   @@map("bet_records")
 }
 

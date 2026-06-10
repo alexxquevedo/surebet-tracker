@@ -121,6 +121,25 @@ export async function POST(request: NextRequest) {
     }),
   ])
 
+  // ── Auto-crear bankroll "FidesBot" si no existe ───────────────────────────
+  const existingBankroll = await prisma.bankroll.findFirst({
+    where:  { userId: linkToken.userId, isBot: true },
+    select: { id: true },
+  })
+  if (!existingBankroll) {
+    await prisma.bankroll.create({
+      data: {
+        userId:      linkToken.userId,
+        name:        'FidesBot',
+        description: 'Apuestas registradas desde el bot de Telegram',
+        color:       '#2563eb',
+        isBot:       true,
+        isDefault:   false,
+        isActive:    true,
+      },
+    })
+  }
+
   // ── Si es admin del bot → darle admin + PRO_TRACKER en la web ─────────────
   const isBotAdmin = is_admin === true
 

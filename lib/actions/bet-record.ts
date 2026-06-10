@@ -135,9 +135,28 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
         })
       }
 
+      // ── Auto-ajuste: evita saldo negativo ────────────────────────────────
+      let balSingle = D(bm.currentBalance)
+      if (balSingle.lt(stake)) {
+        const deficit = stake.minus(balSingle).toDecimalPlaces(2)
+        await tx.bookmakerTransaction.create({
+          data: {
+            userId,
+            bookmakerId,
+            type:          'MANUAL_ADJUSTMENT',
+            amount:        deficit,
+            balanceBefore: balSingle,
+            balanceAfter:  balSingle.plus(deficit),
+            notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+            referenceType: 'AutoAdjust',
+          },
+        })
+        balSingle = balSingle.plus(deficit)
+      }
+
       await tx.bookmaker.update({
         where: { id: bookmakerId },
-        data: { currentBalance: D(bm.currentBalance).minus(stake), totalStaked: { increment: stake.toNumber() } },
+        data:  { currentBalance: balSingle.minus(stake), totalStaked: { increment: stake.toNumber() } },
       })
 
       return created
@@ -255,9 +274,45 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
         select: { id: true },
       })
 
-      // Deduct stakes from both bookmakers
-      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: D(bm1.currentBalance).minus(stake1), totalStaked: { increment: stake1.toNumber() } } })
-      await tx.bookmaker.update({ where: { id: bm2Id }, data: { currentBalance: D(bm2.currentBalance).minus(stake2), totalStaked: { increment: stake2.toNumber() } } })
+      // ── Auto-ajuste + deducción de stakes ────────────────────────────────
+      let bal1 = D(bm1.currentBalance)
+      if (bal1.lt(stake1)) {
+        const deficit1 = stake1.minus(bal1).toDecimalPlaces(2)
+        await tx.bookmakerTransaction.create({
+          data: {
+            userId,
+            bookmakerId:   bm1Id,
+            type:          'MANUAL_ADJUSTMENT',
+            amount:        deficit1,
+            balanceBefore: bal1,
+            balanceAfter:  bal1.plus(deficit1),
+            notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+            referenceType: 'AutoAdjust',
+          },
+        })
+        bal1 = bal1.plus(deficit1)
+      }
+
+      let bal2 = D(bm2.currentBalance)
+      if (bal2.lt(stake2)) {
+        const deficit2 = stake2.minus(bal2).toDecimalPlaces(2)
+        await tx.bookmakerTransaction.create({
+          data: {
+            userId,
+            bookmakerId:   bm2Id,
+            type:          'MANUAL_ADJUSTMENT',
+            amount:        deficit2,
+            balanceBefore: bal2,
+            balanceAfter:  bal2.plus(deficit2),
+            notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+            referenceType: 'AutoAdjust',
+          },
+        })
+        bal2 = bal2.plus(deficit2)
+      }
+
+      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: bal1.minus(stake1), totalStaked: { increment: stake1.toNumber() } } })
+      await tx.bookmaker.update({ where: { id: bm2Id }, data: { currentBalance: bal2.minus(stake2), totalStaked: { increment: stake2.toNumber() } } })
 
       return created
     })
@@ -493,5 +548,34 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
     return { success: true, id: betRecordId }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Error al liquidar la operación' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// deleteOperationAction  — soft-delete (sets deletedAt, invisible en stats)
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function deleteOperationAction(
+  betRecordId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  try {
+    const record = await prisma.betRecord.findFirst({
+      where:  { id: betRecordId, userId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!record) return { success: false, error: 'Operación no encontrada' }
+
+    await prisma.betRecord.update({
+      where: { id: betRecordId },
+      data:  { deletedAt: new Date() },
+    })
+
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al eliminar la operación' }
   }
 }

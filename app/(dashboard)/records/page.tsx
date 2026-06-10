@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
 import { SettleButton } from './_components/settle-button'
 import type { LegInfo } from './_components/settle-button'
+import { DeleteButton } from './_components/delete-button'
 import { RecordsFilters } from './_components/records-filters'
 
 export const metadata: Metadata = { title: 'Operaciones — DualStats Tracker' }
@@ -173,20 +174,20 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         dateSettled: true,
         title: true,
         primaryBookmakerId: true,
-        primaryBookmaker: { select: { name: true, color: true } },
+        primaryBookmaker: { select: { name: true, etiqueta: true, color: true } },
         singleBetDetail:  { select: { selection: true, odds: true } },
         arbitrageDetail:  { select: { winningLegId: true } },
         middleDetail:     { select: { winningLegId: true, middleHit: true } },
         legs: {
           where: { deletedAt: null },
           orderBy: { id: 'asc' },
-          select: { id: true, bookmakerId: true, stake: true, odds: true, potentialReturn: true, bookmaker: { select: { name: true } } },
+          select: { id: true, bookmakerId: true, stake: true, odds: true, potentialReturn: true, bookmaker: { select: { name: true, etiqueta: true } } },
         },
       },
     }),
     prisma.bookmaker.findMany({
       where: { userId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, etiqueta: true },
       orderBy: { name: 'asc' },
     }),
     userPlan === 'FREE'
@@ -194,23 +195,29 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       : Promise.resolve(null),
   ])
 
+  // ─── Helper: formato de nombre de bookmaker con etiqueta opcional ───────────
+  function bmLabel(bm: { name: string; etiqueta?: string | null } | null | undefined): string {
+    if (!bm) return ''
+    return bm.etiqueta ? `${bm.name} · ${bm.etiqueta}` : bm.name
+  }
+
   // ─── Helper: bookmaker que "ganó" la operación ─────────────────────────────
   type RecordRow = typeof records[number]
   function getCasaGanada(r: RecordRow): string | null {
     if (r.status === 'PLACED') return null
     if (r.type === 'ARBITRAGE' && r.arbitrageDetail?.winningLegId) {
       const leg = r.legs.find((l) => l.id === r.arbitrageDetail!.winningLegId)
-      return leg?.bookmaker.name ?? null
+      return leg ? bmLabel(leg.bookmaker) : null
     }
     if (r.type === 'MIDDLE') {
-      if (r.middleDetail?.middleHit === true) return r.legs.map((l) => l.bookmaker.name).join(' + ')
+      if (r.middleDetail?.middleHit === true) return r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
       if (r.middleDetail?.winningLegId) {
         const leg = r.legs.find((l) => l.id === r.middleDetail!.winningLegId)
-        return leg?.bookmaker.name ?? null
+        return leg ? bmLabel(leg.bookmaker) : null
       }
     }
     if (r.status === 'WON' || r.status === 'PARTIAL_WIN' || r.status === 'CASHOUT') {
-      return r.primaryBookmaker?.name ?? null
+      return r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : null
     }
     return null
   }
@@ -403,10 +410,10 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   : profit > 0 ? 'text-green-600 font-semibold' : profit < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'
 
                 const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
-                const legNames   = r.legs.map((l) => l.bookmaker.name).join(' + ')
+                const legNames   = r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
                 const houseLabel = r.legs.length > 0
                   ? legNames
-                  : r.primaryBookmaker?.name ?? '—'
+                  : r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—'
 
                 const sm      = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
                 const dateObj = new Date(r.datePlaced)
@@ -423,7 +430,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   legs:               r.legs.map((l): LegInfo => ({
                     id:              l.id,
                     bookmakerId:     l.bookmakerId,
-                    bookmakerName:   l.bookmaker.name,
+                    bookmakerName:   bmLabel(l.bookmaker),
                     stake:           parseFloat(l.stake.toString()),
                     odds:            parseFloat(l.odds.toString()),
                     potentialReturn: parseFloat(l.potentialReturn.toString()),
@@ -491,9 +498,12 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                       <span className="block text-muted-foreground/60">{timeFmt}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === 'PLACED' && (
-                        <SettleButton bet={betForSettle} />
-                      )}
+                      <div className="inline-flex items-center justify-end gap-1">
+                        {r.status === 'PLACED' && (
+                          <SettleButton bet={betForSettle} />
+                        )}
+                        <DeleteButton betRecordId={r.id} />
+                      </div>
                     </td>
                   </tr>
                 )
@@ -517,9 +527,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                     ? 'text-red-600 font-bold'
                     : 'text-muted-foreground'
             const selText      = r.title ?? r.singleBetDetail?.selection ?? '—'
-            const legNames     = r.legs.map((l) => l.bookmaker.name).join(' + ')
+            const legNames     = r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
             const casaGanadaMob = getCasaGanada(r)
-            const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker?.name ?? '—')
+            const houseLabel = r.legs.length > 0 ? legNames : (r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—')
             const sm         = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
             const dateObj    = new Date(r.datePlaced)
             const dateFmt    = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
@@ -536,7 +546,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
               legs: r.legs.map((l): LegInfo => ({
                 id:              l.id,
                 bookmakerId:     l.bookmakerId,
-                bookmakerName:   l.bookmaker.name,
+                bookmakerName:   bmLabel(l.bookmaker),
                 stake:           parseFloat(l.stake.toString()),
                 odds:            parseFloat(l.odds.toString()),
                 potentialReturn: parseFloat(l.potentialReturn.toString()),
@@ -611,12 +621,15 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   </div>
                 </div>
 
-                {/* ── Pie: botón liquidar (solo PLACED) ─────────────── */}
-                {r.status === 'PLACED' && (
-                  <div className="px-4 pb-3 border-t pt-2 bg-muted/10">
-                    <SettleButton bet={betForSettle} />
+                {/* ── Pie: acciones ─────────────────────────────────── */}
+                <div className="px-4 pb-3 border-t pt-2 bg-muted/10 flex items-center justify-between gap-2">
+                  <div>
+                    {r.status === 'PLACED' && (
+                      <SettleButton bet={betForSettle} />
+                    )}
                   </div>
-                )}
+                  <DeleteButton betRecordId={r.id} />
+                </div>
 
               </div>
             )

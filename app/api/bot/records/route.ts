@@ -153,6 +153,12 @@ export async function POST(request: NextRequest) {
   const sport      = toSportType(apuesta.sport)
   const isApprox   = apuesta.aproximado === true || apuesta.fuente === 'auto'
 
+  // ── Buscar bankroll FidesBot del usuario (creado al vincular Telegram) ────
+  const fidesBot = await prisma.bankroll.findFirst({
+    where:  { userId, isBot: true },
+    select: { id: true },
+  })
+
   // Pre-calcular todas las cifras de las piernas (evita indexado T|undefined)
   const legCalcs: LegCalc[] = apuesta.legs.map((l) => {
     const stake    = D(l.stake).toDecimalPlaces(2)
@@ -231,6 +237,7 @@ export async function POST(request: NextRequest) {
           isApproximate:  isApprox,
           botPendingId:   bot_pending_id ?? null,
           title:          autoTitle,
+          bankrollId:     fidesBot?.id ?? null,
           ...typeDetail,
         },
         select: { id: true },
@@ -246,8 +253,33 @@ export async function POST(request: NextRequest) {
           where:  { id: bmId },
           select: { currentBalance: true },
         })
-        const balBefore = D(bmNow.currentBalance)
-        const balAfter  = balBefore.minus(lc.stake).toDecimalPlaces(2)
+        let balBefore = D(bmNow.currentBalance)
+
+        // ── Auto-ajuste: si el stake supera el saldo actual, subir el balance ──
+        // Evita que el bookmaker quede en negativo cuando el usuario no había
+        // introducido todavía su saldo inicial.
+        if (balBefore.lt(lc.stake)) {
+          const deficit = lc.stake.minus(balBefore).toDecimalPlaces(2)
+          await tx.bookmaker.update({
+            where: { id: bmId },
+            data:  { currentBalance: { increment: deficit.toNumber() } },
+          })
+          await tx.bookmakerTransaction.create({
+            data: {
+              userId,
+              bookmakerId:   bmId,
+              type:          'MANUAL_ADJUSTMENT',
+              amount:        deficit,
+              balanceBefore: balBefore,
+              balanceAfter:  balBefore.plus(deficit),
+              notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+              referenceType: 'AutoAdjust',
+            },
+          })
+          balBefore = balBefore.plus(deficit)
+        }
+
+        const balAfter = balBefore.minus(lc.stake).toDecimalPlaces(2)
 
         // Pierna
         await tx.betLeg.create({

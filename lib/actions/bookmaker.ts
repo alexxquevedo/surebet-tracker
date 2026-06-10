@@ -24,6 +24,7 @@ const FREE_BOOKMAKER_LIMIT = 3
 export async function addPresetBookmakerAction(
   preset: BookmakerPreset,
   initialBalance: number,
+  etiqueta?: string,
 ): Promise<BookmakerActionResult> {
   const session = await auth()
   const userId  = session?.user?.id
@@ -32,6 +33,9 @@ export async function addPresetBookmakerAction(
   if (isNaN(initialBalance) || initialBalance < 0) {
     return { success: false, error: 'Saldo inicial inválido (debe ser ≥ 0)' }
   }
+
+  // Normalise etiqueta: empty string treated as no label
+  const etiquetaVal = etiqueta?.trim() ?? ''
 
   // FREE plan: max 3 active bookmakers
   const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
@@ -42,18 +46,22 @@ export async function addPresetBookmakerAction(
   }
 
   try {
-    // Check if this bookmaker already exists for this user
+    // Same [name + etiqueta] combination must be unique per user
     const existing = await prisma.bookmaker.findFirst({
-      where: { userId, name: preset.name },
+      where: { userId, name: preset.name, etiqueta: etiquetaVal },
       select: { id: true },
     })
-    if (existing) return { success: false, error: `${preset.name} ya existe en tu cuenta` }
+    if (existing) {
+      const label = etiquetaVal ? `${preset.name} · ${etiquetaVal}` : preset.name
+      return { success: false, error: `${label} ya existe en tu cuenta` }
+    }
 
     const bm = await prisma.$transaction(async (tx) => {
       const created = await tx.bookmaker.create({
         data: {
           userId,
           name:        preset.name,
+          etiqueta:    etiquetaVal,
           color:       preset.color,
           currency:    preset.currency,
           country:     preset.country,
