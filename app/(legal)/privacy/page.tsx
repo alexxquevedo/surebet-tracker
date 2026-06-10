@@ -1,261 +1,190 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 
-export const metadata: Metadata = { title: 'Política de privacidad — DualStats Tracker' }
+export const metadata: Metadata = {
+  title: 'Política de Privacidad — DualStats Tracker',
+  description: 'Política de privacidad y tratamiento de datos personales de DualStats Tracker.',
+}
 
-const LAST_UPDATED  = '1 de junio de 2026'
-const CONTACT_EMAIL = 'privacidad@surebettracker.pro'
-const DPO_EMAIL     = 'dpo@surebettracker.pro'
+const LAST_UPDATED  = '10 de junio de 2026'
+const APP_NAME      = 'DualStats Tracker'
+const COMPANY       = 'DualStats Tracker'
+const CONTACT_EMAIL = 'legal@surebettracker.pro'
+const APP_URL       = 'https://surebettracker.pro'
 
 export default function PrivacyPage() {
   return (
-    <article className="prose prose-sm prose-gray max-w-none dark:prose-invert">
-      <h1 className="text-2xl font-bold mb-1">Política de privacidad</h1>
-      <p className="text-sm text-muted-foreground mb-8">
-        Última actualización: {LAST_UPDATED}
-      </p>
+    <>
+      <h1 className="text-3xl font-bold tracking-tight mb-2">{APP_NAME}</h1>
+      <h2 className="text-xl font-semibold text-muted-foreground mb-1">Política de Privacidad</h2>
+      <p className="text-sm text-muted-foreground mb-10">Última actualización: {LAST_UPDATED}</p>
 
-      <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
-        En DualStats Tracker nos comprometemos a proteger tu privacidad. Esta Política explica
-        qué datos recogemos, cómo los usamos y qué derechos tienes sobre ellos. Si tienes
-        alguna duda, escríbenos a{' '}
-        <a href={`mailto:${CONTACT_EMAIL}`} className="underline text-foreground">
-          {CONTACT_EMAIL}
-        </a>.
-      </p>
+      <div className="prose prose-sm dark:prose-invert max-w-none space-y-8 text-foreground">
 
-      <Section title="1. Responsable del tratamiento">
-        <p>
-          El responsable del tratamiento de tus datos personales es{' '}
-          <strong>DualStats Tracker</strong> (en adelante, «nosotros» o «el Servicio»).
-          Para ejercer tus derechos o consultas sobre privacidad, contacta con nuestro
-          Delegado de Protección de Datos (DPO) en:{' '}
-          <a href={`mailto:${DPO_EMAIL}`} className="underline">{DPO_EMAIL}</a>.
-        </p>
-      </Section>
+        <Section title="1. Responsable del tratamiento">
+          <p>
+            El responsable del tratamiento de sus datos personales es <strong>{COMPANY}</strong>,
+            accesible en <a href={APP_URL}>{APP_URL}</a>. Para ejercer sus derechos o resolver
+            cualquier duda sobre privacidad, puede contactar en:{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+          </p>
+        </Section>
 
-      <Section title="2. Datos que recogemos">
-        <p>Recogemos los siguientes tipos de datos:</p>
-        <ul>
-          <li>
-            <strong>Datos de cuenta:</strong> nombre, dirección de email y contraseña (almacenada
-            en formato hash bcrypt, nunca en texto plano). Si te registras con Google, recibimos
-            únicamente el email, nombre e imagen de perfil proporcionados por Google.
-          </li>
-          <li>
-            <strong>Registros de apuestas:</strong> toda la información que introduces manualmente:
-            casas de apuestas, bankrolls, stakes, cuotas, resultados, títulos y notas.
-          </li>
-          <li>
-            <strong>Preferencias:</strong> zona horaria, preferencias de notificaciones y
-            configuración del panel de control.
-          </li>
-          <li>
-            <strong>Datos de uso:</strong> fecha y hora del último inicio de sesión, dirección IP
-            de acceso (para alertas de seguridad), uso de claves API.
-          </li>
-          <li>
-            <strong>Datos de pago:</strong> gestionados exclusivamente por Stripe. Nosotros solo
-            recibimos el identificador de cliente y el estado de la suscripción; nunca almacenamos
-            datos de tarjeta de crédito.
-          </li>
-        </ul>
-        <p>
-          <strong>No recogemos</strong> datos de ubicación en tiempo real, datos biométricos ni
-          información sobre las apuestas que hagas en las casas externas (solo la información que
-          tú introduces voluntariamente).
-        </p>
-      </Section>
+        <Section title="2. Datos que recopilamos">
+          <p>Recopilamos las siguientes categorías de datos:</p>
+          <h4 className="font-semibold text-sm mt-2">2.1 Datos proporcionados por el usuario</h4>
+          <ul>
+            <li><strong>Cuenta:</strong> nombre de usuario, dirección de email y contraseña (almacenada en formato hash bcrypt, nunca en texto plano).</li>
+            <li><strong>Operaciones:</strong> apuestas registradas, casa de apuestas, cuotas, stake, resultado y cualquier otra información que el usuario introduzca voluntariamente.</li>
+            <li><strong>Configuración:</strong> zona horaria, divisa, preferencias de notificación y ajustes de la cuenta.</li>
+          </ul>
+          <h4 className="font-semibold text-sm mt-2">2.2 Datos generados automáticamente</h4>
+          <ul>
+            <li><strong>Registro de actividad:</strong> fecha y hora de inicio de sesión, dirección IP (no almacenada de forma permanente), tipo de dispositivo y navegador.</li>
+            <li><strong>Integración Telegram:</strong> si el usuario vincula su cuenta con FidesBot, almacenamos el identificador de Telegram (<em>Telegram ID</em>) y el nombre de usuario de Telegram.</li>
+          </ul>
+          <h4 className="font-semibold text-sm mt-2">2.3 Datos de pago</h4>
+          <p>
+            Los pagos se procesan a través de <strong>Stripe</strong>. {APP_NAME} no almacena datos de
+            tarjetas de crédito ni información bancaria. Únicamente recibimos de Stripe el identificador
+            de cliente y el estado de la suscripción. Consulte la{' '}
+            <a href="https://stripe.com/es/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+              política de privacidad de Stripe
+            </a>{' '}
+            para más información.
+          </p>
+        </Section>
 
-      <Section title="3. Finalidad y base legal del tratamiento">
-        <p>Tratamos tus datos para las siguientes finalidades:</p>
-        <ul>
-          <li>
-            <strong>Prestación del Servicio</strong> (base legal: ejecución del contrato) —
-            crear y gestionar tu cuenta, almacenar tus registros de apuestas, generar informes.
-          </li>
-          <li>
-            <strong>Comunicaciones transaccionales</strong> (base legal: interés legítimo) —
-            alertas de seguridad (nuevo inicio de sesión), confirmaciones de liquidación de
-            apuestas, actualizaciones de la plataforma.
-          </li>
-          <li>
-            <strong>Facturación</strong> (base legal: obligación legal y ejecución del contrato) —
-            gestión de suscripciones y pagos a través de Stripe.
-          </li>
-          <li>
-            <strong>Seguridad y prevención de fraude</strong> (base legal: interés legítimo) —
-            detección de accesos no autorizados, auditoría de operaciones internas.
-          </li>
-        </ul>
-      </Section>
+        <Section title="3. Finalidades del tratamiento">
+          <p>Tratamos sus datos para las siguientes finalidades:</p>
+          <ul>
+            <li><strong>Prestación del servicio:</strong> gestión de la cuenta, almacenamiento y análisis de operaciones de apuestas, generación de estadísticas y exportación de datos.</li>
+            <li><strong>Comunicaciones del servicio:</strong> notificaciones relacionadas con la cuenta (alertas de inicio de sesión, aviso de expiración de plan, confirmación de exportaciones).</li>
+            <li><strong>Seguridad:</strong> detección y prevención de accesos no autorizados, fraudes y abusos.</li>
+            <li><strong>Mejora del servicio:</strong> análisis agregado y anónimo del uso de la plataforma para mejorar las funcionalidades.</li>
+            <li><strong>Obligaciones legales:</strong> cumplimiento de requerimientos legales aplicables.</li>
+          </ul>
+        </Section>
 
-      <Section title="4. Almacenamiento y seguridad de los datos">
-        <p>
-          Tus datos se almacenan en servidores de{' '}
-          <strong>Supabase</strong> ubicados en la región{' '}
-          <strong>EU West (Irlanda)</strong>, dentro del Espacio Económico Europeo.
-          Supabase cumple con el RGPD y la normativa de privacidad aplicable.
-        </p>
-        <p>Las medidas de seguridad incluyen:</p>
-        <ul>
-          <li>Cifrado en tránsito mediante TLS 1.2+.</li>
-          <li>Cifrado en reposo para la base de datos.</li>
-          <li>Contraseñas almacenadas como hash bcrypt con sal aleatoria.</li>
-          <li>Claves API almacenadas únicamente como hash SHA-256.</li>
-          <li>Acceso a la base de datos restringido por roles con privilegios mínimos.</li>
-        </ul>
-      </Section>
+        <Section title="4. Base jurídica del tratamiento">
+          <ul>
+            <li><strong>Ejecución del contrato:</strong> el tratamiento de datos de cuenta y operaciones es necesario para prestar el Servicio contratado.</li>
+            <li><strong>Interés legítimo:</strong> el envío de avisos de seguridad (alertas de inicio de sesión) y la prevención de fraude se basan en el interés legítimo de {COMPANY} y del usuario.</li>
+            <li><strong>Consentimiento:</strong> el envío de comunicaciones de marketing, si las hubiera, se realiza únicamente con consentimiento expreso.</li>
+            <li><strong>Obligación legal:</strong> para cumplir con requerimientos legales o fiscales.</li>
+          </ul>
+        </Section>
 
-      <Section title="5. Conservación de los datos">
-        <p>
-          Conservamos tus datos mientras tu cuenta esté activa o sea necesario para prestar el
-          Servicio. Si eliminas tu cuenta, tus datos se borran de forma permanente de nuestros
-          sistemas en un plazo máximo de <strong>30 días</strong>. Los registros de facturación
-          se conservan durante el tiempo legalmente exigido (mínimo 5 años según la normativa
-          fiscal española).
-        </p>
-      </Section>
+        <Section title="5. Conservación de los datos">
+          <p>
+            Los datos de la cuenta se conservan mientras la cuenta permanezca activa. Tras la eliminación
+            de la cuenta, los datos se borran de forma definitiva en un plazo de <strong>30 días</strong>,
+            salvo que exista obligación legal de conservarlos por un período mayor.
+          </p>
+          <p>
+            Los registros de seguridad y logs de acceso se conservan durante un máximo de <strong>90 días</strong>.
+          </p>
+        </Section>
 
-      <Section title="6. Terceros y transferencias de datos">
-        <p>
-          <strong>No vendemos ni cedemos tus datos personales a terceros</strong> con fines
-          comerciales o publicitarios. Únicamente compartimos datos con los siguientes proveedores
-          de servicios esenciales, bajo acuerdos de procesamiento de datos que garantizan el
-          cumplimiento del RGPD:
-        </p>
-        <ul>
-          <li>
-            <strong>Supabase</strong> — base de datos y almacenamiento (EU West).
-          </li>
-          <li>
-            <strong>Stripe</strong> — procesamiento de pagos. Consulta su{' '}
-            <a
-              href="https://stripe.com/es/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Política de privacidad
-            </a>.
-          </li>
-          <li>
-            <strong>Resend</strong> — envío de emails transaccionales (alertas de seguridad,
-            notificaciones). Solo reciben tu dirección de email y el contenido del mensaje.
-          </li>
-          <li>
-            <strong>Vercel</strong> — infraestructura de hosting de la aplicación web.
-          </li>
-        </ul>
-        <p>
-          No realizamos transferencias internacionales de datos fuera del EEE salvo donde los
-          proveedores cuenten con las salvaguardas adecuadas (Cláusulas Contractuales Tipo de la
-          Comisión Europea o decisión de adecuación).
-        </p>
-      </Section>
+        <Section title="6. Transferencias internacionales">
+          <p>
+            Los datos se almacenan en servidores de <strong>Vercel</strong> (infraestructura en la Unión
+            Europea) y <strong>Neon</strong> (base de datos PostgreSQL). Ambos proveedores ofrecen garantías
+            adecuadas conforme al RGPD mediante cláusulas contractuales tipo y certificaciones reconocidas.
+          </p>
+          <p>
+            Las comunicaciones por email se procesan a través de <strong>Resend</strong> (proveedor de email
+            transaccional). Consulte su política de privacidad para detalles sobre su tratamiento de datos.
+          </p>
+        </Section>
 
-      <Section title="7. Tus derechos (RGPD)">
-        <p>
-          Como usuario en el EEE, tienes los siguientes derechos sobre tus datos personales:
-        </p>
-        <ul>
-          <li><strong>Acceso:</strong> obtener confirmación de qué datos tratamos sobre ti.</li>
-          <li><strong>Rectificación:</strong> corregir datos inexactos o incompletos.</li>
-          <li>
-            <strong>Supresión («derecho al olvido»):</strong> solicitar el borrado de tus datos.
-            Puedes hacerlo directamente desde{' '}
-            <Link href="/settings" className="underline">Configuración → Zona de peligro</Link>.
-          </li>
-          <li>
-            <strong>Portabilidad:</strong> recibir tus datos en formato estructurado y legible por
-            máquina (CSV, JSON).
-          </li>
-          <li>
-            <strong>Oposición:</strong> oponerte al tratamiento basado en interés legítimo.
-          </li>
-          <li>
-            <strong>Limitación:</strong> solicitar que limitemos el tratamiento de tus datos en
-            determinadas circunstancias.
-          </li>
-          <li>
-            <strong>Retirada del consentimiento:</strong> cuando el tratamiento se base en tu
-            consentimiento, puedes retirarlo en cualquier momento sin que ello afecte a la
-            licitud del tratamiento previo.
-          </li>
-        </ul>
-        <p>
-          Para ejercer cualquiera de estos derechos, escríbenos a{' '}
-          <a href={`mailto:${DPO_EMAIL}`} className="underline">{DPO_EMAIL}</a>. Responderemos
-          en un plazo máximo de <strong>30 días</strong>. Si consideras que tus derechos no han
-          sido atendidos, puedes presentar una reclamación ante la{' '}
-          <a
-            href="https://www.aepd.es"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            Agencia Española de Protección de Datos (AEPD)
-          </a>.
-        </p>
-      </Section>
+        <Section title="7. Sus derechos">
+          <p>
+            En virtud del Reglamento General de Protección de Datos (RGPD) y la Ley Orgánica de Protección
+            de Datos (LOPDGDD), tiene los siguientes derechos:
+          </p>
+          <ul>
+            <li><strong>Acceso:</strong> conocer qué datos personales tratamos sobre usted.</li>
+            <li><strong>Rectificación:</strong> corregir datos inexactos o incompletos.</li>
+            <li><strong>Supresión («derecho al olvido»):</strong> solicitar la eliminación de sus datos cuando no sean necesarios para la finalidad para la que fueron recogidos.</li>
+            <li><strong>Oposición:</strong> oponerse al tratamiento basado en interés legítimo.</li>
+            <li><strong>Limitación:</strong> solicitar la suspensión del tratamiento en determinados supuestos.</li>
+            <li><strong>Portabilidad:</strong> recibir sus datos en formato estructurado y legible por máquina (disponible a través de la función «Exportar CSV» del Servicio).</li>
+            <li><strong>Retirada del consentimiento:</strong> retirar en cualquier momento el consentimiento prestado, sin que ello afecte a la licitud del tratamiento anterior.</li>
+          </ul>
+          <p>
+            Para ejercer cualquiera de estos derechos, contacte en{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. Responderemos en un plazo máximo de
+            30 días. Asimismo, tiene derecho a presentar una reclamación ante la <strong>Agencia Española
+            de Protección de Datos</strong> (AEPD) en <a href="https://www.aepd.es" target="_blank" rel="noopener noreferrer">www.aepd.es</a>.
+          </p>
+        </Section>
 
-      <Section title="8. Cookies y tecnologías similares">
-        <p>
-          El Servicio utiliza únicamente cookies técnicas y de sesión estrictamente necesarias:
-        </p>
-        <ul>
-          <li>
-            <strong>Cookie de sesión (NextAuth):</strong> token JWT cifrado que mantiene tu sesión
-            autenticada. Se elimina al cerrar sesión o cuando expira (30 días).
-          </li>
-          <li>
-            <strong>Cookie CSRF:</strong> protección contra ataques de falsificación de solicitudes
-            entre sitios.
-          </li>
-        </ul>
-        <p>
-          No utilizamos cookies de seguimiento, analítica de terceros ni publicidad
-          comportamental. No es necesario un banner de cookies porque todas las cookies que
-          usamos son técnicamente necesarias para el funcionamiento del Servicio.
-        </p>
-      </Section>
+        <Section title="8. Seguridad">
+          <p>
+            Adoptamos medidas técnicas y organizativas razonables para proteger sus datos, incluyendo:
+          </p>
+          <ul>
+            <li>Transmisión cifrada mediante HTTPS/TLS.</li>
+            <li>Contraseñas almacenadas con hash bcrypt (no reversible).</li>
+            <li>Acceso a los datos restringido al personal estrictamente necesario.</li>
+            <li>Backups periódicos de la base de datos.</li>
+          </ul>
+          <p>
+            Ningún sistema es completamente seguro. En caso de brecha de seguridad que afecte a sus datos,
+            se lo notificaremos conforme a la normativa aplicable.
+          </p>
+        </Section>
 
-      <Section title="9. Menores de edad">
-        <p>
-          El Servicio no está dirigido a personas menores de 18 años. No recopilamos
-          intencionadamente datos personales de menores. Si tienes conocimiento de que un menor
-          ha creado una cuenta, contacta con nosotros para proceder a su eliminación.
-        </p>
-      </Section>
+        <Section title="9. Cookies y tecnologías similares">
+          <p>
+            El Servicio utiliza cookies de sesión estrictamente necesarias para el funcionamiento de la
+            autenticación. No utilizamos cookies de seguimiento, publicidad o análisis de terceros.
+          </p>
+          <p>
+            Las preferencias de tema (claro/oscuro) se almacenan en el <em>localStorage</em> del navegador
+            y no se transmiten a nuestros servidores.
+          </p>
+        </Section>
 
-      <Section title="10. Cambios en esta política">
-        <p>
-          Podemos actualizar esta Política de privacidad periódicamente. Cuando realicemos cambios
-          sustanciales, te notificaremos por email y actualizaremos la fecha indicada al inicio.
-          Te recomendamos revisar esta página de vez en cuando.
-        </p>
-      </Section>
+        <Section title="10. Bot de Telegram (FidesBot)">
+          <p>
+            La integración con FidesBot requiere que el usuario inicie voluntariamente la conversación con
+            el bot. Recopilamos el <em>Telegram ID</em> y el nombre de usuario de Telegram únicamente para
+            vincular la cuenta y permitir el registro de operaciones. Estos datos se eliminan si el usuario
+            desvincula su cuenta desde la configuración.
+          </p>
+          <p>
+            FidesBot no almacena el contenido de los mensajes de Telegram más allá del procesamiento
+            necesario para ejecutar las funcionalidades del servicio.
+          </p>
+        </Section>
 
-      <Section title="11. Contacto">
-        <p>
-          Para cualquier consulta sobre privacidad o para ejercer tus derechos, contacta con
-          nosotros en:{' '}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="underline">{CONTACT_EMAIL}</a>
-        </p>
-        <p>
-          Para asuntos específicos sobre protección de datos:{' '}
-          <a href={`mailto:${DPO_EMAIL}`} className="underline">{DPO_EMAIL}</a>
-        </p>
-      </Section>
-    </article>
+        <Section title="11. Cambios en esta política">
+          <p>
+            Podemos actualizar esta Política de Privacidad para reflejar cambios en el Servicio o en la
+            normativa aplicable. Los cambios significativos se notificarán por email o mediante aviso en
+            la plataforma. La fecha de última actualización aparece en la parte superior de este documento.
+          </p>
+        </Section>
+
+        <Section title="12. Contacto">
+          <p>
+            Para cualquier consulta sobre privacidad o protección de datos:{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary hover:underline">{CONTACT_EMAIL}</a>
+          </p>
+        </Section>
+
+      </div>
+    </>
   )
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mb-8">
-      <h2 className="text-lg font-semibold mb-3 text-foreground">{title}</h2>
-      <div className="space-y-3 text-sm text-muted-foreground leading-relaxed [&_a]:text-foreground [&_strong]:text-foreground">
+    <section className="space-y-3">
+      <h3 className="text-base font-semibold text-foreground border-b pb-1">{title}</h3>
+      <div className="space-y-2 text-sm text-foreground/90 leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_h4]:font-semibold [&_h4]:text-sm [&_a]:text-primary [&_a:hover]:underline">
         {children}
       </div>
     </section>
