@@ -213,6 +213,19 @@ export function SidebarNav({ bookmakers, plan, userName, userEmail, isAdmin }: P
             </Link>
           )
         })}
+        {isAdmin && (
+          <Link
+            href="/admin/users"
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors relative ${
+              pathname.startsWith('/admin')
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className="text-xl leading-none">🛡️</span>
+            <span className="text-[10px] font-medium leading-tight">Admin</span>
+          </Link>
+        )}
       </nav>
 
       {/* ─── FAB Nueva Operación (móvil, md:hidden) ───────────────────── */}

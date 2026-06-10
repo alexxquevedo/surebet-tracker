@@ -55,7 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="flex-1 p-6 pb-28 md:pb-6 overflow-auto">{children}</div>
 
         {/* ── Footer ────────────────────────────────────────────────────── */}
-        <footer className="hidden md:flex shrink-0 border-t px-6 py-3 items-center justify-between text-xs text-muted-foreground bg-card">
+        <footer className="flex shrink-0 border-t px-4 py-3 items-center justify-between text-xs text-muted-foreground bg-card mb-16 md:mb-0">
           <span>© 2026 DualStats Tracker</span>
           <nav className="flex gap-4">
             <Link href="/terms"   className="hover:text-foreground transition-colors">Términos de uso</Link>

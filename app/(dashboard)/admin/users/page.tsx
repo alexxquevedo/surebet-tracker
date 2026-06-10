@@ -79,7 +79,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         plan: true, planExpiresAt: true, isAdmin: true, hasEverPaid: true,
         telegramId: true, telegramUsername: true,
         createdAt: true, lastLoginAt: true,
-        _count: { select: { betRecords: true } },
+        _count: { select: { betRecords: { where: { deletedAt: null } } } },
       },
     }),
     prisma.user.count(),
