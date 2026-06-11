@@ -241,7 +241,7 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
           )}
         </div>
       ))}
-      {pending_bms.length === 0 && (
+      {bookmakers.every((b) => b.initialCapital !== null || success[b.id]) && (
         <p className="text-sm text-green-600 font-medium">✓ Todas las casas tienen capital registrado</p>
       )}
     </div>
