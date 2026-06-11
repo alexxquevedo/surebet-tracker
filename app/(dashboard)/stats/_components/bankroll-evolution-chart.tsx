@@ -34,9 +34,36 @@ function fmtBalance(v: number): string {
 
 export function BankrollEvolutionChart({ data, initialCapital }: Props) {
   const dark = useDarkMode()
-  const [period, setPeriod] = useState<number>(90)
+  const [period, setPeriod]       = useState<number>(90)
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo,   setCustomTo]   = useState('')
+  const [appliedFrom, setAppliedFrom] = useState('')
+  const [appliedTo,   setAppliedTo]   = useState('')
 
-  const filtered = period === Infinity ? data : data.slice(-period)
+  const isCustomActive = appliedFrom !== '' || appliedTo !== ''
+
+  const filtered = (() => {
+    if (isCustomActive) {
+      return data.filter((p) => {
+        if (appliedFrom && p.dateISO < appliedFrom) return false
+        if (appliedTo   && p.dateISO > appliedTo)   return false
+        return true
+      })
+    }
+    return period === Infinity ? data : data.slice(-period)
+  })()
+
+  function applyCustomRange() {
+    setAppliedFrom(customFrom)
+    setAppliedTo(customTo)
+  }
+
+  function clearCustomRange() {
+    setCustomFrom('')
+    setCustomTo('')
+    setAppliedFrom('')
+    setAppliedTo('')
+  }
 
   const lastBalance = filtered.length > 0 ? (filtered[filtered.length - 1]?.balance ?? initialCapital) : initialCapital
   const isPositive  = lastBalance >= initialCapital
@@ -60,21 +87,66 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Selector de período */}
-      <div className="flex gap-1 justify-end">
-        {PERIODS.map(({ label, days }) => (
+      {/* Controles: período + rango personalizado */}
+      <div className="flex flex-wrap items-center gap-2 justify-end">
+        {/* Botones de período predefinido */}
+        <div className="flex gap-1">
+          {PERIODS.map(({ label, days }) => (
+            <button
+              key={label}
+              onClick={() => { setPeriod(days); clearCustomRange() }}
+              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+                !isCustomActive && period === days
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Separador visual */}
+        <span className="text-muted-foreground/40 text-xs hidden sm:inline">|</span>
+
+        {/* Date range picker */}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[120px]"
+            placeholder="Desde"
+          />
+          <span className="text-xs text-muted-foreground">–</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[120px]"
+            placeholder="Hasta"
+          />
           <button
-            key={label}
-            onClick={() => setPeriod(days)}
+            onClick={applyCustomRange}
+            disabled={!customFrom && !customTo}
             className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
-              period === days
+              isCustomActive
                 ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
           >
-            {label}
+            {isCustomActive ? '✓' : 'Ir'}
           </button>
-        ))}
+          {isCustomActive && (
+            <button
+              onClick={clearCustomRange}
+              className="px-2 py-1 text-xs rounded-md font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Limpiar rango"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <ResponsiveContainer width="100%" height={230}>

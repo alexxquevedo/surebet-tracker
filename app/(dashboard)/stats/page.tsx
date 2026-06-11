@@ -356,7 +356,7 @@ export default async function StatsPage() {
   // Siempre cargamos los datos — en FREE los mostramos borrosos
   const [stats, evolution] = await Promise.all([
     getStatsData(userId),
-    getBankrollEvolution(userId, 90),
+    getBankrollEvolution(userId),
   ])
 
   return (

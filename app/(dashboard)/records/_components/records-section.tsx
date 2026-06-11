@@ -279,11 +279,12 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell max-w-[180px]">
                       <span className="text-xs text-muted-foreground truncate block">{selText}</span>
-                      {r.singleBetDetail?.odds != null && (
-                        <span className="text-xs font-mono text-muted-foreground">
-                          @{r.singleBetDetail.odds.toFixed(2)}
-                        </span>
-                      )}
+                      {r.legs.length > 0
+                        ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
+                        : r.singleBetDetail?.odds != null
+                          ? <span className="text-xs font-mono text-muted-foreground">@{r.singleBetDetail.odds.toFixed(2)}</span>
+                          : null
+                      }
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex items-center gap-1.5">
@@ -431,12 +432,17 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       <span className="font-mono">
                         {r.totalStake.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                       </span>
-                      {r.singleBetDetail?.odds != null && (
+                      {r.legs.length > 0 ? (
+                        <>
+                          <span>·</span>
+                          <span className="font-mono">@{r.legs[0]!.odds.toFixed(2)}</span>
+                        </>
+                      ) : r.singleBetDetail?.odds != null ? (
                         <>
                           <span>·</span>
                           <span className="font-mono">@{r.singleBetDetail.odds.toFixed(2)}</span>
                         </>
-                      )}
+                      ) : null}
                       {r.sport && (
                         <>
                           <span>·</span>

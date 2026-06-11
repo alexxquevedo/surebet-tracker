@@ -376,3 +376,77 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+/**
+ * PATCH /api/bot/records
+ *
+ * Updates leg odds for an already-registered PLACED bet.
+ * Used when the user confirms their actual odds differed from the alert.
+ *
+ * Body: { telegram_id, bot_pending_id, legs: [{leg_index, odds}] }
+ */
+export async function PATCH(request: NextRequest) {
+  if (!verifyBotSecret(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  let body: {
+    telegram_id?:    unknown
+    bot_pending_id?: string
+    legs?:           Array<{ leg_index: number; odds: number }>
+  }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const { telegram_id, bot_pending_id, legs } = body
+  if (!telegram_id || !bot_pending_id || !Array.isArray(legs) || legs.length === 0) {
+    return NextResponse.json(
+      { error: 'telegram_id, bot_pending_id, and legs are required' },
+      { status: 400 },
+    )
+  }
+
+  const user = await prisma.user.findUnique({
+    where:  { telegramId: String(telegram_id) },
+    select: { id: true },
+  })
+  if (!user) {
+    return NextResponse.json({ error: 'USER_NOT_LINKED' }, { status: 404 })
+  }
+
+  const record = await prisma.betRecord.findUnique({
+    where:  { botPendingId: bot_pending_id },
+    select: {
+      id:     true,
+      userId: true,
+      status: true,
+      legs: {
+        where:   { deletedAt: null },
+        orderBy: { id: 'asc' },
+        select:  { id: true },
+      },
+    },
+  })
+  if (!record) return NextResponse.json({ error: 'Record not found' }, { status: 404 })
+  if (record.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (record.status !== 'PLACED') {
+    return NextResponse.json({ error: 'Can only update odds for PLACED records' }, { status: 400 })
+  }
+
+  const validUpdates = legs.filter(({ leg_index }) => record.legs[leg_index] !== undefined)
+  if (validUpdates.length > 0) {
+    await prisma.$transaction(
+      validUpdates.map(({ leg_index, odds }) =>
+        prisma.betLeg.update({
+          where: { id: record.legs[leg_index]!.id },
+          data:  { odds: new Decimal(odds) },
+        }),
+      ),
+    )
+  }
+
+  return NextResponse.json({ success: true, updated: validUpdates.length })
+}

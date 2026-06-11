@@ -623,13 +623,14 @@ export async function getBookmakerBreakdown(
 
 export interface BalancePoint {
   date:    string  // 'dd/MM'
+  dateISO: string  // 'YYYY-MM-DD' — usado para filtrado por rango personalizado
   balance: number  // saldo efectivo total a cierre del día
   pnl:     number  // P&L acumulado hasta ese día
 }
 
 export async function getBankrollEvolution(
   userId: string,
-  days = 90,
+  days = 9999,
 ): Promise<{ points: BalancePoint[]; initialCapital: number }> {
   const since = new Date()
   since.setDate(since.getDate() - days)
@@ -657,9 +658,11 @@ export async function getBankrollEvolution(
 
   if (snapshots.length >= 2) {
     const points = snapshots.map((s) => {
-      const parts = s.date.toISOString().slice(0, 10).split('-')
+      const iso   = s.date.toISOString().slice(0, 10)
+      const parts = iso.split('-')
       return {
         date:    `${parts[2]}/${parts[1]}`,
+        dateISO: iso,
         balance: D(s.totalEffectiveBalance).toDecimalPlaces(2).toNumber(),
         pnl:     D(s.cumulativeProfit).toDecimalPlaces(2).toNumber(),
       }
@@ -700,6 +703,7 @@ export async function getBankrollEvolution(
     const parts = key.split('-')
     points.push({
       date:    `${parts[2]}/${parts[1]}`,
+      dateISO: key,
       balance: D(initialCapital).plus(cumPnl).toDecimalPlaces(2).toNumber(),
       pnl:     cumPnl.toNumber(),
     })

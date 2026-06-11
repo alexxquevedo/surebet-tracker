@@ -90,7 +90,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const [metrics, recentRecords, evolution, bankrolls, setupData] = await Promise.all([
     getDashboardMetrics(userId, bankrollId),
     getRecentBetRecords(userId, 5),
-    getBankrollEvolution(userId, 90),
+    getBankrollEvolution(userId),
     prisma.bankroll.findMany({
       where:   { userId, isActive: true },
       select:  { id: true, name: true, color: true },
@@ -571,7 +571,8 @@ function RecentRecordsSection({ records }: { records: BetRecordListItem[] }) {
             )
 
           return (
-            <div
+            <a
+              href="/records"
               key={record.id}
               className="flex items-center gap-4 px-5 py-4 hover:bg-muted/30 transition-colors"
             >
@@ -610,7 +611,7 @@ function RecentRecordsSection({ records }: { records: BetRecordListItem[] }) {
                   {statusMeta.label}
                 </span>
               </div>
-            </div>
+            </a>
           )
         })}
       </div>
