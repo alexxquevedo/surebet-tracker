@@ -101,7 +101,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       select: {
         telegramId: true,
         bookmakers: {
-          where:   { deletedAt: null, status: 'ACTIVE' },
+          where:   { status: 'ACTIVE' },
           select:  { initialCapital: true },
           take:    50,
         },
