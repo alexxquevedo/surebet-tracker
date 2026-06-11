@@ -1,16 +1,10 @@
-app = "fidesbot"
-primary_region = "mad"
+app = 'fidesbot'
+primary_region = 'cdg'
 
 [build]
   dockerfile = "Dockerfile"
 
-[http_service]
-  # El bot no expone puerto web, desactivamos el health check
-  auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 1
-
 [[vm]]
-  memory = "256mb"
-  cpu_kind = "shared"
+  memory = '256mb'
+  cpu_kind = 'shared'
   cpus = 1
