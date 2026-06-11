@@ -748,12 +748,17 @@ model AuditLog {
 // sin tener cuenta en DualStats Tracker.
 // Los usuarios con cuenta web usan User.plan directamente.
 model BotSubscription {
-  id         String   @id @default(cuid())
-  telegramId String   @unique
-  plan       String   // "PRO" | "PRO_TRACKER"
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String    @id @default(cuid())
+  telegramId   String    @unique
+  telegramName String?
+  plan         String    // "PRO" | "PRO_TRACKER"
+  expiresAt    DateTime? // null = permanente (admins)
+  config       Json?     // per-user alert settings (sports, bookmakers, stake, etc.)
+  credits      Int       @default(0)
+  referredUsers Json?    // [telegram_id, ...] list of users this person referred
+  referredBy   String?   // telegram_id of who referred this user
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([telegramId])
   @@map("bot_subscriptions")
