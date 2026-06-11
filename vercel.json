@@ -7,14 +7,6 @@
     {
       "path": "/api/cron/reminders",
       "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/daily-snapshot",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/auto-register-approximate",
-      "schedule": "0 */6 * * *"
     }
   ]
 }
