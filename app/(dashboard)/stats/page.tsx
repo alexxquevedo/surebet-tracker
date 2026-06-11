@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { getStatsData } from '@/lib/queries/stats'
-import { getBankrollEvolution } from '@/lib/queries/dashboard'
+import { getBankrollEvolution, getDashboardMetrics } from '@/lib/queries/dashboard'
+import type { AdvancedStats } from '@/types/domain'
+import { AdvancedSection } from '@/app/(dashboard)/_components/advanced-section'
 import { DistributionChart } from './_components/distribution-chart'
 import { WinRateBars } from './_components/win-rate-bars'
 import { MonthlyPnlChart } from './_components/monthly-pnl-chart'
@@ -69,9 +71,11 @@ function UpgradeOverlay() {
 function StatsContent({
   stats,
   evolution,
+  advanced,
 }: {
   stats: Awaited<ReturnType<typeof getStatsData>>
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
+  advanced: AdvancedStats
 }) {
   const noData = stats.totalAll === 0
 
@@ -117,7 +121,7 @@ function StatsContent({
       </div>
 
       {/* ── KPI Row (6 tarjetas · 2 filas de 3) ─────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {/* Fila 1 */}
         <div className="rounded-xl border bg-card p-4 shadow-sm overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ops. liquidadas</p>
@@ -187,6 +191,17 @@ function StatsContent({
         <MonthlyPnlChart data={stats.monthlyPnl} />
       </div>
 
+      {/* ── Estadísticas Avanzadas ───────────────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold">Estadísticas avanzadas</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Ventanas temporales · rachas · promedios · mejores y peores períodos
+          </p>
+        </div>
+        <AdvancedSection advanced={advanced} />
+      </div>
+
       {/* ── Distribución + Win rate por deporte ──────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
@@ -219,7 +234,7 @@ function StatsContent({
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
+            <table className="w-full text-sm min-w-[420px] sm:min-w-[560px]">
               <thead className="border-b bg-muted/20">
                 <tr>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estrategia</th>
@@ -309,7 +324,7 @@ function StatsContent({
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[480px]">
+            <table className="w-full text-sm min-w-[360px] sm:min-w-[480px]">
               <thead className="border-b bg-muted/20">
                 <tr>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Deporte</th>
@@ -354,10 +369,12 @@ export default async function StatsPage() {
   const isFree   = userPlan === 'FREE'
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution] = await Promise.all([
+  const [stats, evolution, metricsData] = await Promise.all([
     getStatsData(userId),
     getBankrollEvolution(userId),
+    getDashboardMetrics(userId),
   ])
+  const { advanced } = metricsData
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -381,7 +398,7 @@ export default async function StatsPage() {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -389,7 +406,7 @@ export default async function StatsPage() {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} />
       )}
 
     </div>

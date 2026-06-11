@@ -37,7 +37,7 @@ export function MonthlyPnlChart({ data }: Props) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={190}>
+    <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
         <ReferenceLine y={0} stroke={dark ? '#6b7280' : '#9ca3af'} strokeWidth={1} />
@@ -47,6 +47,9 @@ export function MonthlyPnlChart({ data }: Props) {
           tickLine={false}
           axisLine={false}
           interval={0}
+          angle={-90}
+          textAnchor="end"
+          height={52}
         />
         <YAxis
           tick={{ fontSize: 11, fill: tickColor }}

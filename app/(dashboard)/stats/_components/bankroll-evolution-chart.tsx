@@ -27,9 +27,9 @@ const PERIODS = [
 ] as const
 
 function fmtBalance(v: number): string {
-  if (Math.abs(v) >= 1000)
+  if (Math.abs(v) >= 10000)
     return `${(v / 1000).toFixed(1)}k€`
-  return `${v.toFixed(0)}€`
+  return `${v.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€`
 }
 
 export function BankrollEvolutionChart({ data, initialCapital }: Props) {
@@ -95,7 +95,7 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
             <button
               key={label}
               onClick={() => { setPeriod(days); clearCustomRange() }}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+              className={`px-2.5 py-2 sm:py-1 text-xs rounded-md font-medium transition-colors ${
                 !isCustomActive && period === days
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'

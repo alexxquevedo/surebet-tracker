@@ -141,11 +141,17 @@ export async function getDashboardMetrics(
   // ── Bankroll filter: resolve bookmaker IDs if filtering by bankroll ───────
   let bmIdFilter: string[] | undefined
   if (bankrollId) {
-    const bms = await prisma.bookmaker.findMany({
-      where: { userId, bankrollId },
+    const bankroll = await prisma.bankroll.findFirst({
+      where: { id: bankrollId, userId },
       select: { id: true },
     })
-    bmIdFilter = bms.map((b) => b.id)
+    if (bankroll) {
+      const bms = await prisma.bookmaker.findMany({
+        where: { userId, bankrollId },
+        select: { id: true },
+      })
+      bmIdFilter = bms.map((b) => b.id)
+    }
   }
 
   // Build reusable where clauses
