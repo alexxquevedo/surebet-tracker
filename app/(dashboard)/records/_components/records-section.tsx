@@ -31,6 +31,7 @@ export interface SerializedRecord {
   grossProfit: number | null
   potentialReturn: number | null
   datePlaced: string
+  eventDate: string | null
   dateSettled: string | null
   title: string | null
   primaryBookmakerId: string | null
@@ -227,7 +228,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                   : r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—'
 
                 const sm      = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
-                const dateObj = new Date(r.datePlaced)
+                const dateObj = new Date(r.eventDate ?? r.datePlaced)
                 const dateFmt = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
                 const timeFmt = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
 
@@ -363,7 +364,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
             const casaGanadaMob = getCasaGanada(r)
             const houseLabel    = r.legs.length > 0 ? legNames : (r.primaryBookmaker ? bmLabel(r.primaryBookmaker) : '—')
             const sm            = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
-            const dateObj       = new Date(r.datePlaced)
+            const dateObj       = new Date(r.eventDate ?? r.datePlaced)
             const dateFmt       = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: tz })
             const timeFmt       = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz })
 

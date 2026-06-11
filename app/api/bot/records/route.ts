@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
   let body: {
     telegram_id?:    unknown
     bot_pending_id?: string
+    eventDate?:      string
     apuesta?: {
       evento?:     string
       sport?:      string
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { telegram_id, bot_pending_id, apuesta } = body
+  const { telegram_id, bot_pending_id, eventDate, apuesta } = body
 
   if (!telegram_id || !apuesta) {
     return NextResponse.json({ error: 'telegram_id and apuesta are required' }, { status: 400 })
@@ -270,6 +271,7 @@ export async function POST(request: NextRequest) {
           competition:    apuesta.liga    ?? null,
           sport,
           datePlaced:     new Date(),
+          eventDate:      eventDate ? new Date(eventDate) : null,
           createdVia:     'TELEGRAM_BOT',
           isApproximate:  isApprox,
           botPendingId:   bot_pending_id ?? null,

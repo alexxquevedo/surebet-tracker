@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
     orderBy: { datePlaced: 'desc' },
     select: {
       datePlaced:      true,
+      eventDate:       true,
       type:            true,
       status:          true,
       sport:           true,
@@ -142,8 +143,10 @@ export async function GET(request: NextRequest) {
 
   // Columnas: nombre + ancho
   sheet.columns = [
-    { header: 'Fecha',               key: 'fecha',      width: 13 },
-    { header: 'Hora',                key: 'hora',       width: 8  },
+    { header: 'Fecha reg.',          key: 'fecha',      width: 13 },
+    { header: 'Hora reg.',           key: 'hora',       width: 8  },
+    { header: 'Fecha evento',        key: 'fechaEvento',width: 13 },
+    { header: 'Hora evento',         key: 'horaEvento', width: 8  },
     { header: 'Tipo',                key: 'tipo',       width: 12 },
     { header: 'Estado',              key: 'estado',     width: 11 },
     { header: 'Deporte',             key: 'deporte',    width: 13 },
@@ -210,6 +213,7 @@ export async function GET(request: NextRequest) {
   // Filas de datos
   records.forEach((r, idx) => {
     const dt      = new Date(r.datePlaced)
+    const dtEvt   = r.eventDate ? new Date(r.eventDate) : null
     const legs    = r.legs
     const isSingle = r.type === 'SINGLE' || legs.length <= 1
 
@@ -227,8 +231,10 @@ export async function GET(request: NextRequest) {
     const title  = r.title ?? r.singleBetDetail?.selection ?? ''
 
     const row = sheet.addRow({
-      fecha:    fmtDate(dt, tz),
-      hora:     fmtTime(dt, tz),
+      fecha:      fmtDate(dt, tz),
+      hora:       fmtTime(dt, tz),
+      fechaEvento: dtEvt ? fmtDate(dtEvt, tz) : '',
+      horaEvento:  dtEvt ? fmtTime(dtEvt, tz) : '',
       tipo:     TYPE_LABEL[r.type]     ?? r.type,
       estado:   STATUS_LABEL[r.status] ?? r.status,
       deporte:  r.sport ? (SPORT_LABEL[r.sport] ?? r.sport) : '',
