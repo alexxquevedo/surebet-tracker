@@ -17,7 +17,7 @@ export default async function OnboardingPage() {
       select: { telegramId: true },
     }),
     prisma.bookmaker.findMany({
-      where:   { userId, deletedAt: null, status: 'ACTIVE' },
+      where:   { userId, status: 'ACTIVE' },
       select:  { id: true, name: true, etiqueta: true, initialCapital: true },
       orderBy: { createdAt: 'asc' },
     }),
