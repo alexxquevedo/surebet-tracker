@@ -61,7 +61,7 @@ export function RecordsFilters({
   }, [router, searchParams])
 
   return (
-    <div className="flex flex-wrap gap-3 items-end">
+    <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:items-end">
 
       {/* Momento */}
       <div className="flex flex-col gap-1">
@@ -69,7 +69,7 @@ export function RecordsFilters({
         <select
           defaultValue={filterLive ?? ''}
           onChange={(e) => applyFilter('live', e.target.value)}
-          className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]"
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[130px]"
         >
           <option value="">Live + Pre</option>
           <option value="false">📅 Pre-partido</option>
@@ -83,7 +83,7 @@ export function RecordsFilters({
         <select
           defaultValue={filterSport ?? ''}
           onChange={(e) => applyFilter('sport', e.target.value)}
-          className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[130px]"
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[130px]"
         >
           <option value="">Todos los deportes</option>
           {Object.entries(SPORT_LABEL).map(([k, v]) => (
@@ -98,7 +98,7 @@ export function RecordsFilters({
         <select
           defaultValue={filterBm ?? ''}
           onChange={(e) => applyFilter('bm', e.target.value)}
-          className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[140px]"
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[140px]"
         >
           <option value="">Todas las casas</option>
           {bookmakers.map((bm) => (
@@ -115,7 +115,7 @@ export function RecordsFilters({
         <select
           defaultValue={filterStatus ?? ''}
           onChange={(e) => applyFilter('status', e.target.value)}
-          className="rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring min-w-[120px]"
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[120px]"
         >
           <option value="">Todos</option>
           <option value="PLACED">En juego</option>
@@ -127,12 +127,14 @@ export function RecordsFilters({
       </div>
 
       {hasAnyFilter && (
-        <Link
-          href="/records"
-          className="rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          Limpiar todo
-        </Link>
+        <div className="col-span-2 sm:col-span-1 flex items-end">
+          <Link
+            href="/records"
+            className="w-full sm:w-auto rounded-lg border px-4 py-1.5 text-sm text-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            Limpiar todo
+          </Link>
+        </div>
       )}
     </div>
   )

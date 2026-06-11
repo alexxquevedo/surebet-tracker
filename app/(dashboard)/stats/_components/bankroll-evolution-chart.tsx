@@ -88,7 +88,7 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
   return (
     <div className="space-y-3">
       {/* Controles: período + rango personalizado */}
-      <div className="flex flex-wrap items-center gap-2 justify-end">
+      <div className="flex flex-wrap items-center gap-2">
         {/* Botones de período predefinido */}
         <div className="flex gap-1">
           {PERIODS.map(({ label, days }) => (
@@ -110,21 +110,19 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
         <span className="text-muted-foreground/40 text-xs hidden sm:inline">|</span>
 
         {/* Date range picker */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <input
             type="date"
             value={customFrom}
             onChange={(e) => setCustomFrom(e.target.value)}
-            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[120px]"
-            placeholder="Desde"
+            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[130px]"
           />
           <span className="text-xs text-muted-foreground">–</span>
           <input
             type="date"
             value={customTo}
             onChange={(e) => setCustomTo(e.target.value)}
-            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[120px]"
-            placeholder="Hasta"
+            className="text-xs px-2 py-1 rounded-md border border-input bg-background text-foreground w-[130px]"
           />
           <button
             onClick={applyCustomRange}
@@ -135,7 +133,7 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
                 : 'bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
           >
-            {isCustomActive ? '✓' : 'Ir'}
+            {isCustomActive ? '✓ Aplicado' : 'Aplicar'}
           </button>
           {isCustomActive && (
             <button
@@ -143,7 +141,7 @@ export function BankrollEvolutionChart({ data, initialCapital }: Props) {
               className="px-2 py-1 text-xs rounded-md font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title="Limpiar rango"
             >
-              ✕
+              ✕ Limpiar
             </button>
           )}
         </div>

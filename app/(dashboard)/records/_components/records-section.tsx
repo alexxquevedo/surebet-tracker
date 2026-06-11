@@ -208,7 +208,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                 </th>
                 <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden sm:table-cell">
                   <a href={buildSortUrl('date', filterSort, filterParams)} className="hover:text-foreground transition-colors">
-                    Fecha<SortIcon col="date" current={filterSort} />
+                    Fecha evento<SortIcon col="date" current={filterSort} />
                   </a>
                 </th>
                 <th className="px-4 py-3 text-xs uppercase tracking-wide"></th>
@@ -328,6 +328,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     <td className="px-4 py-3 text-right text-xs text-muted-foreground hidden sm:table-cell">
                       <span className="block">{dateFmt}</span>
                       <span className="block text-muted-foreground/60">{timeFmt}</span>
+                      {!r.eventDate && (
+                        <span className="block text-[10px] text-muted-foreground/40">reg.</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
@@ -456,7 +459,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                         🏆 Casa ganada: {casaGanadaMob}
                       </p>
                     )}
-                    <p className="text-[11px] text-muted-foreground/70">{dateFmt} · {timeFmt}</p>
+                    <p className="text-[11px] text-muted-foreground/70">
+                      {r.eventDate ? '🗓 ' : ''}{dateFmt} · {timeFmt}
+                    </p>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className={`text-base tabular-nums ${pnlCls}`}>

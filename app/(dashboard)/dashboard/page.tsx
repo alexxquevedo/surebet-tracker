@@ -121,14 +121,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     <div className="space-y-8">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             Bienvenido, {session?.user?.name ?? session?.user?.email ?? 'Usuario'}
           </p>
+          <p className="text-xs text-muted-foreground mt-1 sm:hidden">
+            {advanced.totalOperations} ops. · {advanced.settledOperations} liquidadas · {advanced.placedOperations} en juego
+          </p>
         </div>
-        <div className="text-right text-xs text-muted-foreground hidden sm:block">
+        <div className="text-right text-xs text-muted-foreground hidden sm:block shrink-0">
           <p>{advanced.totalOperations} operaciones totales</p>
           <p>{advanced.settledOperations} liquidadas · {advanced.placedOperations} en juego</p>
         </div>
@@ -183,7 +186,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             Evolución del Bankroll
           </p>
           <p className="text-xs text-muted-foreground mb-3">
-            Saldo total a cierre de día · últimos 90 días
+            Saldo total a cierre de día · historial completo
           </p>
           <BankrollEvolutionChart
             data={evolution.points}

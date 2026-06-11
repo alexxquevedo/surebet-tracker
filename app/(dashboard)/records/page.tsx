@@ -323,7 +323,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           })}
 
           {/* Custom range */}
-          <form method="GET" className="flex items-center gap-2">
+          <form method="GET" className="flex flex-wrap items-center gap-2">
             {filterSport  && <input type="hidden" name="sport"  value={filterSport}  />}
             {filterBm     && <input type="hidden" name="bm"     value={filterBm}     />}
             {filterStatus && <input type="hidden" name="status" value={filterStatus} />}
@@ -332,14 +332,14 @@ export default async function RecordsPage({ searchParams }: PageProps) {
               type="date"
               name="dateFrom"
               defaultValue={filterFrom ?? ''}
-              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
+              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring w-[130px]"
             />
             <span className="text-xs text-muted-foreground">→</span>
             <input
               type="date"
               name="dateTo"
               defaultValue={filterTo ?? ''}
-              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
+              className="rounded-lg border bg-background px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-ring w-[130px]"
             />
             <button
               type="submit"
