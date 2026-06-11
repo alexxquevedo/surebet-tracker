@@ -43,28 +43,43 @@ function StepBadge({ n, done, active }: { n: number; done: boolean; active: bool
   )
 }
 
-// ── Step 1 — Add bookmakers (one or many) ─────────────────────────────────
+// ── Step 1 — Add bookmakers with capital inicial + optional saldo actual ─────
 
 function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => void }) {
-  const [selected,  setSelected]  = useState<BookmakerPreset | null>(null)
-  const [balance,   setBalance]   = useState('')
-  const [error,     setError]     = useState<string | null>(null)
-  const [pending,   start]        = useTransition()
-  const [showAll,   setShowAll]   = useState(false)
+  const [selected,   setSelected]  = useState<BookmakerPreset | null>(null)
+  const [capital,    setCapital]   = useState('')
+  const [saldo,      setSaldo]     = useState('')
+  const [error,      setError]     = useState<string | null>(null)
+  const [pending,    start]        = useTransition()
+  const [showAll,    setShowAll]   = useState(false)
   const router = useRouter()
 
-  const presets = showAll ? BOOKMAKER_PRESETS : BOOKMAKER_PRESETS.slice(0, 8)
+  const presets      = showAll ? BOOKMAKER_PRESETS : BOOKMAKER_PRESETS.slice(0, 8)
+  const capitalNum   = parseFloat(capital)
+  const saldoNum     = parseFloat(saldo)
+  const saldoValido  = saldo !== '' && !isNaN(saldoNum) && saldoNum >= 0
+  const diff         = saldoValido && !isNaN(capitalNum) ? saldoNum - capitalNum : 0
+  const hasDiff      = saldoValido && Math.abs(diff) >= 0.01
+
+  function selectPreset(p: BookmakerPreset) {
+    setSelected(p)
+    setSaldo('')
+    setError(null)
+  }
 
   function handleAdd() {
     if (!selected) return
-    const bal = parseFloat(balance)
-    if (isNaN(bal) || bal < 0) { setError('Introduce un saldo válido (≥ 0)'); return }
+    const cap = parseFloat(capital)
+    if (isNaN(cap) || cap < 0) { setError('Introduce un capital inicial válido (≥ 0)'); return }
+    const sal = saldo !== '' ? parseFloat(saldo) : undefined
+    if (sal !== undefined && (isNaN(sal) || sal < 0)) { setError('Introduce un saldo actual válido (≥ 0)'); return }
     start(async () => {
-      const r = await addPresetBookmakerAction(selected, bal)
+      const r = await addPresetBookmakerAction(selected, cap, undefined, sal)
       if (r.success) {
         router.refresh()
         setSelected(null)
-        setBalance('')
+        setCapital('')
+        setSaldo('')
         setError(null)
       } else {
         setError(r.error)
@@ -75,7 +90,7 @@ function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Selecciona todas las casas en las que tienes saldo. Puedes añadir cuantas quieras antes de continuar.
+        Selecciona todas las casas en las que operas. Añade cuantas quieras antes de continuar.
       </p>
 
       {/* Already added */}
@@ -89,6 +104,11 @@ function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
                 className="flex items-center gap-1.5 rounded-full bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800 px-3 py-1 text-xs font-medium"
               >
                 ✓ {b.etiqueta ? `${b.name} · ${b.etiqueta}` : b.name}
+                {b.initialCapital !== null && (
+                  <span className="opacity-70">
+                    — cap. {b.initialCapital.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -100,59 +120,89 @@ function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
         {presets.map((p) => (
           <button
             key={p.name}
-            onClick={() => setSelected(p)}
+            onClick={() => selectPreset(p)}
             className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm text-left transition-all ${
               selected?.name === p.name
                 ? 'border-primary ring-1 ring-primary bg-primary/5'
                 : 'border hover:border-primary/50 hover:bg-muted/50'
             }`}
           >
-            <span
-              className="w-3 h-3 rounded-full shrink-0"
-              style={{ backgroundColor: p.color }}
-            />
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
             <span className="font-medium truncate text-xs">{p.name}</span>
           </button>
         ))}
       </div>
 
       {!showAll && BOOKMAKER_PRESETS.length > 8 && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="text-xs text-primary hover:underline"
-        >
+        <button onClick={() => setShowAll(true)} className="text-xs text-primary hover:underline">
           Ver todas las casas ({BOOKMAKER_PRESETS.length}) →
         </button>
       )}
 
-      {/* Balance input */}
+      {/* Capital + saldo inputs */}
       {selected && (
-        <div className="flex items-end gap-3 pt-1">
-          <div className="space-y-1 flex-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Saldo actual en {selected.name}
-            </label>
-            <input
-              type="number" min="0" step="0.01"
-              value={balance}
-              onChange={(e) => { setBalance(e.target.value); setError(null) }}
-              placeholder="500"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
+        <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">
+                Capital inicial en {selected.name}
+              </label>
+              <input
+                type="number" min="0" step="0.01"
+                value={capital}
+                onChange={(e) => { setCapital(e.target.value); setError(null) }}
+                placeholder="500"
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                ¿Cuánto tenías al empezar a trackear?
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">
+                Saldo actual <span className="font-normal text-muted-foreground">(opcional)</span>
+              </label>
+              <input
+                type="number" min="0" step="0.01"
+                value={saldo}
+                onChange={(e) => { setSaldo(e.target.value); setError(null) }}
+                placeholder={capital || '500'}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Si ya tienes ganancias/pérdidas previas
+              </p>
+            </div>
           </div>
+
+          {/* Diff message */}
+          {hasDiff && (
+            <div className={`rounded-lg px-3 py-2 text-xs border ${
+              diff > 0
+                ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-800 dark:text-green-400'
+                : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/20 dark:border-red-800 dark:text-red-400'
+            }`}>
+              {diff > 0 ? '▲' : '▼'} Diferencia de{' '}
+              <strong>
+                {Math.abs(diff).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+              </strong>
+              {' '}— se registrará automáticamente como ajuste de balance{diff > 0 ? ' (ganancias previas)' : ' (pérdidas previas)'}.
+            </div>
+          )}
+
           <button
             onClick={handleAdd}
-            disabled={pending || !balance}
-            className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors shrink-0"
+            disabled={pending || !capital}
+            className="w-full rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors"
           >
-            {pending ? 'Añadiendo…' : 'Añadir'}
+            {pending ? 'Añadiendo…' : `Añadir ${selected.name}`}
           </button>
         </div>
       )}
 
       {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
 
-      {/* Continue — only visible once at least one bookmaker added */}
+      {/* Continue */}
       {bookmakers.length > 0 && (
         <div className="flex items-center justify-between pt-2 border-t">
           <p className="text-xs text-muted-foreground">
@@ -170,7 +220,7 @@ function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
   )
 }
 
-// ── Step 2 — Set initial capital ────────────────────────────────────────────
+// ── Step 2 — Confirm capital inicial (fallback for bookmakers missing it) ────
 
 function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => void }) {
   const [amounts,  setAmounts]  = useState<Record<string, string>>(
@@ -182,6 +232,7 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
   const router = useRouter()
 
   const bmName = (b: Bookmaker) => b.etiqueta ? `${b.name} · ${b.etiqueta}` : b.name
+  const pending_bms = bookmakers.filter((b) => b.initialCapital === null)
 
   function handleSave(b: Bookmaker) {
     const raw = parseFloat(amounts[b.id] ?? '')
@@ -194,9 +245,7 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
       if (r.success) {
         setSuccess((s) => ({ ...s, [b.id]: true }))
         router.refresh()
-        // Move on once all bookmakers without prior capital have been saved
-        const needsSave = bookmakers.filter((pb) => pb.initialCapital === null)
-        const allSaved  = needsSave.every((pb) => pb.id === b.id || success[pb.id])
+        const allSaved = pending_bms.every((pb) => pb.id === b.id || success[pb.id])
         if (allSaved) onDone()
       } else {
         setErrors((e) => ({ ...e, [b.id]: r.error }))
@@ -207,16 +256,17 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        El capital inicial es el saldo que tenías en cada casa al empezar a usar DualStats.
-        Es imprescindible para que el sistema de apuestas funcione correctamente.
+        Introduce el capital inicial para las casas que aún no lo tienen registrado.
       </p>
       {bookmakers.map((b) => (
-        <div key={b.id} className={`flex items-center gap-3 rounded-lg border p-3 ${success[b.id] ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : ''}`}>
+        <div key={b.id} className={`flex items-center gap-3 rounded-lg border p-3 ${
+          (b.initialCapital !== null || success[b.id]) ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : ''
+        }`}>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">{bmName(b)}</p>
             {errors[b.id] && <p className="text-xs text-red-600 mt-0.5">{errors[b.id]}</p>}
           </div>
-          {success[b.id] ? (
+          {(b.initialCapital !== null || success[b.id]) ? (
             <span className="text-green-600 text-sm font-medium">✓ Guardado</span>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
@@ -340,14 +390,14 @@ export function OnboardingWizard({ step1Done, step2Done, step3Done, bookmakers, 
     {
       n:    1,
       done: localStep1,
-      label: 'Añade tu primera casa de apuestas',
-      sub:  'Registra una casa con tu saldo actual',
+      label: 'Añade tus casas de apuestas',
+      sub:  'Introduce el capital inicial y, si quieres, el saldo actual',
     },
     {
       n:    2,
       done: localStep2,
-      label: 'Registra el capital inicial',
-      sub:  'Necesario para que el sistema de apuestas funcione',
+      label: 'Confirma el capital inicial',
+      sub:  'Solo para casas que aún no tienen capital registrado',
     },
   ]
 

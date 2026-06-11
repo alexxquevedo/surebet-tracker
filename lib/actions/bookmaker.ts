@@ -25,6 +25,7 @@ export async function addPresetBookmakerAction(
   preset: BookmakerPreset,
   initialBalance: number,
   etiqueta?: string,
+  saldoActual?: number,
 ): Promise<BookmakerActionResult> {
   const session = await auth()
   const userId  = session?.user?.id
@@ -56,23 +57,28 @@ export async function addPresetBookmakerAction(
       return { success: false, error: `${label} ya existe en tu cuenta` }
     }
 
+    const saldoFinal = (saldoActual !== undefined && !isNaN(saldoActual) && saldoActual >= 0)
+      ? saldoActual
+      : initialBalance
+
     const bm = await prisma.$transaction(async (tx) => {
       const created = await tx.bookmaker.create({
         data: {
           userId,
-          name:        preset.name,
-          etiqueta:    etiquetaVal,
-          color:       preset.color,
-          currency:    preset.currency,
-          country:     preset.country,
-          websiteUrl:  preset.websiteUrl,
-          status:      'ACTIVE',
-          currentBalance: initialBalance,
+          name:           preset.name,
+          etiqueta:       etiquetaVal,
+          color:          preset.color,
+          currency:       preset.currency,
+          country:        preset.country,
+          websiteUrl:     preset.websiteUrl,
+          status:         'ACTIVE',
+          currentBalance: saldoFinal,
+          initialCapital: D(initialBalance),
         },
         select: { id: true },
       })
 
-      // Record initial deposit transaction if balance > 0
+      // Capital inicial → INITIAL_DEPOSIT
       if (initialBalance > 0) {
         await tx.bookmakerTransaction.create({
           data: {
@@ -83,7 +89,26 @@ export async function addPresetBookmakerAction(
             balanceBefore: 0,
             balanceAfter:  initialBalance,
             currency:      preset.currency,
-            notes:         'Saldo inicial al añadir casa',
+            notes:         'Capital inicial al añadir casa',
+          },
+        })
+      }
+
+      // Si el saldo actual difiere del capital inicial → MANUAL_ADJUSTMENT
+      const diff = D(saldoFinal).minus(D(initialBalance))
+      if (!diff.isZero()) {
+        await tx.bookmakerTransaction.create({
+          data: {
+            userId,
+            bookmakerId:   created.id,
+            type:          'MANUAL_ADJUSTMENT',
+            amount:        diff.abs(),
+            balanceBefore: initialBalance,
+            balanceAfter:  saldoFinal,
+            currency:      preset.currency,
+            notes:         diff.isPositive()
+              ? 'Ajuste: saldo actual superior al capital inicial (ganancias previas no registradas)'
+              : 'Ajuste: saldo actual inferior al capital inicial (pérdidas previas no registradas)',
           },
         })
       }
