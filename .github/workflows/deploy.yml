@@ -10,4 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Vercel deployment
-        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/vercel_response.txt -w "%{http_code}" -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}")
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response body:"
+          cat /tmp/vercel_response.txt
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "Deploy hook failed"
+            exit 1
+          fi
