@@ -18,6 +18,8 @@ import { prisma } from '@/lib/db/client'
  */
 
 const WEB_URL = 'https://dualstats-tracker.vercel.app'
+const UTM = 'utm_source=fidesbot&utm_medium=bot'
+const dsUrl = (path: string, campaign: string) => `${WEB_URL}${path}?${UTM}&utm_campaign=${campaign}`
 
 async function sendTelegramMessage(
   chatId: string,
@@ -108,7 +110,7 @@ export async function GET(req: NextRequest) {
       bet.user.telegramId,
       text,
       [
-        { text: '🏆 Registrar resultado', url: `${WEB_URL}/records` },
+        { text: '🏆 Registrar resultado', url: dsUrl('/records', 'reminder_placed') },
       ],
     )
     if (ok) placedReminders++
@@ -154,8 +156,8 @@ export async function GET(req: NextRequest) {
       draft.user.telegramId,
       `⚠️ *Apuesta en Borrador — Sin confirmar (12h)*\n\n📋 *${title}*${missingTxt}\n\nRegistra el capital inicial en *Casas de Apuestas* y confirma la apuesta para que se procese correctamente.`,
       [
-        { text: '🏦 Ir a Casas de Apuestas', url: `${WEB_URL}/bookmakers` },
-        { text: '📋 Ver Pendientes',          url: `${WEB_URL}/records` },
+        { text: '🏦 Ir a Casas de Apuestas', url: dsUrl('/bookmakers', 'reminder_draft') },
+        { text: '📋 Ver Pendientes',          url: dsUrl('/records',    'reminder_draft') },
       ],
     )
     if (ok) draftReminders++

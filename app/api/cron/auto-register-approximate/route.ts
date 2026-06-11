@@ -13,6 +13,8 @@ import { prisma } from '@/lib/db/client'
  */
 
 const WEB_URL = 'https://dualstats-tracker.vercel.app'
+const dsUrl = (path: string, campaign: string) =>
+  `${WEB_URL}${path}?utm_source=fidesbot&utm_medium=bot&utm_campaign=${campaign}`
 
 async function sendTelegramMessage(
   chatId: string,
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
       `⚠️ Marcadas como _Datos aproximados_. Puedes corregir los valores reales en cualquier momento desde la web.`
 
     const ok = await sendTelegramMessage(telegramId, text, [
-      { text: '📊 Ver en DualStats', url: `${WEB_URL}/records` },
+      { text: '📊 Ver en DualStats', url: dsUrl('/records', 'auto_register') },
     ])
     if (ok) notified++
     else errors++
