@@ -173,8 +173,9 @@ function Step1({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
 // ── Step 2 — Set initial capital ────────────────────────────────────────────
 
 function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => void }) {
-  const pending_bms = bookmakers.filter((b) => b.initialCapital === null)
-  const [amounts,  setAmounts]  = useState<Record<string, string>>({})
+  const [amounts,  setAmounts]  = useState<Record<string, string>>(
+    () => Object.fromEntries(bookmakers.filter(b => b.initialCapital !== null).map(b => [b.id, String(b.initialCapital)]))
+  )
   const [errors,   setErrors]   = useState<Record<string, string>>({})
   const [success,  setSuccess]  = useState<Record<string, boolean>>({})
   const [pending,  start]       = useTransition()
@@ -193,11 +194,10 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
       if (r.success) {
         setSuccess((s) => ({ ...s, [b.id]: true }))
         router.refresh()
-        // If all pending set, move on
-        const stillPending = pending_bms.filter(
-          (pb) => pb.id !== b.id && !success[pb.id]
-        )
-        if (stillPending.length === 0) onDone()
+        // Move on once all bookmakers without prior capital have been saved
+        const needsSave = bookmakers.filter((pb) => pb.initialCapital === null)
+        const allSaved  = needsSave.every((pb) => pb.id === b.id || success[pb.id])
+        if (allSaved) onDone()
       } else {
         setErrors((e) => ({ ...e, [b.id]: r.error }))
       }
@@ -210,7 +210,7 @@ function Step2({ bookmakers, onDone }: { bookmakers: Bookmaker[]; onDone: () => 
         El capital inicial es el saldo que tenías en cada casa al empezar a usar DualStats.
         Es imprescindible para que el sistema de apuestas funcione correctamente.
       </p>
-      {pending_bms.map((b) => (
+      {bookmakers.map((b) => (
         <div key={b.id} className={`flex items-center gap-3 rounded-lg border p-3 ${success[b.id] ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : ''}`}>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">{bmName(b)}</p>
