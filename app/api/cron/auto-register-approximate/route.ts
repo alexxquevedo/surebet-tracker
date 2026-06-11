@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
   }
 
   for (const bets of byUser.values()) {
-    const telegramId = bets[0].user.telegramId
+    const telegramId = bets[0]!.user.telegramId
     if (!telegramId) continue
 
     const lines = bets.map((b) => {

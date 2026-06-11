@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { getStatsData } from '@/lib/queries/stats'
-import { getBankrollEvolution, getDashboardMetrics } from '@/lib/queries/dashboard'
+import { getBankrollEvolution, getAdvancedStats } from '@/lib/queries/dashboard'
 import type { AdvancedStats } from '@/types/domain'
 import { AdvancedSection } from '@/app/(dashboard)/_components/advanced-section'
 import { DistributionChart } from './_components/distribution-chart'
@@ -242,7 +242,7 @@ function StatsContent({
                   <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ganadas</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">P&L</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">ROI</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yield</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -257,8 +257,8 @@ function StatsContent({
                     <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.profit)}`}>
                       {fmtProfit(row.profit)}
                     </td>
-                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.roi)}`}>
-                      {row.roi > 0 ? '+' : ''}{row.roi.toFixed(2)}%
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.yield)}`}>
+                      {row.yield > 0 ? '+' : ''}{row.yield.toFixed(2)}%
                     </td>
                   </tr>
                 ))}
@@ -369,12 +369,11 @@ export default async function StatsPage() {
   const isFree   = userPlan === 'FREE'
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution, metricsData] = await Promise.all([
+  const [stats, evolution, advanced] = await Promise.all([
     getStatsData(userId),
     getBankrollEvolution(userId),
-    getDashboardMetrics(userId),
+    getAdvancedStats(userId),
   ])
-  const { advanced } = metricsData
 
   return (
     <div className="space-y-8 max-w-4xl">

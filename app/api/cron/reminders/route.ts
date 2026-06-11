@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
       status:    'DRAFT',
       deletedAt: null,
       user:      { telegramId: { not: null } },
-      createdAt: { gte: hoursAgo(18), lte: hoursAgo(12) },
+      datePlaced: { gte: hoursAgo(18), lte: hoursAgo(12) },
     },
     select: {
       id:    true,

@@ -476,6 +476,180 @@ export async function getDashboardMetrics(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// ESTADÍSTICAS AVANZADAS STANDALONE
+// Versión ligera de getDashboardMetrics: solo computa AdvancedStats sin el
+// overhead de bankroll/bookmakers. Usada por la página de Estadísticas.
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function getAdvancedStats(userId: string): Promise<AdvancedStats> {
+  const now           = new Date()
+  const sevenDaysAgo  = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000)
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+  const [settledRecords, inPlayAgg, statusCounts] = await Promise.all([
+    prisma.betRecord.findMany({
+      where:   { userId, status: { in: ['WON', 'LOST', 'CASHOUT'] }, deletedAt: null },
+      select:  { grossProfit: true, totalStake: true, totalReturn: true, dateSettled: true, sport: true },
+      orderBy: { dateSettled: 'asc' },
+    }),
+    prisma.betRecord.aggregate({
+      where: { userId, status: 'PLACED', deletedAt: null },
+      _count: { id: true },
+    }),
+    prisma.betRecord.groupBy({
+      by:    ['status'],
+      where: { userId, deletedAt: null },
+      _count: { id: true },
+    }),
+  ])
+
+  const netProfit = sumD(settledRecords.map((r) => r.grossProfit))
+
+  const countByStatus = (s: string) =>
+    statusCounts.find((g) => g.status === s)?._count.id ?? 0
+
+  const settledCount = countByStatus('WON') + countByStatus('LOST') + countByStatus('CASHOUT')
+  const placedCount  = inPlayAgg._count.id
+  const totalCount   = statusCounts.reduce((sum, g) => sum + g._count.id, 0)
+
+  // Períodos activos
+  const daySet   = new Set<string>()
+  const weekSet  = new Set<string>()
+  const monthSet = new Set<string>()
+  for (const r of settledRecords) {
+    if (r.dateSettled === null) continue
+    daySet.add(dayKey(r.dateSettled))
+    weekSet.add(weekKey(r.dateSettled))
+    monthSet.add(monthKey(r.dateSettled))
+  }
+  const activeDays       = daySet.size
+  const avgDailyProfit   = activeDays    > 0 ? netProfit.div(activeDays).toDecimalPlaces(2).toNumber()    : 0
+  const avgWeeklyProfit  = weekSet.size  > 0 ? netProfit.div(weekSet.size).toDecimalPlaces(2).toNumber()  : 0
+  const avgMonthlyProfit = monthSet.size > 0 ? netProfit.div(monthSet.size).toDecimalPlaces(2).toNumber() : 0
+
+  // Rachas
+  const grossProfits = settledRecords.map((r) => D(r.grossProfit).toNumber())
+  const { currentWinStreak, currentLossStreak, maxWinStreak, maxLossStreak } =
+    calculateStreaks(grossProfits)
+  const streaks: StreakMetrics = {
+    currentWin:  currentWinStreak,
+    currentLoss: currentLossStreak,
+    maxWin:      maxWinStreak,
+    maxLoss:     maxLossStreak,
+  }
+
+  // Max drawdown
+  let runningSum = new Decimal(0)
+  const cumulativeSeries = grossProfits.map((p) => {
+    runningSum = runningSum.plus(new Decimal(p))
+    return runningSum.toDecimalPlaces(2).toNumber()
+  })
+  const maxDrawdown = calculateMaxDrawdown(cumulativeSeries)
+
+  // Mejor / peor período
+  const dayMap   = buildPeriodMap(settledRecords, dayKey)
+  const weekMap  = buildPeriodMap(settledRecords, weekKey)
+  const monthMap = buildPeriodMap(settledRecords, monthKey)
+  const { best: bestDay,   worst: worstDay }   = findBestWorst(dayMap)
+  const { best: bestWeek,  worst: worstWeek }  = findBestWorst(weekMap)
+  const { best: bestMonth, worst: worstMonth } = findBestWorst(monthMap)
+
+  // Desglose por deporte
+  const sportMap = new Map<string, { count: number; profit: Decimal; staked: Decimal }>()
+  for (const r of settledRecords) {
+    if (r.sport === null) continue
+    const ex = sportMap.get(r.sport) ?? { count: 0, profit: new Decimal(0), staked: new Decimal(0) }
+    sportMap.set(r.sport, {
+      count:  ex.count + 1,
+      profit: ex.profit.plus(D(r.grossProfit)),
+      staked: ex.staked.plus(D(r.totalStake)),
+    })
+  }
+  const bySport: SportBreakdown[] = Array.from(sportMap.entries()).map(
+    ([sport, { count, profit, staked }]) => ({
+      sport:  sport as SportType,
+      count,
+      profit: profit.toDecimalPlaces(2).toNumber(),
+      staked: staked.toDecimalPlaces(2).toNumber(),
+      yield:  staked.isZero() ? 0 : profit.div(staked).mul(100).toDecimalPlaces(4).toNumber(),
+    }),
+  )
+
+  // Ventanas temporales
+  function windowFor(from: Date): WindowMetrics {
+    const slice = settledRecords.filter(
+      (r) => r.dateSettled !== null && r.dateSettled >= from,
+    )
+    return {
+      profit:     sumD(slice.map((r) => r.grossProfit)).toDecimalPlaces(2).toNumber(),
+      staked:     sumD(slice.map((r) => r.totalStake)).toDecimalPlaces(2).toNumber(),
+      operations: slice.length,
+    }
+  }
+
+  return {
+    totalOperations:   totalCount,
+    settledOperations: settledCount,
+    placedOperations:  placedCount,
+    activeDays,
+    avgDailyProfit,
+    avgWeeklyProfit,
+    avgMonthlyProfit,
+    maxDrawdown,
+    streaks,
+    bestDay,
+    worstDay,
+    bestWeek,
+    worstWeek,
+    bestMonth,
+    worstMonth,
+    bySport,
+    last7:  windowFor(sevenDaysAgo),
+    last30: windowFor(thirtyDaysAgo),
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OPERACIONES ABIERTAS — widget "En juego" del dashboard
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface OpenBetItem {
+  id:               string
+  type:             BetType
+  title:            string | null
+  eventName:        string | null
+  totalStake:       number
+  datePlaced:       Date
+  primaryBookmaker: { name: string } | null
+  legs:             { bookmaker: { name: string } }[]
+}
+
+export async function getOpenBets(userId: string): Promise<OpenBetItem[]> {
+  const records = await prisma.betRecord.findMany({
+    where:   { userId, status: 'PLACED', deletedAt: null },
+    select: {
+      id:        true,
+      type:      true,
+      title:     true,
+      eventName: true,
+      totalStake: true,
+      datePlaced: true,
+      primaryBookmaker: { select: { name: true } },
+      legs: {
+        where:  { deletedAt: null },
+        select: { bookmaker: { select: { name: true } } },
+      },
+    },
+    orderBy: { datePlaced: 'desc' },
+  })
+
+  return records.map((r) => ({
+    ...r,
+    totalStake: D(r.totalStake).toDecimalPlaces(2).toNumber(),
+  }))
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // REGISTROS RECIENTES — para la tabla principal del dashboard
 // ════════════════════════════════════════════════════════════════════════════
 

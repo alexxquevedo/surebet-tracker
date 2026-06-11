@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
 
       // ── Actualizar piernas y bookmakers ──────────────────
       for (let i = 0; i < betRecord.legs.length; i++) {
-        const leg       = betRecord.legs[i]
+        const leg       = betRecord.legs[i]!
         const legStatus = legStatusMap.get(i) ?? newStatus
 
         // Actualizar estado de la pierna

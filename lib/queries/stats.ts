@@ -24,7 +24,7 @@ export interface TypeStat {
   won:     number
   winRate: number
   profit:  number
-  roi:     number
+  yield:   number
 }
 
 export interface MonthlyPnl {
@@ -198,7 +198,7 @@ export async function getStatsData(userId: string): Promise<StatsData> {
         won:     w.length,
         winRate: nv.length > 0 ? (w.length / nv.length) * 100 : 0,
         profit,
-        roi:     stake > 0 ? (profit / stake) * 100 : 0,
+        yield:   stake > 0 ? (profit / stake) * 100 : 0,
       }
     })
     .sort((a, b) => b.count - a.count)

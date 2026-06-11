@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const ydayEnd    = new Date(todayStart.getTime() - 1) // 23:59:59.999 UTC yesterday
 
   const users = await prisma.user.findMany({
-    where: { bookmakers: { some: { deletedAt: null, status: 'ACTIVE' } } },
+    where: { bookmakers: { some: { status: 'ACTIVE' } } },
     select: { id: true },
   })
 
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
         }),
         // current balances (best approximation of end-of-yesterday state)
         prisma.bookmaker.aggregate({
-          where: { userId, deletedAt: null, status: 'ACTIVE' },
+          where: { userId, status: 'ACTIVE' },
           _sum: { currentBalance: true },
         }),
         // currently in play
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
         }),
       ])
 
-      const totalBal  = Number(balances._sum.currentBalance ?? 0)
+      const totalBal  = Number(balances._sum?.currentBalance ?? 0)
       const inPlayBal = Number(inPlay._sum.totalStake ?? 0)
 
       const snapData = {
