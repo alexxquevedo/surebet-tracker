@@ -246,7 +246,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                   id:                 r.id,
                   type:               r.type,
                   totalStake:         r.totalStake,
-                  potentialReturn:    r.potentialReturn,
+                  potentialReturn:    r.potentialReturn ?? 0,
                   primaryBookmakerId: r.primaryBookmakerId,
                   singleOdds:         r.singleBetDetail?.odds ?? null,
                   legs:               r.legs.map((l): LegInfo => ({
@@ -423,7 +423,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
               id:                 r.id,
               type:               r.type,
               totalStake:         r.totalStake,
-              potentialReturn:    r.potentialReturn,
+              potentialReturn:    r.potentialReturn ?? 0,
               primaryBookmakerId: r.primaryBookmakerId,
               singleOdds:         r.singleBetDetail?.odds ?? null,
               legs:               r.legs.map((l): LegInfo => ({
