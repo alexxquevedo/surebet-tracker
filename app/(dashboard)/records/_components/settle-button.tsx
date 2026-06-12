@@ -17,6 +17,7 @@ export interface BetForSettle {
   id:                  string
   type:                string
   totalStake:          number
+  potentialReturn:     number
   primaryBookmakerId:  string | null
   singleOdds:          number | null
   legs:                LegInfo[]
@@ -98,7 +99,10 @@ function SettleModal({ bet, onClose, onSettled }: { bet: BetForSettle; onClose: 
     }
     if (outcome === 'VOID') return 0
     if (outcome === 'CASHOUT') return parseFloat(cashout || '0') - bet.totalStake
-    if (outcome === 'WON') return bet.totalStake * ((bet.singleOdds ?? 2) - 1)
+    if (outcome === 'WON') {
+      if (bet.singleOdds != null) return bet.totalStake * (bet.singleOdds - 1)
+      return bet.potentialReturn - bet.totalStake
+    }
     return -bet.totalStake
   }
 
