@@ -855,20 +855,20 @@ export async function getBankrollEvolution(
     where: {
       userId,
       deletedAt: null,
-      dateSettled: { gte: since },
+      datePlaced: { gte: since },
       status:      { in: ['WON', 'LOST', 'CASHOUT'] },
       grossProfit: { not: null },
     },
-    select: { dateSettled: true, grossProfit: true },
-    orderBy: { dateSettled: 'asc' },
+    select: { datePlaced: true, grossProfit: true },
+    orderBy: { datePlaced: 'asc' },
   })
 
   if (records.length === 0) return { points: [], initialCapital }
 
   const dailyMap = new Map<string, Decimal>()
   for (const r of records) {
-    if (!r.dateSettled || r.grossProfit === null) continue
-    const key  = r.dateSettled.toISOString().slice(0, 10)
+    if (!r.datePlaced || r.grossProfit === null) continue
+    const key  = r.datePlaced.toISOString().slice(0, 10)
     const prev = dailyMap.get(key) ?? D(0)
     dailyMap.set(key, prev.plus(D(r.grossProfit)))
   }

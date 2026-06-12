@@ -23,8 +23,14 @@ const SPORTS = [
 ]
 
 function toDatetimeLocal(iso: string): string {
-  // "2026-06-10T12:34:00.000Z" → "2026-06-10T12:34"
-  return iso.slice(0, 16)
+  const d = new Date(iso)
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+function localToUTC(datetimeLocal: string): string {
+  const d = new Date(datetimeLocal)
+  return isNaN(d.getTime()) ? datetimeLocal : d.toISOString()
 }
 
 interface Props {
@@ -53,12 +59,18 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
   const [pending, start] = useTransition()
   const [error,   setError]  = useState<string | null>(null)
 
+  // Para combos, sport y competition viven en las selecciones, no en el record
+  const derivedSport = r.sport
+    ?? (r.type === 'COMBO' ? (r.comboDetail?.selections?.find(s => s.sport)?.sport ?? '') : '')
+  const derivedCompetition = r.competition
+    ?? (r.type === 'COMBO' ? (r.comboDetail?.selections?.find(s => s.competition)?.competition ?? '') : '')
+
   // Controlled state
   const [title,       setTitle]       = useState(r.title       ?? '')
   const [notes,       setNotes]       = useState(r.notes       ?? '')
-  const [competition, setCompetition] = useState(r.competition ?? '')
+  const [competition, setCompetition] = useState(derivedCompetition)
   const [eventName,   setEventName]   = useState(r.eventName   ?? '')
-  const [sport,       setSport]       = useState(r.sport       ?? '')
+  const [sport,       setSport]       = useState(derivedSport)
   const [isLive,      setIsLive]      = useState(r.isLive)
   const [datePlaced,  setDatePlaced]  = useState(toDatetimeLocal(r.datePlaced))
 
@@ -86,7 +98,7 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
         eventName:   eventName   || null,
         sport:       sport       || null,
         isLive,
-        datePlaced,
+        datePlaced: localToUTC(datePlaced),
         legUpdates,
         singleOdds:  canEditSingleOdds && singleOdds ? parseFloat(singleOdds) : undefined,
       })

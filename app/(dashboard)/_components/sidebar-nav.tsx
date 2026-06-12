@@ -299,6 +299,7 @@ function NewOperationModal({
   // ── Shared metadata ─────────────────────────────────────────────────────
   const [selection, setSelection]     = useState('')
   const [sport, setSport]             = useState('')
+  const [competition, setCompetition] = useState('')
   const [isLive, setIsLive]           = useState(false)
   const [datePlaced, setDatePlaced]   = useState(defaultDateTime)
   const [middleRange, setMiddleRange] = useState('')
@@ -438,7 +439,7 @@ function NewOperationModal({
 
   // ── Reset ───────────────────────────────────────────────────────────────
   function resetForm() {
-    setSelection(''); setSport(''); setIsLive(false); setDatePlaced(defaultDateTime())
+    setSelection(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime())
     setMiddleRange(''); setStake1(''); setOdds1(''); setRetorno1('')
     setStake2(''); setOdds2(''); setBankrollId('')
     setBm1Id(bookmakers[0]?.id ?? ''); setBm2Id(bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
@@ -463,6 +464,7 @@ function NewOperationModal({
     fd.append('type',        betType)
     fd.append('selection',   selection)
     fd.append('sport',       sport)
+    fd.append('competition', competition)
     fd.append('isLive',      String(isLive))
     fd.append('datePlaced',  localToUTC(datePlaced))
     if (bankrollId) fd.append('bankrollId', bankrollId)
@@ -703,19 +705,22 @@ function NewOperationModal({
             ) : (
               /* ═══ SINGLE / CASINO / MULTI ══════════════════════════════ */
               <>
-                {/* Evento / Selección (oculto en casino) */}
-                {betType !== 'CASINO' && (
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-semibold">
-                      Evento / Selección <span className="font-normal text-muted-foreground">(opcional — se genera auto)</span>
-                    </label>
-                    <input type="text" value={selection} onChange={(e) => setSelection(e.target.value)}
-                      placeholder="ej. Real Madrid vs Barça — 1X2"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
-                  </div>
-                )}
+                {/* Evento / Selección — para casino se convierte en "¿Qué has jugado?" */}
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold">
+                    {betType === 'CASINO' ? '¿Qué has jugado?' : 'Evento / Selección'}
+                    {betType !== 'CASINO' && (
+                      <span className="font-normal text-muted-foreground"> (opcional)</span>
+                    )}
+                  </label>
+                  <input type="text" value={selection} onChange={(e) => setSelection(e.target.value)}
+                    placeholder={betType === 'CASINO'
+                      ? 'ej. Ruleta, Slots, Blackjack, Póker...'
+                      : 'ej. Real Madrid vs Barça — 1X2'}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                </div>
 
-                {/* Deporte (oculto en casino) */}
+                {/* Deporte (oculto en casino y multi) */}
                 {betType !== 'CASINO' && !isMulti && (
                   <div className="space-y-1.5">
                     <label className="block text-sm font-semibold">
@@ -731,6 +736,18 @@ function NewOperationModal({
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {/* Competición (solo SINGLE) */}
+                {betType === 'SINGLE' && (
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold">
+                      Competición <span className="font-normal text-muted-foreground">(opcional)</span>
+                    </label>
+                    <input type="text" value={competition} onChange={(e) => setCompetition(e.target.value)}
+                      placeholder="ej. La Liga, Premier League, Champions..."
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
                   </div>
                 )}
 

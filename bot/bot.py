@@ -36,6 +36,8 @@ BOT_USERNAME     = "perpleSurebetBot"
 DUALSTATS_API_URL = "https://dualstats-tracker.vercel.app/api/bot"
 DUALSTATS_API_KEY = "f8c22003d898614fd5fe4df311785bd7e16b75599f30ec4d2f08416919ad13c0"
 DUALSTATS_WEB_URL = "https://dualstats-tracker.vercel.app"
+ADMIN_USERNAME    = "alescuge"          # usuario de Telegram de soporte
+COMUNIDAD_URL     = ""                  # ← link a tu grupo/canal (vacío = botón oculto)
 
 def ds_url(path: str = "", campaign: str = "") -> str:
     """Construye URL de DualStats con parámetros UTM para tracking de conversión bot→web."""
@@ -90,6 +92,9 @@ dualstats_vinculados = set() # conjunto de user_ids con DualStats vinculado
 dualstats_plan       = {}   # {user_id: "PRO" | "PRO_TRACKER" | "ENTERPRISE"} — plan web del usuario
 alerta_cache         = {}   # {"{uid}_{alert_id}": dict} — en memoria, se pierde al reiniciar
 subscription_api_cache = {} # {user_id: {"subscribed": bool, "plan": str, "expiresAt": str|None, "daysLeft": int|None, "cached_at": datetime}}
+alertas_hoy    = {}   # {user_id: {"date": date, "count": int}}
+pausa_alertas  = {}   # {user_id: datetime} — alertas pausadas hasta esa hora
+avisos_enviados = set() # {"{uid}_7d", "{uid}_1d", "{uid}_expired"} — evita repetir avisos
 
 # ============================================================
 # MAPAS DE VISUALIZACIÓN
@@ -198,45 +203,104 @@ Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los 
 *10. Contacto*
 Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
-SOPORTE_TEXTO = """🆘 *Soporte — FidesBot*
+SOPORTE_PAGINAS = [
+"""🆘 *Soporte — FidesBot*  _(1/2)_
 ━━━━━━━━━━━━━━━━━━
 
-📩 Escríbenos al administrador y te responderemos lo antes posible.
+📩 Cualquier duda, escríbenos al administrador. Te respondemos lo antes posible.
 
 ━━━━━━━━━━━━━━━━━━
 📌 *Preguntas frecuentes:*
 
 ❓ *¿Cómo activo mi suscripción?*
-Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. Tu acceso se activa automáticamente al instante.
+Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. El acceso se activa automáticamente al instante.
 
 ❓ *¿Qué es Stripe? ¿Es seguro pagar ahí?*
-Stripe es la pasarela de pago más utilizada del mundo (la usan Amazon, Google o Spotify). FidesBot no almacena tus datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con cualquier tarjeta Visa, Mastercard o Amex. Para otros métodos contacta al administrador.
+Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
+
+❓ *¿La suscripción se renueva sola? ¿Cómo la cancelo?*
+No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar o cancelar antes del vencimiento contacta al administrador.
 
 ❓ *¿Qué es DualStats Tracker?*
-DualStats es la app web complementaria al bot. Registra y analiza todas tus apuestas: ROI, beneficio acumulado, rendimiento por casa, estadísticas por deporte y mucho más. Con el plan PRO+Tracker, las alertas que aceptas en el bot se registran automáticamente en la app.
+DualStats es la app web complementaria al bot. Registra todas tus apuestas y muestra: ROI, beneficio acumulado, rendimiento por casa, estadísticas por deporte y mucho más. Con PRO+Tracker las alertas que aceptas en el bot se registran automáticamente.
 
 ❓ *¿Cómo vinculo el bot con DualStats?*
-Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas tener cuenta creada en DualStats y tener activo el plan PRO+Tracker.
+Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta activa en DualStats y el plan PRO+Tracker.
+
+━━━━━━━━━━━━━━━━━━""",
+"""🆘 *Soporte — FidesBot*  _(2/2)_
+━━━━━━━━━━━━━━━━━━
+
+📌 *Preguntas frecuentes (cont.):*
 
 ❓ *¿Cómo funciona la calculadora de stake?*
-Cuando recibes una alerta surebet, pulsa 🧮 Stake e introduce el importe total que quieres invertir. El bot calcula automáticamente cuánto poner en cada casa para garantizar el beneficio independientemente del resultado.
+Al recibir una alerta surebet pulsa 🧮 Stake e introduce el importe total a invertir. El bot reparte automáticamente cuánto va a cada casa para garantizar el beneficio sea cual sea el resultado.
 
 ❓ *¿Por qué no me llegan alertas?*
-Comprueba en 🔔 Alertas que tienes activado lo que quieres, y en ⚙️ Configuración que el filtro de profit mínimo no sea demasiado alto (por defecto 3% en surebets).
+Comprueba en 🔔 Alertas que tienes activados los tipos que quieres, y en ⚙️ Configuración que el profit mínimo no esté demasiado alto (por defecto 3% en surebets).
 
 ❓ *¿Qué pasa si una cuota cambia antes de apostar?*
-No entres. Si la cuota baja o se cierra el mercado antes de colocar los dos lados, es mejor perder la oportunidad que hacer una apuesta incompleta que no cubre el arbitraje.
+No entres. Si la cuota baja o el mercado cierra antes de colocar los dos lados, es mejor perder la oportunidad que hacer una apuesta incompleta que no cubre el arbitraje.
 
 ❓ *¿Cómo evito que las casas me limiten?*
-1) Redondea las apuestas (50€ en vez de 47.32€).
-2) No retires dinero con demasiada frecuencia.
-3) Varía deportes, mercados y casas.
-4) No apuestes siempre el máximo permitido.
+1) Redondea los importes (50€ en vez de 47,32€)
+2) No retires con demasiada frecuencia
+3) Varía deportes, mercados y casas
+4) No apuestes siempre el máximo
 
 ❓ *¿Qué son los créditos?*
-Los créditos permiten usar funciones premium de forma puntual sin suscripción. Ganas 2 créditos por cada amigo que invites y créditos extra reportando errores al administrador.
+Permiten usar funciones premium puntualmente sin suscripción. Ganas créditos invitando amigos (2 por referido) y reportando errores al administrador.
+
+❓ *¿Qué hago si el bot no responde?*
+Envía /start para reiniciar la sesión. Si el problema persiste, escribe al administrador con una captura de pantalla y tu ID de Telegram.
 
 ━━━━━━━━━━━━━━━━━━"""
+]
+
+NOVEDADES_HUB = (
+    "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
+    "🕒 Última actualización: *12/06/2026*\n\n"
+    "✨ *¿Qué encontrarás aquí?*\n"
+    " • Notas de la última versión.\n"
+    " • Nuevas funcionalidades y mejoras.\n"
+    " • Próximas funciones en desarrollo.\n"
+    " • Mensajes importantes y avisos.\n\n"
+    "💎 Gracias por confiar en FidesBot. Seguimos trabajando para "
+    "ayudarte con el arbitraje deportivo.\n"
+    "━━━━━━━━━━━━━━━━━━"
+)
+NOVEDADES_ULTIMA = (
+    "🕒 *Última actualización — Junio 2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ Hub de soporte con FAQ, TyC, ID y estado del bot\n"
+    "✅ Botón de búsqueda en cada panel de apuestas\n"
+    "✅ Contador de alertas recibidas hoy en el panel\n"
+    "✅ Modo pausa de alertas (2h / 4h / 8h)\n"
+    "✅ Avisos automáticos de vencimiento (7 días y 1 día antes)\n"
+    "✅ Combinadas expandibles con lista de selecciones\n"
+    "✅ Cálculo de P&L corregido para combinadas\n"
+    "✅ Teclado numérico en móvil + soporte para comas\n"
+    "✅ Exportación Excel mejorada\n"
+    "✅ Borrado automático de comandos del usuario\n"
+    "━━━━━━━━━━━━━━━━━━"
+)
+NOVEDADES_PROXIMAS = (
+    "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "🔜 Freebets — convertidor de freebets en dinero real\n"
+    "🔜 Valuebets — alertas de apuestas con valor esperado positivo\n"
+    "🔜 Calculadora de stake avanzada\n"
+    "🔜 Estadísticas personales de surebets aprovechadas\n"
+    "🔜 Más casas de apuestas integradas\n\n"
+    "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
+    "━━━━━━━━━━━━━━━━━━"
+)
+NOVEDADES_AVISOS = (
+    "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "ℹ️ No hay avisos activos en este momento.\n\n"
+    "_Esta sección se actualizará cuando haya comunicados importantes "
+    "sobre el servicio, mantenimientos o cambios de precios._\n"
+    "━━━━━━━━━━━━━━━━━━"
+)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -526,14 +590,45 @@ async def tarea_flush_db(context: ContextTypes.DEFAULT_TYPE):
 # TAREA VERIFICAR SUSCRIPCIONES
 # ============================================================
 async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
+    ahora = datetime.now()
     for uid, sub in list(subscriptions.items()):
         if uid in ADMIN_IDS: continue
-        if sub["expires"] and sub["expires"] <= datetime.now():
-            try:
-                await context.bot.send_message(chat_id=uid,
-                    text="⚠️ *Tu suscripción a FidesBot ha caducado.*\n\nRenueva en /start → 💳 Suscribirse.",
-                    parse_mode="Markdown")
-            except: pass
+        expires = sub.get("expires")
+        if not expires: continue
+        dias = (expires - ahora).days
+        try:
+            if expires <= ahora:
+                key = f"{uid}_expired"
+                if key not in avisos_enviados:
+                    avisos_enviados.add(key)
+                    # Limpiar avisos previos para este usuario al expirar
+                    avisos_enviados.discard(f"{uid}_7d")
+                    avisos_enviados.discard(f"{uid}_1d")
+                    await context.bot.send_message(chat_id=uid,
+                        text="😢 *Tu suscripción a FidesBot ha caducado.*\n\n"
+                             "Ya no recibirás alertas hasta que renueves.\n\n"
+                             "👉 Escribe /start y pulsa 💳 *Suscribirse* para continuar.",
+                        parse_mode="Markdown")
+            elif dias <= 1:
+                key = f"{uid}_1d"
+                if key not in avisos_enviados:
+                    avisos_enviados.add(key)
+                    await context.bot.send_message(chat_id=uid,
+                        text="⚠️ *¡Tu suscripción caduca mañana!*\n\n"
+                             "Renueva hoy para no perder ninguna alerta.\n\n"
+                             "👉 /start → 💳 Suscribirse",
+                        parse_mode="Markdown")
+            elif dias <= 7:
+                key = f"{uid}_7d"
+                if key not in avisos_enviados:
+                    avisos_enviados.add(key)
+                    await context.bot.send_message(chat_id=uid,
+                        text=f"🔔 *Tu suscripción caduca en {dias} días.*\n\n"
+                             f"Para no perder acceso, renueva antes del "
+                             f"{expires.strftime('%d/%m/%Y')}.\n\n"
+                             f"👉 /start → 💳 Suscribirse",
+                        parse_mode="Markdown")
+        except: pass
     guardar_db()
 
 # ============================================================
@@ -715,7 +810,7 @@ def construir_mensaje_middle(event, ap, sport_key, live):
             f"{emoji} {nombre_deporte} — {liga}\n🗓️ {fecha_str}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}")
 
-async def escanear_y_alertar(app, live=False, user_ids=None):
+async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None):
     global stats
     all_sports = set()
     targets    = user_ids or list(subscriptions.keys())
@@ -734,6 +829,8 @@ async def escanear_y_alertar(app, live=False, user_ids=None):
             except: commence = None
             for uid in targets:
                 if not tiene_suscripcion(uid): continue
+                # ── Comprobar pausa de alertas ──────────────────
+                if uid in pausa_alertas and datetime.now() < pausa_alertas[uid]: continue
                 cfg = get_config(uid)
                 if not cfg["sports"].get(sport_key, False): continue
                 if commence and not live:
@@ -743,6 +840,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None):
                 apuestas = encontrar_apuestas(event, active_bks, buscar_middles)
                 for ap in apuestas:
                     tipo = ap["tipo"]
+                    if tipos_override and tipo not in tipos_override: continue
                     if tipo == "surebet":
                         if not cfg.get("surebets_on", True): continue
                         if live and not cfg.get("surebets_live_on", True): continue
@@ -784,10 +882,14 @@ async def escanear_y_alertar(app, live=False, user_ids=None):
                         ]])
                     try:
                         sent = await app.bot.send_message(chat_id=uid, text=mensaje, reply_markup=kb)
-                        # Guardar message_id para poder editar luego
                         if kb and cache_key in alerta_cache:
                             alerta_cache[cache_key]["msg_id"] = sent.message_id
                         last_surebet[uid] = ap
+                        # ── Contador diario ─────────────────────
+                        hoy = datetime.now().date()
+                        if uid not in alertas_hoy or alertas_hoy[uid]["date"] != hoy:
+                            alertas_hoy[uid] = {"date": hoy, "count": 0}
+                        alertas_hoy[uid]["count"] += 1
                         await asyncio.sleep(0.1)
                     except Exception as e:
                         logger.error(f"Error enviando a {uid}: {e}")
@@ -818,8 +920,8 @@ async def menu_no_suscrito(update):
          InlineKeyboardButton("🧮 Stake 🔒", callback_data="bloqueado")],
         [InlineKeyboardButton("💰 Créditos", callback_data="mis_creditos"),
          InlineKeyboardButton("👥 Referidos", callback_data="mis_referidos")],
-        [InlineKeyboardButton("🆘 Soporte / FAQ", callback_data="soporte"),
-         InlineKeyboardButton("📋 TyC", callback_data="tyc")],
+        [InlineKeyboardButton("🆘 Soporte",     callback_data="soporte"),
+         InlineKeyboardButton("🆕 Novedades",  callback_data="novedades")],
         [InlineKeyboardButton("💳 Suscribirse", callback_data="suscribirse")],
     ]
     texto = (
@@ -839,7 +941,20 @@ async def menu_no_suscrito(update):
 # ============================================================
 # COMANDOS
 # ============================================================
+
+def _auto_delete(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int = 5):
+    """Borra el mensaje del usuario tras `delay` segundos (fire-and-forget)."""
+    async def _task():
+        await asyncio.sleep(delay)
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception:
+            pass
+    asyncio.create_task(_task())
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     user    = update.effective_user
     user_id = user.id
     args    = context.args
@@ -876,6 +991,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await menu_principal(update, context)
 
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     uid = update.effective_user.id
     await update.message.reply_text(
         f"🪪 *Tu ID de Telegram:*\n`{uid}`\n\n"
@@ -884,18 +1001,21 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown")
 
 async def cmd_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     volver = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
     await update.message.reply_text(TERMINOS,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]),
         parse_mode="Markdown")
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    volver = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
-    await update.message.reply_text(SOPORTE_TEXTO,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]),
-        parse_mode="Markdown")
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    await mostrar_hub_soporte(update, context)
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
@@ -955,20 +1075,27 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton(f"{icono_sub} Mi cuenta", callback_data="ver_estado")],
         [InlineKeyboardButton("👥 Referidos",    callback_data="mis_referidos"),
          InlineKeyboardButton("💰 Créditos",     callback_data="mis_creditos")],
-        [InlineKeyboardButton("🆘 Soporte / FAQ", callback_data="soporte"),
-         InlineKeyboardButton("📋 TyC",           callback_data="tyc")],
-        [InlineKeyboardButton("💳 Suscribirse",   callback_data="suscribirse")],
+        [InlineKeyboardButton("🆘 Soporte",      callback_data="soporte"),
+         InlineKeyboardButton("🆕 Novedades",    callback_data="novedades")],
+        [InlineKeyboardButton("💳 Suscribirse",  callback_data="suscribirse")],
     ]
-    surebets_icon = "✅" if cfg.get("surebets_on", True) else "❌"
-    middles_icon  = "✅" if cfg.get("middlebets_on", False) else "❌"
+    surebets_icon  = "✅" if cfg.get("surebets_on", True) else "❌"
+    middles_icon   = "✅" if cfg.get("middlebets_on", False) else "❌"
     valuebets_icon = "✅" if cfg.get("valuebets_on", False) else "❌"
-    live_icon     = "✅" if cfg.get("surebets_live_on", True) else "❌"
+    live_icon      = "✅" if cfg.get("surebets_live_on", True) else "❌"
+    hoy = datetime.now().date()
+    cnt_hoy = alertas_hoy.get(user_id, {}).get("count", 0) if alertas_hoy.get(user_id, {}).get("date") == hoy else 0
+    pausa_str = ""
+    if user_id in pausa_alertas and datetime.now() < pausa_alertas[user_id]:
+        mins = int((pausa_alertas[user_id] - datetime.now()).total_seconds() / 60)
+        pausa_str = f"\n⏸️ *Alertas pausadas* — {mins} min restantes"
     texto = (
         f"🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👤 *{nombre}* — {icono_sub} *{dias_str_completo}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"• 💎 Surebets {surebets_icon}\n• 🎯 Middlebets {middles_icon}\n"
         f"• 📊 Valuebets {valuebets_icon}\n• ⚡ LIVE {live_icon}\n"
+        f"⚡ Alertas hoy: *{cnt_hoy}*{pausa_str}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"💵 Profit Surebet: *{cfg.get('min_profit_surebet',3.0)}%*\n"
         f"🎯 Profit Middle: *{cfg.get('min_profit_middle',2.0)}%* | Prob: *{cfg.get('min_prob_middle',5.0)}%*\n"
@@ -1002,8 +1129,10 @@ async def panel_surebets(update, context):
         f"• Revisa siempre las cuotas antes de apostar.\n\n"
         f"⚠️ *Atención:*\n• Puede haber datos ligeramente desactualizados.\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")]]),
-        parse_mode="Markdown")
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔍 Buscar surebets ahora", callback_data="buscar_surebets")],
+            [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
+        ]), parse_mode="Markdown")
 
 async def panel_middles(update, context):
     await update.callback_query.answer()
@@ -1021,8 +1150,10 @@ async def panel_middles(update, context):
         f"• Riesgo 0 — matemáticamente superior a una surebet.\n\n"
         f"⚠️ *Atención:*\n• La probabilidad del middle es una estimación.\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")]]),
-        parse_mode="Markdown")
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔍 Buscar middlebets ahora", callback_data="buscar_middles")],
+            [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
+        ]), parse_mode="Markdown")
 
 async def panel_valuebets(update, context):
     await update.callback_query.answer()
@@ -1137,16 +1268,29 @@ async def mis_creditos(update, context):
 # ============================================================
 async def menu_alertas(update, context):
     await update.callback_query.answer()
-    cfg = get_config(update.effective_user.id)
+    uid = update.effective_user.id
+    cfg = get_config(uid)
     s = cfg.get("surebets_on", True);  m = cfg.get("middlebets_on", False)
     v = cfg.get("valuebets_on", False); l = cfg.get("surebets_live_on", True)
+    pausado = uid in pausa_alertas and datetime.now() < pausa_alertas[uid]
+    if pausado:
+        mins = int((pausa_alertas[uid] - datetime.now()).total_seconds() / 60)
+        pausa_info = f"\n⏸️ *Pausadas {mins} min más*"
+        fila_pausa = [InlineKeyboardButton("▶️ Reanudar alertas", callback_data="reanudar_alertas")]
+    else:
+        pausa_info = ""
+        fila_pausa = [
+            InlineKeyboardButton("⏸️ 2h",  callback_data="pausa_2h"),
+            InlineKeyboardButton("⏸️ 4h",  callback_data="pausa_4h"),
+            InlineKeyboardButton("⏸️ 8h",  callback_data="pausa_8h"),
+        ]
     await update.callback_query.edit_message_text(
         f"🔔 *Alertas*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"• 💎 Surebets: {'✅ ON' if s else '❌ OFF'}\n  Arbitraje puro. Ganancia garantizada.\n\n"
         f"• 🎯 Middlebets: {'✅ ON' if m else '❌ OFF'}\n  Siempre ganas algo. Si cae en el middle, ganas las dos.\n\n"
         f"• 📊 Valuebets: {'✅ ON' if v else '❌ OFF'}\n  Apuestas con valor esperado positivo.\n\n"
         f"• ⚡ LIVE: {'✅ ON' if l else '❌ OFF'}\n  Alertas durante el partido en directo.\n\n"
-        "━━━━━━━━━━━━━━━━━━",
+        f"━━━━━━━━━━━━━━━━━━{pausa_info}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(f"💎 Surebets {'✅' if s else '❌'}",   callback_data="toggle_surebets")],
             [InlineKeyboardButton(f"🎯 Middlebets {'✅' if m else '❌'}", callback_data="toggle_middles")],
@@ -1154,6 +1298,7 @@ async def menu_alertas(update, context):
             [InlineKeyboardButton(f"⚡ LIVE {'✅' if l else '❌'}",        callback_data="toggle_live")],
             [InlineKeyboardButton("✅ Activar todas",    callback_data="alertas_todas"),
              InlineKeyboardButton("❌ Desactivar todas", callback_data="alertas_ninguna")],
+            fila_pausa,
             [InlineKeyboardButton("🔙 Volver al panel",  callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
@@ -1485,11 +1630,112 @@ async def pago_realizado(update, context, dias=30, tracker=False):
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]))
 
-async def mostrar_soporte(update, context):
+async def mostrar_hub_soporte(update, context):
+    query  = update.callback_query
+    uid    = update.effective_user.id
+    volver = "menu_principal" if tiene_suscripcion(uid) else "menu_no_suscrito"
+    texto = (
+        "💬 *Atención al cliente*\n━━━━━━━━━━━━━━━━━━\n\n"
+        "📝 ¿Problemas, dudas o sugerencias?\n"
+        "• Usa los métodos de contacto de abajo.\n\n"
+        "🐛 ¿Encontraste un fallo?\n"
+        "• Escríbenos y podrás ganar *créditos*.\n\n"
+        "💡 *Información:*\n"
+        "• Revisa las FAQ antes de escribirnos.\n"
+        "• Al usar el bot aceptas los Términos y Condiciones.\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⬇️ *Contacta con nosotros* ⬇️"
+    )
+    keyboard = [
+        [InlineKeyboardButton("❓ FAQ",          callback_data="soporte_faq"),
+         InlineKeyboardButton("📋 TyC",          callback_data="tyc")],
+        [InlineKeyboardButton("🪪 Mi ID",        callback_data="soporte_mi_id"),
+         InlineKeyboardButton("🤖 Estado Bot",   callback_data="soporte_estado")],
+        [InlineKeyboardButton("🌐 Página web ↗", url=DUALSTATS_WEB_URL)],
+    ]
+    fila_contacto = []
+    if ADMIN_USERNAME:
+        fila_contacto.append(InlineKeyboardButton("💬 Contactar ↗", url=f"https://t.me/{ADMIN_USERNAME}"))
+    if COMUNIDAD_URL:
+        fila_contacto.append(InlineKeyboardButton("🎉 Comunidad ↗", url=COMUNIDAD_URL))
+    if fila_contacto:
+        keyboard.append(fila_contacto)
+    keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data=volver)])
+    if query:
+        await query.answer()
+        await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+async def mostrar_soporte(update, context, page=0):
+    query   = update.callback_query
+    page    = max(0, min(page, len(SOPORTE_PAGINAS) - 1))
+    texto   = SOPORTE_PAGINAS[page]
+    nav     = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ Anterior", callback_data=f"soporte_p{page-1}"))
+    if page < len(SOPORTE_PAGINAS) - 1:
+        nav.append(InlineKeyboardButton("Siguiente ▶️", callback_data=f"soporte_p{page+1}"))
+    kb = []
+    if nav:
+        kb.append(nav)
+    kb.append([InlineKeyboardButton("🔙 Volver", callback_data="soporte")])
+    if query:
+        await query.answer()
+        await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+async def mostrar_novedades(update, context):
+    query  = update.callback_query
+    uid    = update.effective_user.id
+    volver = "menu_principal" if tiene_suscripcion(uid) else "menu_no_suscrito"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🕒 Última actualización",  callback_data="novedades_ultima")],
+        [InlineKeyboardButton("🚀 Próximas funciones",    callback_data="novedades_proximas")],
+        [InlineKeyboardButton("📢 Avisos",                callback_data="novedades_avisos")],
+        [InlineKeyboardButton("🔙 Volver",                callback_data=volver)],
+    ])
+    if query:
+        await query.answer()
+        await query.edit_message_text(NOVEDADES_HUB, reply_markup=kb, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(NOVEDADES_HUB, reply_markup=kb, parse_mode="Markdown")
+
+async def novedades_subpagina(update, context, texto):
     await update.callback_query.answer()
-    volver = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
-    await update.callback_query.edit_message_text(SOPORTE_TEXTO,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]),
+    await update.callback_query.edit_message_text(texto,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="novedades")]]),
+        parse_mode="Markdown")
+
+async def soporte_mi_id(update, context):
+    await update.callback_query.answer()
+    uid = update.effective_user.id
+    await update.callback_query.edit_message_text(
+        f"🪪 *Tu ID de Telegram*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"`{uid}`\n\n"
+        f"📌 Concepto de pago: `FidesBot {uid} 30D`\n\n"
+        "_Comparte este ID con el administrador para activar o renovar tu suscripción._",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="soporte")]]),
+        parse_mode="Markdown")
+
+async def soporte_estado_bot(update, context):
+    await update.callback_query.answer()
+    ahora   = datetime.now()
+    ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
+    proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
+    total_subs = len([u for u in subscriptions if tiene_suscripcion(u)])
+    await update.callback_query.edit_message_text(
+        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"✅ Servicio operativo\n"
+        f"👥 Suscriptores activos: *{total_subs}*\n"
+        f"⏱️ Último escaneo: *{ultima}*\n"
+        f"⏭️ Próximo escaneo: *{proxima}*\n"
+        f"💎 Surebets encontradas: *{stats['surebets_encontradas']}*\n"
+        f"🎯 Middles encontrados: *{stats['middlebets_encontradas']}*\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🕐 {ahora.strftime('%d/%m/%Y %H:%M')}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="soporte")]]),
         parse_mode="Markdown")
 
 async def mostrar_tyc(update, context):
@@ -1533,6 +1779,8 @@ async def ver_estado(update, context):
 # ============================================================
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS: return
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     total = len([u for u in subscriptions if tiene_suscripcion(u)])
     keyboard = [
         [InlineKeyboardButton("➕ Activar usuario",   callback_data="admin_activar"),
@@ -1763,6 +2011,8 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
 
 async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /vincular — explica cómo vincular la cuenta."""
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     await update.message.reply_text(
         "🔗 *Vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
         "Para vincular tu cuenta:\n\n"
@@ -3089,8 +3339,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown")
         except: pass
         return
-    if data == "soporte":       await mostrar_soporte(update, context); return
-    if data == "tyc":           await mostrar_tyc(update, context); return
+    if data == "soporte":             await mostrar_hub_soporte(update, context); return
+    if data == "soporte_faq":         await mostrar_soporte(update, context, page=0); return
+    if data.startswith("soporte_p"):
+        try: page = int(data[len("soporte_p"):])
+        except: page = 0
+        await mostrar_soporte(update, context, page=page); return
+    if data == "novedades":           await mostrar_novedades(update, context); return
+    if data == "novedades_ultima":    await novedades_subpagina(update, context, NOVEDADES_ULTIMA); return
+    if data == "novedades_proximas":  await novedades_subpagina(update, context, NOVEDADES_PROXIMAS); return
+    if data == "novedades_avisos":    await novedades_subpagina(update, context, NOVEDADES_AVISOS); return
+    if data == "soporte_mi_id":       await soporte_mi_id(update, context); return
+    if data == "soporte_estado":      await soporte_estado_bot(update, context); return
+    if data == "tyc":                 await mostrar_tyc(update, context); return
     if data == "panel_freebets":  await panel_freebets(update, context); return
     if data == "panel_valuebets": await panel_valuebets(update, context); return
     if data == "mis_referidos":   await mis_referidos(update, context); return
@@ -3178,6 +3439,32 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"✅ *{total} apuesta(s) encontradas y enviadas.*", parse_mode="Markdown")
         await asyncio.sleep(3)
         await menu_principal(update, context)
+    elif data in ("buscar_surebets", "buscar_middles"):
+        tipo_label = "surebets" if data == "buscar_surebets" else "middlebets"
+        tipo_key   = "surebet"  if data == "buscar_surebets" else "middlebet"
+        await query.edit_message_text(f"🔍 Buscando {tipo_label}... espera un momento.")
+        total = await escanear_y_alertar(context.application, live=False, user_ids=[user_id], tipos_override={tipo_key})
+        total += await escanear_y_alertar(context.application, live=True,  user_ids=[user_id], tipos_override={tipo_key})
+        ultimo_escaneo[user_id] = datetime.now()
+        if total == 0:
+            await query.edit_message_text(
+                f"🔍 *Búsqueda completada*\n\n❌ No se han encontrado {tipo_label} con tu configuración.\n\n"
+                "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.",
+                parse_mode="Markdown")
+        else:
+            await query.edit_message_text(f"✅ *{total} {tipo_label} encontradas y enviadas.*", parse_mode="Markdown")
+        await asyncio.sleep(3)
+        if data == "buscar_surebets": await panel_surebets(update, context)
+        else: await panel_middles(update, context)
+    elif data in ("pausa_2h", "pausa_4h", "pausa_8h"):
+        horas = {"pausa_2h": 2, "pausa_4h": 4, "pausa_8h": 8}[data]
+        pausa_alertas[user_id] = datetime.now() + timedelta(hours=horas)
+        await query.answer(f"⏸️ Alertas pausadas {horas}h", show_alert=False)
+        await menu_alertas(update, context)
+    elif data == "reanudar_alertas":
+        pausa_alertas.pop(user_id, None)
+        await query.answer("▶️ Alertas reanudadas", show_alert=False)
+        await menu_alertas(update, context)
 
     # ── DualStats callbacks ────────────────────────────────
     elif data == "panel_dualstats":    await panel_dualstats(update, context)
@@ -3344,6 +3631,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # HANDLER DE TEXTO
 # ============================================================
 async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     user_id = update.effective_user.id
     text    = update.message.text.strip()
 
@@ -3733,6 +4022,8 @@ async def cmd_resetstats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("ℹ️ No hay historial local que borrar.")
 
 async def cmd_pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     user_id = update.effective_user.id
     if not tiene_suscripcion(user_id):
         await update.message.reply_text(BLOQUEADO_MSG); return
@@ -3772,6 +4063,8 @@ async def cmd_pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def cmd_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
     user_id = update.effective_user.id
     if not tiene_suscripcion(user_id):
         await update.message.reply_text(BLOQUEADO_MSG); return

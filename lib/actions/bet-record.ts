@@ -73,10 +73,11 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   const bookmakerId = formData.get('bookmakerId') as string | null
   const rawStake    = formData.get('stake') as string | null
   const rawOdds     = formData.get('odds') as string | null
-  const selection   = ((formData.get('selection') as string | null) ?? '').trim()
-  const rawSport    = (formData.get('sport') as string | null)?.trim() || null
-  const isLive      = formData.get('isLive') === 'true'
-  const datePlaced  = parseDatePlaced(formData.get('datePlaced') as string | null)
+  const selection    = ((formData.get('selection') as string | null) ?? '').trim()
+  const rawSport     = (formData.get('sport') as string | null)?.trim() || null
+  const rawCompetition = (formData.get('competition') as string | null)?.trim() || null
+  const isLive       = formData.get('isLive') === 'true'
+  const datePlaced   = parseDatePlaced(formData.get('datePlaced') as string | null)
 
   if (!rawType || !VALID_TYPES.includes(rawType as BetType)) {
     return { success: false, error: 'Tipo de apuesta inválido' }
@@ -114,6 +115,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             datePlaced, createdVia: 'MANUAL',
             isLive,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
+            competition: rawCompetition,
             primaryBookmakerId: bookmakerId,
             bankrollId: rawBankrollId ?? undefined,
             title: finalTitle,
