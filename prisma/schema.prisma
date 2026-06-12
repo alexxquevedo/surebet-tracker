@@ -541,10 +541,11 @@ model ComboDetail {
   betRecordId String    @unique
   betRecord   BetRecord @relation(fields: [betRecordId], references: [id], onDelete: Cascade)
 
-  totalOdds Decimal @db.Decimal(10, 4) // producto de todas las cuotas
-  legCount  Int
-  comboType String  @default("ACCUMULATOR") // TRIXIE, YANKEE, LUCKY15, etc.
-  eachWay   Boolean @default(false)
+  totalOdds   Decimal  @db.Decimal(10, 4) // cuota total declarada
+  legCount    Int
+  comboType   String   @default("ACCUMULATOR") // TRIXIE, YANKEE, LUCKY15, etc.
+  eachWay     Boolean  @default(false)
+  bonusReturn Decimal? @db.Decimal(12, 2) // retorno extra (Winamax/Bet365 bonus), no sube cuota
 
   selections ComboSelection[]
 
@@ -557,11 +558,12 @@ model ComboSelection {
   comboDetailId String
   comboDetail   ComboDetail @relation(fields: [comboDetailId], references: [id], onDelete: Cascade)
 
-  eventName String
-  selection String
-  odds      Decimal    @db.Decimal(8, 4)
-  sport     SportType?
-  result    BetStatus  @default(PLACED) // resultado de ESTA selección individual
+  eventName   String
+  selection   String
+  odds        Decimal    @db.Decimal(8, 4)
+  sport       SportType?
+  competition String?
+  result      BetStatus  @default(PLACED) // resultado de ESTA selección individual
 
   @@index([comboDetailId])
   @@map("combo_selections")

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/client'
 import { type Prisma } from '@prisma/client'
 import ExcelJS from 'exceljs'
 import { sendCsvExportEmail } from '@/lib/services/email'
+import { fromZonedTime } from 'date-fns-tz'
 
 const STATUS_LABEL: Record<string, string> = {
   PLACED:      'En juego',
@@ -98,8 +99,8 @@ export async function GET(request: NextRequest) {
     } : {}),
     ...(filterFrom || filterTo ? {
       datePlaced: {
-        ...(filterFrom ? { gte: new Date(`${filterFrom}T00:00:00`) } : {}),
-        ...(filterTo   ? { lte: new Date(`${filterTo}T23:59:59`)   } : {}),
+        ...(filterFrom ? { gte: fromZonedTime(`${filterFrom}T00:00:00`, tz) } : {}),
+        ...(filterTo   ? { lte: fromZonedTime(`${filterTo}T23:59:59`,   tz) } : {}),
       },
     } : {}),
   }

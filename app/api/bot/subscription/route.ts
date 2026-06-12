@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     where: { telegramId },
   })
 
-  if (botSub && botSub.expiresAt > now) {
+  if (botSub && botSub.expiresAt && botSub.expiresAt > now) {
     const daysLeft = Math.ceil((botSub.expiresAt.getTime() - now.getTime()) / 86400000)
     return NextResponse.json({
       subscribed: true,

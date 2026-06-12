@@ -162,35 +162,41 @@ Tu suscripción se activa *automáticamente* al completar el pago.
 
 👇 *Elige tu plan:*"""
 
-TERMINOS = """📋 *Términos y Condiciones — FidesBot*
+TERMINOS = """📋 *Términos y Condiciones — FidesBot & DualStats Tracker*
 
-_Última actualización: mayo 2026_
+_Última actualización: junio 2026_
 
 *1. Identificación del servicio*
-FidesBot proporciona información sobre apuestas deportivas en tiempo real, incluyendo surebets, middlebets, valuebets y alertas en directo. No pertenece a ninguna casa de apuestas.
+FidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
 
 *2. Aceptación*
-El uso implica aceptación plena de estos Términos.
+El uso de cualquiera de los servicios implica la aceptación plena de estos Términos.
 
 *3. Requisitos*
-Exclusivo para mayores de 18 años.
+Uso exclusivo para mayores de 18 años. El acceso por menores está estrictamente prohibido.
 
-*4. Servicio*
-FidesBot es una herramienta informativa. Las alertas en directo implican mayor volatilidad. La decisión de apostar es responsabilidad exclusiva del usuario.
+*4. Naturaleza del servicio*
+FidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
 
-⚠️ *No apuestes más dinero del que estés dispuesto a perder.*
+⚠️ *No apuestes más de lo que estés dispuesto a perder.*
 
-*5. Condiciones económicas*
-Reembolso en primeras 24h si no se ha hecho uso intensivo. Devolución proporcional si cesa el servicio.
+*5. Pagos y reembolsos*
+Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
 
-*6. Prohibiciones*
-Reventa, reenvío automático y compartir suscripciones están prohibidos. Incumplimiento: bloqueo permanente sin reembolso.
+*6. Datos y privacidad*
+FidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
 
-*7. Responsabilidad*
-FidesBot no es asesor financiero. El usuario es responsable de sus apuestas.
+*7. Prohibiciones*
+Están prohibidos: ceder el acceso a terceros, reenviar alertas de forma automática, compartir la suscripción y cualquier uso automatizado no autorizado. El incumplimiento conlleva bloqueo permanente sin reembolso.
 
-*8. Contacto*
-Contacta con el administrador a través del bot."""
+*8. Responsabilidad*
+FidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
+
+*9. Modificaciones*
+Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los cambios se comunicarán a través del bot.
+
+*10. Contacto*
+Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
 SOPORTE_TEXTO = """🆘 *Soporte — FidesBot*
 ━━━━━━━━━━━━━━━━━━
@@ -201,27 +207,34 @@ SOPORTE_TEXTO = """🆘 *Soporte — FidesBot*
 📌 *Preguntas frecuentes:*
 
 ❓ *¿Cómo activo mi suscripción?*
-Usa /id, realiza el pago con el concepto `FidesBot [tuID] 30D` y pulsa ✅ Ya he pagado.
+Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. Tu acceso se activa automáticamente al instante.
+
+❓ *¿Qué es Stripe? ¿Es seguro pagar ahí?*
+Stripe es la pasarela de pago más utilizada del mundo (la usan Amazon, Google o Spotify). FidesBot no almacena tus datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con cualquier tarjeta Visa, Mastercard o Amex. Para otros métodos contacta al administrador.
+
+❓ *¿Qué es DualStats Tracker?*
+DualStats es la app web complementaria al bot. Registra y analiza todas tus apuestas: ROI, beneficio acumulado, rendimiento por casa, estadísticas por deporte y mucho más. Con el plan PRO+Tracker, las alertas que aceptas en el bot se registran automáticamente en la app.
+
+❓ *¿Cómo vinculo el bot con DualStats?*
+Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas tener cuenta creada en DualStats y tener activo el plan PRO+Tracker.
 
 ❓ *¿Cómo funciona la calculadora de stake?*
-Pulsa 🧮 Stake, introduce el importe total y el bot te dirá cuánto poner en cada casa.
+Cuando recibes una alerta surebet, pulsa 🧮 Stake e introduce el importe total que quieres invertir. El bot calcula automáticamente cuánto poner en cada casa para garantizar el beneficio independientemente del resultado.
 
 ❓ *¿Por qué no me llegan alertas?*
-Comprueba en 🔔 Alertas que tienes activado lo que quieres, y en ⚙️ Configuración que el filtro de profit no sea demasiado alto.
-
-❓ *¿Qué son los créditos?*
-Los usuarios gratuitos tienen créditos para usar funciones premium. Ganas créditos invitando amigos (2 por referido) o reportando fallos al administrador.
+Comprueba en 🔔 Alertas que tienes activado lo que quieres, y en ⚙️ Configuración que el filtro de profit mínimo no sea demasiado alto (por defecto 3% en surebets).
 
 ❓ *¿Qué pasa si una cuota cambia antes de apostar?*
-Si la cuota baja o se cierra el mercado, no entres. Es mejor perder la oportunidad que hacer una apuesta incompleta.
+No entres. Si la cuota baja o se cierra el mercado antes de colocar los dos lados, es mejor perder la oportunidad que hacer una apuesta incompleta que no cubre el arbitraje.
 
 ❓ *¿Cómo evito que las casas me limiten?*
-1) Redondea las apuestas (47€ en vez de 47.32€).
-2) No retires dinero constantemente.
-3) Varía deportes y mercados.
+1) Redondea las apuestas (50€ en vez de 47.32€).
+2) No retires dinero con demasiada frecuencia.
+3) Varía deportes, mercados y casas.
+4) No apuestes siempre el máximo permitido.
 
-❓ *¿Las alertas tienen en cuenta las reglas de cada casa?*
-El bot filtra mercados compatibles, pero en Tenis las reglas por retirada varían. Revisa siempre los términos de cada casa.
+❓ *¿Qué son los créditos?*
+Los créditos permiten usar funciones premium de forma puntual sin suscripción. Ganas 2 créditos por cada amigo que invites y créditos extra reportando errores al administrador.
 
 ━━━━━━━━━━━━━━━━━━"""
 
@@ -455,18 +468,34 @@ def gastar_credito(user_id):
     guardar_db()
     return True
 
-def activar_usuario(user_id, nombre, dias):
-    if user_id in subscriptions and subscriptions[user_id]["expires"] and subscriptions[user_id]["expires"] > datetime.now():
+def activar_usuario(user_id, dias, nombre=None, plan="PRO"):
+    nombre_guardado = nombre or subscriptions.get(user_id, {}).get("name", str(user_id))
+    if user_id in subscriptions and subscriptions[user_id].get("expires") and subscriptions[user_id]["expires"] > datetime.now():
         subscriptions[user_id]["expires"] += timedelta(days=dias)
+        subscriptions[user_id]["plan"] = plan  # actualiza plan aunque se renueve
     else:
         subscriptions[user_id] = {
-            "name": nombre,
+            "name":    nombre_guardado,
             "expires": datetime.now() + timedelta(days=dias),
-            "config": deepcopy(DEFAULT_USER_CONFIG),
+            "config":  deepcopy(DEFAULT_USER_CONFIG),
+            "plan":    plan,
         }
     if user_id not in creditos:
         creditos[user_id] = CREDITOS_INICIALES
     guardar_db()
+
+def get_plan_label(user_id) -> str:
+    """Devuelve la etiqueta del plan para mostrar en admin."""
+    # Primero caché API (más fiable si vinculado)
+    cache = subscription_api_cache.get(user_id)
+    if cache and cache.get("plan"):
+        p = cache["plan"]
+        if p == "PRO_TRACKER": return "PRO+Tracker"
+        if p == "ENTERPRISE":  return "Enterprise"
+        return "PRO"
+    # Fallback: plan almacenado localmente
+    p = subscriptions.get(user_id, {}).get("plan", "PRO")
+    return "PRO+Tracker" if p == "PRO_TRACKER" else "PRO"
 
 def desactivar_usuario(user_id):
     if user_id in subscriptions and user_id not in ADMIN_IDS:
@@ -897,7 +926,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not tiene_suscripcion(user_id):
         await menu_no_suscrito(update); return
     cfg    = get_config(user_id)
-    nombre = subscriptions.get(user_id, {}).get("name", "Usuario")
+    nombre = update.effective_user.first_name or update.effective_user.username or str(user_id)
     dias   = dias_restantes(user_id)
     stake  = cfg.get("stake", 100.0)
     icono_sub = icono_suscripcion(dias)
@@ -1440,13 +1469,13 @@ async def pago_realizado(update, context, dias=30, tracker=False):
                  f"👤 *{nombre}*\n🪪 ID: `{user_id}`\n📅 Plan: *{plan_label}*\n━━━━━━━━━━━━━━━━━━\nPulsa el botón para activar:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
                 f"✅ Activar {plan_label}",
-                callback_data=f"admin_activar_rapido_{user_id}_{nombre.split()[0]}_{dias}{sufijo_t}"
+                callback_data=f"admin_activar_rapido_{user_id}_{dias}{sufijo_t}"
             )]]), parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error notificando grupo: {e}")
         try:
             await context.bot.send_message(chat_id=ADMIN_ID,
-                text=f"💰 *Nuevo pago notificado*\n👤 *{nombre}*\n🪪 ID: `{user_id}`\nPlan: {plan_label}\n\nPara activar:\n`activar {user_id} {nombre.split()[0]} {dias}`",
+                text=f"💰 *Nuevo pago notificado*\n👤 *{nombre}*\n🪪 ID: `{user_id}`\nPlan: {plan_label}\n\nPara activar:\n`activar {user_id} {dias}`",
                 parse_mode="Markdown")
         except: pass
     await update.callback_query.edit_message_text(
@@ -1475,7 +1504,8 @@ async def ver_estado(update, context):
     user_id = update.effective_user.id
     cfg     = get_config(user_id)
     dias    = dias_restantes(user_id)
-    nombre  = subscriptions.get(user_id, {}).get("name", "Usuario")
+    nombre  = update.effective_user.first_name or update.effective_user.username or str(user_id)
+    plan    = get_plan_label(user_id)
     deportes_activos = [f"{emoji} {n}" for k, (emoji, n) in SPORT_DISPLAY.items() if cfg["sports"].get(k)]
     casas_activas    = [n for k, n in BOOKMAKER_NAMES.items() if cfg["bookmakers"].get(k)]
     mis_refs = referrals.get(user_id, [])
@@ -1483,6 +1513,7 @@ async def ver_estado(update, context):
     await update.callback_query.edit_message_text(
         f"{icono_suscripcion(dias)} *Mi cuenta*\n━━━━━━━━━━━━━━━━━━\n"
         f"👤 *{nombre}*\n"
+        f"💎 Plan: *{plan}*\n"
         f"📅 Días restantes: *{'∞' if dias==9999 else dias}*\n"
         f"💰 Créditos: *{creds}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -1521,7 +1552,13 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_callback(update, context):
     query = update.callback_query; data = query.data
     if data == "admin_activar":
-        await query.edit_message_text("➕ *Activar usuario*\n\n`activar ID NOMBRE DIAS`\n\nEj: `activar 123456789 Juan 30`", parse_mode="Markdown")
+        await query.edit_message_text(
+            "➕ *Activar usuario*\n\n"
+            "PRO:          `activar ID DIAS`\n"
+            "PRO+Tracker:  `activar ID DIAS T`\n\n"
+            "Ej PRO:         `activar 123456789 30`\n"
+            "Ej PRO+Tracker: `activar 123456789 30 T`",
+            parse_mode="Markdown")
         context.user_data["admin_waiting"] = "activar"
     elif data == "admin_desactivar":
         await query.edit_message_text("➖ *Desactivar usuario*\n\n`desactivar ID`", parse_mode="Markdown")
@@ -1533,9 +1570,12 @@ async def handle_admin_callback(update, context):
         lines = ["👥 *Suscriptores:*\n"]
         for uid, sub in subscriptions.items():
             if uid in ADMIN_IDS: continue
-            estado = "✅" if tiene_suscripcion(uid) else "❌"
-            ds_ico = "📊" if uid in dualstats_vinculados else ""
-            lines.append(f"{estado}{ds_ico} {sub['name']} — `{uid}` — {dias_restantes(uid)} días")
+            estado  = "✅" if tiene_suscripcion(uid) else "❌"
+            ds_ico  = "📊" if uid in dualstats_vinculados else ""
+            plan    = get_plan_label(uid)
+            dias    = dias_restantes(uid)
+            dias_str = "∞" if dias == 9999 else str(dias)
+            lines.append(f"{estado}{ds_ico} `{uid}` — *{plan}* — {dias_str} días")
         texto = "\n".join(lines) if len(lines) > 1 else "👥 No hay suscriptores aún."
         await query.edit_message_text(texto,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="admin_volver")]]),
@@ -3031,11 +3071,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "plan_30":              await pagar_plan_stripe(update, context, "bot_30"); return
     if data == "plan_tracker_30":      await pagar_plan_stripe(update, context, "bot_tracker"); return
     if data.startswith("admin_activar_rapido_") and user_id in ADMIN_IDS:
-        parts        = data.split("_")
-        uid_activar  = int(parts[3]); nombre_activar = parts[4]; dias_activar = int(parts[5])
-        es_tracker   = len(parts) > 6 and parts[6] == "T"
-        activar_usuario(uid_activar, nombre_activar, dias_activar)
+        parts       = data.split("_")
+        uid_activar = int(parts[3]); dias_activar = int(parts[4])
+        es_tracker  = len(parts) > 5 and parts[5] == "T"
+        plan_interno = "PRO_TRACKER" if es_tracker else "PRO"
+        activar_usuario(uid_activar, dias_activar, plan=plan_interno)
         plan_txt = "PRO+Tracker" if es_tracker else "PRO"
+        nombre_activar = f"ID {uid_activar}"
         await query.edit_message_text(
             f"✅ *Activado correctamente*\n\n👤 {nombre_activar} (ID: `{uid_activar}`)\n📅 {dias_activar} días — {plan_txt}",
             parse_mode="Markdown")
@@ -3315,38 +3357,51 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Solo admin a partir de aquí ───────────────────────
     if user_id not in ADMIN_IDS: return
     waiting = context.user_data.get("admin_waiting")
+    partes  = text.split()
+    cmd     = partes[0].lower() if partes else ""
 
-    if waiting == "activar":
-        parts = text.split()
-        if len(parts) >= 4 and parts[0].lower() == "activar":
+    # Comandos directos: funcionan con o sin pasar por el menú primero
+    if cmd == "activar" or waiting == "activar":
+        parts = partes
+        if len(parts) >= 3 and parts[0].lower() == "activar":
             try:
-                uid, nombre, dias = int(parts[1]), parts[2], int(parts[3])
-                activar_usuario(uid, nombre, dias)
+                uid, dias    = int(parts[1]), int(parts[2])
+                es_tracker   = len(parts) >= 4 and parts[3].upper() == "T"
+                plan_interno = "PRO_TRACKER" if es_tracker else "PRO"
+                plan_txt     = "PRO+Tracker" if es_tracker else "PRO"
+                activar_usuario(uid, dias, plan=plan_interno)
                 await update.message.reply_text(
-                    f"✅ *{nombre}* (ID: `{uid}`) activado por *{dias} días*. 💾 Guardado.",
+                    f"✅ ID `{uid}` — *{plan_txt}* — activado por *{dias} días*. 💾 Guardado.",
                     parse_mode="Markdown")
                 try:
+                    msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
                     await context.bot.send_message(chat_id=uid,
-                        text=f"🎉 ¡Bienvenido a *FidesBot*!\n\n✅ Tu suscripción está activa por *{dias} días*.\n\nEscribe /start para acceder.",
+                        text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
+                             f"Tienes *{dias} días* de acceso.\n\nEscribe /start para acceder.",
                         parse_mode="Markdown")
                 except: pass
             except:
-                await update.message.reply_text("❌ Formato: `activar ID NOMBRE DIAS`", parse_mode="Markdown")
+                await update.message.reply_text(
+                    "❌ Formato:\n`activar ID DIAS` — PRO\n`activar ID DIAS T` — PRO+Tracker",
+                    parse_mode="Markdown")
+        elif len(parts) < 3 and cmd == "activar":
+            await update.message.reply_text(
+                "❌ Faltan argumentos.\n`activar ID DIAS` — PRO\n`activar ID DIAS T` — PRO+Tracker",
+                parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
-    elif waiting == "desactivar":
+    elif cmd == "desactivar" or waiting == "desactivar":
         parts = text.split()
         if len(parts) >= 2 and parts[0].lower() == "desactivar":
             try:
-                uid    = int(parts[1])
-                nombre = subscriptions.get(uid, {}).get("name", "Usuario")
+                uid = int(parts[1])
                 desactivar_usuario(uid)
-                await update.message.reply_text(f"✅ *{nombre}* desactivado.", parse_mode="Markdown")
+                await update.message.reply_text(f"✅ ID `{uid}` desactivado.", parse_mode="Markdown")
             except:
                 await update.message.reply_text("❌ Formato: `desactivar ID`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
-    elif waiting == "creditos":
+    elif cmd == "creditos" or waiting == "creditos":
         parts = text.split()
         if len(parts) >= 3 and parts[0].lower() == "creditos":
             try:
@@ -3796,4 +3851,5 @@ async def main():
     await app.updater.start_polling(drop_pending_updates=True)
     await asyncio.Event().wait()
 
-await main()
+if __name__ == "__main__":
+    asyncio.run(main())

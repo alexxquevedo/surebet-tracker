@@ -83,14 +83,16 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   }
   if (!bookmakerId) return { success: false, error: 'Casa de apuestas requerida' }
 
+  const rawBankrollId = (formData.get('bankrollId') as string | null) || null
+
   const stakeNum = parseFloat(rawStake ?? '')
   const oddsNum  = parseFloat(rawOdds  ?? '')
   if (isNaN(stakeNum) || stakeNum <= 0) return { success: false, error: 'Stake inválido' }
-  if (isNaN(oddsNum)  || oddsNum < 1.01) return { success: false, error: 'Cuota inválida (mín. 1.01)' }
+  if (isNaN(oddsNum)  || oddsNum <= 1)  return { success: false, error: 'Cuota inválida (debe ser > 1)' }
 
   const betType   = rawType as BetType
   const stake     = D(stakeNum).toDecimalPlaces(2)
-  const odds      = D(oddsNum).toDecimalPlaces(4)
+  const odds      = D(oddsNum).toDecimalPlaces(6)
   const potReturn = stake.mul(odds).toDecimalPlaces(2)
   const finalTitle = selection || autoTitle(betType, rawSport, datePlaced)
 
@@ -113,6 +115,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             isLive,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
             primaryBookmakerId: bookmakerId,
+            bankrollId: rawBankrollId ?? undefined,
             title: finalTitle,
             singleBetDetail: {
               create: { selection: selection || finalTitle, odds, marketType: 'OTHER', isFreeBet: false },
@@ -129,6 +132,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             isLive,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
             primaryBookmakerId: bookmakerId,
+            bankrollId: rawBankrollId ?? undefined,
             title: finalTitle,
           },
           select: { id: true },
@@ -206,12 +210,14 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
   if ([s1, o1, s2, o2].some(isNaN) || s1 <= 0 || s2 <= 0) {
     return { success: false, error: 'Stakes y cuotas son obligatorios y deben ser válidos' }
   }
-  if (o1 < 1.01 || o2 < 1.01) {
-    return { success: false, error: 'Las cuotas deben ser ≥ 1.01' }
+  if (o1 <= 1 || o2 <= 1) {
+    return { success: false, error: 'Las cuotas deben ser > 1' }
   }
 
-  const stake1 = D(s1).toDecimalPlaces(2), odds1 = D(o1).toDecimalPlaces(4)
-  const stake2 = D(s2).toDecimalPlaces(2), odds2 = D(o2).toDecimalPlaces(4)
+  const rawBankrollId2 = (formData.get('bankrollId') as string | null) || null
+
+  const stake1 = D(s1).toDecimalPlaces(2), odds1 = D(o1).toDecimalPlaces(6)
+  const stake2 = D(s2).toDecimalPlaces(2), odds2 = D(o2).toDecimalPlaces(6)
   const ret1   = stake1.mul(odds1).toDecimalPlaces(2)
   const ret2   = stake2.mul(odds2).toDecimalPlaces(2)
   const totalStake    = stake1.plus(stake2).toDecimalPlaces(2)
@@ -247,6 +253,7 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
           createdVia:     'MANUAL',
           isLive,
           sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
+          bankrollId: rawBankrollId2 ?? undefined,
           title: finalTitle,
           // Create type-specific detail
           ...(betType === 'ARBITRAGE' ? {
@@ -1041,7 +1048,7 @@ export async function updateBetMetadataAction(
         if (updatedLegs.length) {
           const minReturn = updatedLegs.reduce(
             (min, l) => D(l.potentialReturn).lt(min) ? D(l.potentialReturn) : min,
-            D(updatedLegs[0].potentialReturn),
+            D(updatedLegs[0]!.potentialReturn),
           )
           base.potentialReturn = minReturn
         }
@@ -1069,5 +1076,131 @@ export async function updateBetMetadataAction(
     return { success: true }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Error al actualizar la apuesta' }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// createComboBetAction  — Combinada (múltiples selecciones, una casa)
+// ════════════════════════════════════════════════════════════════════════════
+
+interface ComboSelectionInput {
+  description: string
+  sport:       string
+  competition: string
+}
+
+export async function createComboBetAction(formData: FormData): Promise<BetActionResult> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
+  const limitErr = await checkFreeBetLimit(userId, userPlan)
+  if (limitErr) return { success: false, error: limitErr }
+
+  const bookmakerId    = formData.get('bookmakerId') as string | null
+  const rawStake       = formData.get('stake') as string | null
+  const rawTotalOdds   = formData.get('totalOdds') as string | null
+  const rawBonusReturn = formData.get('bonusReturn') as string | null
+  const rawSelections  = formData.get('selections') as string | null
+  const isLive         = formData.get('isLive') === 'true'
+  const datePlaced     = parseDatePlaced(formData.get('datePlaced') as string | null)
+  const bankrollId     = (formData.get('bankrollId') as string | null) || null
+
+  if (!bookmakerId) return { success: false, error: 'Casa de apuestas requerida' }
+
+  const stakeNum     = parseFloat(rawStake     ?? '')
+  const totalOddsNum = parseFloat(rawTotalOdds ?? '')
+  if (isNaN(stakeNum) || stakeNum <= 0)       return { success: false, error: 'Stake inválido' }
+  if (isNaN(totalOddsNum) || totalOddsNum <= 1) return { success: false, error: 'Cuota total debe ser > 1' }
+
+  let selections: ComboSelectionInput[] = []
+  try {
+    selections = rawSelections ? JSON.parse(rawSelections) : []
+  } catch {
+    return { success: false, error: 'Selecciones inválidas' }
+  }
+  if (selections.length === 0) return { success: false, error: 'Añade al menos una selección' }
+
+  const stake      = D(stakeNum).toDecimalPlaces(2)
+  const totalOdds  = D(totalOddsNum).toDecimalPlaces(6)
+  const calcReturn = stake.mul(totalOdds).toDecimalPlaces(2)
+  const bonusNum   = rawBonusReturn ? parseFloat(rawBonusReturn) : NaN
+  const bonusReturn = !isNaN(bonusNum) && bonusNum > 0 ? D(bonusNum).toDecimalPlaces(2) : null
+  const potReturn  = bonusReturn ?? calcReturn
+  const finalTitle = `Combinada × ${selections.length} · ${totalOdds.toString()}`
+
+  try {
+    const record = await prisma.$transaction(async (tx) => {
+      const bm = await tx.bookmaker.findFirst({
+        where: { id: bookmakerId, userId },
+        select: { id: true, currentBalance: true },
+      })
+      if (!bm) throw new Error('Casa de apuestas no encontrada')
+
+      const created = await tx.betRecord.create({
+        data: {
+          userId,
+          type:              'COMBO',
+          status:            'PLACED',
+          totalStake:        stake,
+          potentialReturn:   potReturn,
+          datePlaced,
+          createdVia:        'MANUAL',
+          isLive,
+          primaryBookmakerId: bookmakerId,
+          bankrollId:         bankrollId ?? undefined,
+          title:              finalTitle,
+          comboDetail: {
+            create: {
+              totalOdds,
+              legCount:    selections.length,
+              bonusReturn: bonusReturn ?? undefined,
+              selections: {
+                create: selections.map((s) => ({
+                  eventName:   s.description || 'Selección',
+                  selection:   s.description || 'Selección',
+                  odds:        D(1),
+                  sport:       (s.sport || undefined) as 'FOOTBALL' | 'BASKETBALL' | 'TENNIS' | 'HOCKEY' | 'BASEBALL' | 'RUGBY' | 'CRICKET' | 'GOLF' | 'MMA' | 'BOXING' | 'CYCLING' | 'MOTORSPORT' | 'ESPORTS' | 'OTHER' | undefined,
+                  competition: s.competition || null,
+                })),
+              },
+            },
+          },
+        },
+        select: { id: true },
+      })
+
+      // Auto-ajuste de saldo si es necesario
+      let bal = D(bm.currentBalance)
+      if (bal.lt(stake)) {
+        const deficit = stake.minus(bal).toDecimalPlaces(2)
+        await tx.bookmakerTransaction.create({
+          data: {
+            userId,
+            bookmakerId,
+            type:          'MANUAL_ADJUSTMENT',
+            amount:        deficit,
+            balanceBefore: bal,
+            balanceAfter:  bal.plus(deficit),
+            notes:         'Ajuste automático — saldo insuficiente al registrar apuesta',
+            referenceId:   created.id,
+            referenceType: 'AutoAdjust',
+          },
+        })
+        bal = bal.plus(deficit)
+      }
+
+      await tx.bookmaker.update({
+        where: { id: bookmakerId },
+        data:  { currentBalance: bal.minus(stake), totalStaked: { increment: stake.toNumber() } },
+      })
+
+      return created
+    })
+
+    return { success: true, id: record.id }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error al registrar la combinada' }
   }
 }

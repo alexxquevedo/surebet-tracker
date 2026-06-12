@@ -11,11 +11,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!userId) redirect('/login')
 
   // Fetch active bookmakers for the modal selector (exclude CLOSED and SUSPENDED)
-  const bookmakers = await prisma.bookmaker.findMany({
-    where:   { userId, status: { notIn: ['CLOSED', 'SUSPENDED'] } },
-    select:  { id: true, name: true, color: true },
-    orderBy: { name: 'asc' },
-  })
+  const [bookmakers, bankrolls] = await Promise.all([
+    prisma.bookmaker.findMany({
+      where:   { userId, status: { notIn: ['CLOSED', 'SUSPENDED'] } },
+      select:  { id: true, name: true, color: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.bankroll.findMany({
+      where:   { userId, isActive: true },
+      select:  { id: true, name: true, color: true },
+      orderBy: { name: 'asc' },
+    }),
+  ])
 
   const plan      = session.user?.plan ?? 'FREE'
   const userName  = session.user?.name ?? null
@@ -33,6 +40,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* ── Sidebar (Client Component — usePathname + modal) ─────────── */}
       <SidebarNav
         bookmakers={bookmakers}
+        bankrolls={bankrolls}
         plan={plan}
         userName={userName}
         userEmail={userEmail}

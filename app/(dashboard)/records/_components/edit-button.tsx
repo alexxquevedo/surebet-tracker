@@ -76,7 +76,7 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
     setError(null)
     start(async () => {
       const legUpdates = canEditOdds
-        ? r.legs.map((l) => ({ id: l.id, odds: parseFloat(legOdds[l.id] ?? l.odds) })).filter((l) => !isNaN(l.odds))
+        ? r.legs.map((l) => ({ id: l.id, odds: parseFloat(legOdds[l.id] ?? String(l.odds)) })).filter((l) => !isNaN(l.odds))
         : undefined
 
       const res = await updateBetMetadataAction(r.id, {
@@ -207,8 +207,7 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
                     <span className="text-xs text-muted-foreground min-w-0 flex-1 truncate">{bmLabel(l)}</span>
                     <input
                       type="number"
-                      min="1.01"
-                      step="0.01"
+                      step="any"
                       value={legOdds[l.id] ?? l.odds}
                       onChange={(e) => setLegOdds((prev) => ({ ...prev, [l.id]: e.target.value }))}
                       className="w-24 rounded-lg border bg-background px-2.5 py-1.5 text-sm text-right font-mono outline-none focus:ring-2 focus:ring-ring"
@@ -225,8 +224,7 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
               <label className="text-xs font-medium text-muted-foreground">Cuota real</label>
               <input
                 type="number"
-                min="1.01"
-                step="0.01"
+                step="any"
                 value={singleOdds}
                 onChange={(e) => setSingleOdds(e.target.value)}
                 className="w-32 rounded-lg border bg-background px-3 py-2 text-sm font-mono text-right outline-none focus:ring-2 focus:ring-ring"
