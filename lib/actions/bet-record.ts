@@ -370,6 +370,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         id: true,
         type: true,
         totalStake: true,
+        potentialReturn: true,
         primaryBookmakerId: true,
         singleBetDetail: { select: { odds: true } },
         legs: {
@@ -562,11 +563,16 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
 
     } else {
       // SINGLE / CASINO / COMBO / CUSTOM
-      const singleOdds = D(bet.singleBetDetail?.odds ?? 2)
-
       if (outcome === 'WON') {
-        grossProfit       = totalStake.mul(singleOdds.minus(1)).toDecimalPlaces(2)
-        totalReturn       = totalStake.mul(singleOdds).toDecimalPlaces(2)
+        if (betType === 'SINGLE' && bet.singleBetDetail?.odds) {
+          // SINGLE: usar la cuota guardada en singleBetDetail
+          const singleOdds = D(bet.singleBetDetail.odds)
+          totalReturn = totalStake.mul(singleOdds).toDecimalPlaces(2)
+        } else {
+          // COMBO / CASINO / CUSTOM: usar el potentialReturn almacenado al crear la apuesta
+          totalReturn = D(bet.potentialReturn ?? 0).toDecimalPlaces(2)
+        }
+        grossProfit       = totalReturn.minus(totalStake).toDecimalPlaces(2)
         finalStatus       = 'WON'
         returnBookmakerId = bet.primaryBookmakerId
         returnAmount      = totalReturn
