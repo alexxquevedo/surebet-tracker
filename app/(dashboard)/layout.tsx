@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!userId) redirect('/login')
 
   // Fetch active bookmakers for the modal selector (exclude CLOSED and SUSPENDED)
-  const [bookmakers, bankrolls] = await Promise.all([
+  const [bookmakers, bankrolls, betComps, comboComps] = await Promise.all([
     prisma.bookmaker.findMany({
       where:   { userId, status: { notIn: ['CLOSED', 'SUSPENDED'] } },
       select:  { id: true, name: true, color: true },
@@ -22,7 +22,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
       select:  { id: true, name: true, color: true },
       orderBy: { name: 'asc' },
     }),
+    prisma.betRecord.findMany({
+      where:   { userId, deletedAt: null, competition: { not: null } },
+      select:  { competition: true },
+      distinct: ['competition'],
+    }),
+    prisma.comboSelection.findMany({
+      where:   { competition: { not: null }, comboDetail: { betRecord: { userId, deletedAt: null } } },
+      select:  { competition: true },
+      distinct: ['competition'],
+    }),
   ])
+
+  const usedCompetitions = [...new Set([
+    ...betComps.map((r) => r.competition as string),
+    ...comboComps.map((r) => r.competition as string),
+  ])].filter(Boolean).sort()
 
   const plan      = session.user?.plan ?? 'FREE'
   const userName  = session.user?.name ?? null
@@ -45,6 +60,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         userName={userName}
         userEmail={userEmail}
         isAdmin={isAdmin}
+        usedCompetitions={usedCompetitions}
       />
 
       {/* ── Main content area ─────────────────────────────────────────── */}

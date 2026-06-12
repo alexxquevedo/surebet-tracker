@@ -23,12 +23,13 @@ interface BankrollOption {
 }
 
 interface Props {
-  bookmakers: BookmakerOption[]
-  bankrolls:  BankrollOption[]
-  plan:       string
-  userName:   string | null | undefined
-  userEmail:  string | null | undefined
-  isAdmin:    boolean
+  bookmakers:        BookmakerOption[]
+  bankrolls:         BankrollOption[]
+  plan:              string
+  userName:          string | null | undefined
+  userEmail:         string | null | undefined
+  isAdmin:           boolean
+  usedCompetitions:  string[]
 }
 
 // ─── Nav links ───────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ function localToUTC(datetimeLocal: string): string {
 // SIDEBAR NAV (Client Component)
 // ════════════════════════════════════════════════════════════════════════════
 
-export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, isAdmin }: Props) {
+export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, isAdmin, usedCompetitions }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
@@ -263,6 +264,7 @@ export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, i
         <NewOperationModal
           bookmakers={bookmakers}
           bankrolls={bankrolls}
+          usedCompetitions={usedCompetitions}
           onClose={() => setOpen(false)}
         />
       )}
@@ -276,6 +278,7 @@ export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, i
 
 interface ComboRow {
   description: string
+  eventName:   string
   sport:       string
   competition: string
 }
@@ -283,11 +286,13 @@ interface ComboRow {
 function NewOperationModal({
   bookmakers,
   bankrolls,
+  usedCompetitions,
   onClose,
 }: {
-  bookmakers: BookmakerOption[]
-  bankrolls:  BankrollOption[]
-  onClose:    () => void
+  bookmakers:        BookmakerOption[]
+  bankrolls:         BankrollOption[]
+  usedCompetitions:  string[]
+  onClose:           () => void
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -298,6 +303,7 @@ function NewOperationModal({
 
   // ── Shared metadata ─────────────────────────────────────────────────────
   const [selection, setSelection]     = useState('')
+  const [eventName, setEventName]     = useState('')
   const [sport, setSport]             = useState('')
   const [competition, setCompetition] = useState('')
   const [isLive, setIsLive]           = useState(false)
@@ -318,7 +324,7 @@ function NewOperationModal({
 
   // ── Combinada fields ────────────────────────────────────────────────────
   const [comboRows, setComboRows]         = useState<ComboRow[]>([
-    { description: '', sport: '', competition: '' },
+    { description: '', eventName: '', sport: '', competition: '' },
   ])
   const [comboOdds, setComboOdds]         = useState('')
   const [comboRetorno, setComboRetorno]   = useState('') // opcional: retorno total incluyendo bonus
@@ -376,7 +382,7 @@ function NewOperationModal({
 
   // ── Combo rows ──────────────────────────────────────────────────────────
   const addComboRow = useCallback(() => {
-    setComboRows((prev) => [...prev, { description: '', sport: '', competition: '' }])
+    setComboRows((prev) => [...prev, { description: '', eventName: '', sport: '', competition: '' }])
   }, [])
 
   const removeComboRow = useCallback((idx: number) => {
@@ -439,11 +445,11 @@ function NewOperationModal({
 
   // ── Reset ───────────────────────────────────────────────────────────────
   function resetForm() {
-    setSelection(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime())
+    setSelection(''); setEventName(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime())
     setMiddleRange(''); setStake1(''); setOdds1(''); setRetorno1('')
     setStake2(''); setOdds2(''); setBankrollId('')
     setBm1Id(bookmakers[0]?.id ?? ''); setBm2Id(bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
-    setComboRows([{ description: '', sport: '', competition: '' }])
+    setComboRows([{ description: '', eventName: '', sport: '', competition: '' }])
     setComboOdds(''); setComboRetorno('')
     setError(null)
   }
@@ -463,6 +469,7 @@ function NewOperationModal({
     const fd = new FormData()
     fd.append('type',        betType)
     fd.append('selection',   selection)
+    fd.append('eventName',   eventName)
     fd.append('sport',       sport)
     fd.append('competition', competition)
     fd.append('isLive',      String(isLive))
@@ -675,7 +682,14 @@ function NewOperationModal({
                           type="text"
                           value={row.description}
                           onChange={(e) => updateComboRow(idx, 'description', e.target.value)}
-                          placeholder="Descripción (ej. Real Madrid a ganar)"
+                          placeholder="Selección (ej. Real Madrid a ganar)"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        <input
+                          type="text"
+                          value={row.eventName}
+                          onChange={(e) => updateComboRow(idx, 'eventName', e.target.value)}
+                          placeholder="Partido (ej. Real Madrid vs Barça)"
                           className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                         />
                         <div className="grid grid-cols-2 gap-2">
@@ -689,12 +703,12 @@ function NewOperationModal({
                               <option key={s.value} value={s.value}>{s.label}</option>
                             ))}
                           </select>
-                          <input
-                            type="text"
+                          <CompetitionInput
                             value={row.competition}
-                            onChange={(e) => updateComboRow(idx, 'competition', e.target.value)}
+                            onChange={(v) => updateComboRow(idx, 'competition', v)}
                             placeholder="Competición"
-                            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                            usedCompetitions={usedCompetitions}
+                            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring w-full"
                           />
                         </div>
                       </div>
@@ -716,9 +730,21 @@ function NewOperationModal({
                   <input type="text" value={selection} onChange={(e) => setSelection(e.target.value)}
                     placeholder={betType === 'CASINO'
                       ? 'ej. Ruleta, Slots, Blackjack, Póker...'
-                      : 'ej. Real Madrid vs Barça — 1X2'}
+                      : 'ej. Superaumento Canada ganará'}
                     className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
                 </div>
+
+                {/* Partido (solo SINGLE) */}
+                {betType === 'SINGLE' && (
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold">
+                      Partido <span className="font-normal text-muted-foreground">(opcional)</span>
+                    </label>
+                    <input type="text" value={eventName} onChange={(e) => setEventName(e.target.value)}
+                      placeholder="ej. CAN - BIH"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                  </div>
+                )}
 
                 {/* Deporte (oculto en casino y multi) */}
                 {betType !== 'CASINO' && !isMulti && (
@@ -745,9 +771,13 @@ function NewOperationModal({
                     <label className="block text-sm font-semibold">
                       Competición <span className="font-normal text-muted-foreground">(opcional)</span>
                     </label>
-                    <input type="text" value={competition} onChange={(e) => setCompetition(e.target.value)}
-                      placeholder="ej. La Liga, Premier League, Champions..."
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                    <CompetitionInput
+                      value={competition}
+                      onChange={setCompetition}
+                      placeholder="ej. La Liga, Champions, Mundial 2026..."
+                      usedCompetitions={usedCompetitions}
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    />
                   </div>
                 )}
 
@@ -909,6 +939,48 @@ function LegFields({
         <NumberField label="Cuota" value={odds} onChange={onOddsChange}
           placeholder="2.10" step="any" error={oddsErr} />
       </div>
+    </div>
+  )
+}
+
+function CompetitionInput({
+  value, onChange, placeholder, usedCompetitions, className,
+}: {
+  value: string; onChange: (v: string) => void
+  placeholder?: string; usedCompetitions: string[]; className?: string
+}) {
+  const [show, setShow] = useState(false)
+  const matches = useMemo(() => {
+    if (!usedCompetitions.length) return []
+    const q = value.toLowerCase()
+    return usedCompetitions.filter((c) => !q || c.toLowerCase().includes(q)).slice(0, 6)
+  }, [value, usedCompetitions])
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setTimeout(() => setShow(false), 150)}
+        placeholder={placeholder}
+        className={className}
+        autoComplete="off"
+      />
+      {show && matches.length > 0 && (
+        <ul className="absolute z-50 left-0 right-0 bg-card border rounded-lg shadow-lg mt-1 text-sm overflow-hidden max-h-40 overflow-y-auto">
+          {matches.map((c) => (
+            <li
+              key={c}
+              onMouseDown={(e) => { e.preventDefault(); onChange(c); setShow(false) }}
+              className="px-3 py-1.5 hover:bg-muted cursor-pointer truncate"
+            >
+              {c}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

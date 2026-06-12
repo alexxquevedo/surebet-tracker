@@ -74,9 +74,10 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   const rawStake    = formData.get('stake') as string | null
   const rawOdds     = formData.get('odds') as string | null
   const selection    = ((formData.get('selection') as string | null) ?? '').trim()
-  const rawSport     = (formData.get('sport') as string | null)?.trim() || null
+  const rawSport       = (formData.get('sport') as string | null)?.trim() || null
   const rawCompetition = (formData.get('competition') as string | null)?.trim() || null
-  const isLive       = formData.get('isLive') === 'true'
+  const rawEventName   = (formData.get('eventName') as string | null)?.trim() || null
+  const isLive         = formData.get('isLive') === 'true'
   const datePlaced   = parseDatePlaced(formData.get('datePlaced') as string | null)
 
   if (!rawType || !VALID_TYPES.includes(rawType as BetType)) {
@@ -116,6 +117,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             isLive,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
             competition: rawCompetition,
+            eventName: rawEventName,
             primaryBookmakerId: bookmakerId,
             bankrollId: rawBankrollId ?? undefined,
             title: finalTitle,
@@ -1093,6 +1095,7 @@ export async function updateBetMetadataAction(
 
 interface ComboSelectionInput {
   description: string
+  eventName:   string
   sport:       string
   competition: string
 }
@@ -1166,7 +1169,7 @@ export async function createComboBetAction(formData: FormData): Promise<BetActio
               bonusReturn: bonusReturn ?? undefined,
               selections: {
                 create: selections.map((s) => ({
-                  eventName:   s.description || 'Selección',
+                  eventName:   s.eventName || s.description || 'Selección',
                   selection:   s.description || 'Selección',
                   odds:        D(1),
                   sport:       (s.sport || undefined) as 'FOOTBALL' | 'BASKETBALL' | 'TENNIS' | 'HOCKEY' | 'BASEBALL' | 'RUGBY' | 'CRICKET' | 'GOLF' | 'MMA' | 'BOXING' | 'CYCLING' | 'MOTORSPORT' | 'ESPORTS' | 'OTHER' | undefined,
