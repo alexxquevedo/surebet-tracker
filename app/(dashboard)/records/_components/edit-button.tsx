@@ -206,10 +206,10 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
                   <div key={l.id} className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground min-w-0 flex-1 truncate">{bmLabel(l)}</span>
                     <input
-                      type="number"
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       value={legOdds[l.id] ?? l.odds}
-                      onChange={(e) => setLegOdds((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                      onChange={(e) => setLegOdds((prev) => ({ ...prev, [l.id]: e.target.value.replace(',', '.') }))}
                       className="w-24 rounded-lg border bg-background px-2.5 py-1.5 text-sm text-right font-mono outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
@@ -223,10 +223,10 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Cuota real</label>
               <input
-                type="number"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 value={singleOdds}
-                onChange={(e) => setSingleOdds(e.target.value)}
+                onChange={(e) => setSingleOdds(e.target.value.replace(',', '.'))}
                 className="w-32 rounded-lg border bg-background px-3 py-2 text-sm font-mono text-right outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
