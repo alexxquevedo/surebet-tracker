@@ -132,6 +132,16 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           orderBy: { id: 'asc' },
           select: { id: true, bookmakerId: true, stake: true, odds: true, potentialReturn: true, bookmaker: { select: { name: true, etiqueta: true } } },
         },
+        comboDetail: {
+          select: {
+            totalOdds: true,
+            legCount: true,
+            selections: {
+              orderBy: { id: 'asc' as const },
+              select: { id: true, eventName: true, selection: true, sport: true, competition: true },
+            },
+          },
+        },
         bankrollId: true,
         bankroll: { select: { id: true, name: true, color: true } },
       },
@@ -190,6 +200,17 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       : null,
     arbitrageDetail:    r.arbitrageDetail ?? null,
     middleDetail:       r.middleDetail ?? null,
+    comboDetail:        r.comboDetail ? {
+      totalOdds:  parseFloat(r.comboDetail.totalOdds.toString()),
+      legCount:   r.comboDetail.legCount,
+      selections: r.comboDetail.selections.map((s) => ({
+        id:          s.id,
+        eventName:   s.eventName,
+        selection:   s.selection,
+        sport:       s.sport,
+        competition: s.competition,
+      })),
+    } : null,
     legs:               r.legs.map((l) => ({
       id:              l.id,
       bookmakerId:     l.bookmakerId,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { SettleButton, type LegInfo } from './settle-button'
 import { DeleteButton } from './delete-button'
@@ -39,6 +39,11 @@ export interface SerializedRecord {
   singleBetDetail: { selection: string | null; odds: number | null } | null
   arbitrageDetail: { winningLegId: string | null } | null
   middleDetail: { winningLegId: string | null; middleHit: boolean | null } | null
+  comboDetail: {
+    totalOdds: number
+    legCount: number
+    selections: Array<{ id: string; eventName: string | null; selection: string | null; sport: string | null; competition: string | null }>
+  } | null
   legs: SerializedLeg[]
   bankrollId: string | null
   bankroll: { id: string; name: string; color: string | null } | null
@@ -143,6 +148,11 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
   const [bulkBankrollId, setBulkBankrollId] = useState<string>('__unchanged__')
   const [isPending,      startTransition]    = useTransition()
   const [bulkError,      setBulkError]       = useState<string | null>(null)
+  const [expandedCombos, setExpandedCombos] = useState<Set<string>>(new Set())
+
+  function toggleCombo(id: string) {
+    setExpandedCombos((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -252,9 +262,11 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                 const casaGanada = getCasaGanada(r)
                 const isChecked  = selected.has(r.id)
 
+                const isComboExpanded = r.type === 'COMBO' && expandedCombos.has(r.id)
+
                 return (
+                  <React.Fragment key={r.id}>
                   <tr
-                    key={r.id}
                     className={`hover:bg-muted/20 transition-colors group ${isChecked ? 'bg-primary/5' : ''}`}
                   >
                     <td className="px-3 py-3">
@@ -279,14 +291,25 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                         <p className="text-xs text-muted-foreground mt-0.5">{SPORT_LABEL[r.sport] ?? r.sport}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell max-w-[180px]">
-                      <span className="text-xs text-muted-foreground truncate block">{selText}</span>
-                      {r.legs.length > 0
-                        ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
-                        : r.singleBetDetail?.odds != null
-                          ? <span className="text-xs font-mono text-muted-foreground">@{r.singleBetDetail.odds.toFixed(2)}</span>
-                          : null
-                      }
+                    <td className="px-4 py-3 hidden md:table-cell max-w-[200px]">
+                      {r.type === 'COMBO' && r.comboDetail ? (
+                        <button onClick={() => toggleCombo(r.id)} className="text-left w-full group/combo">
+                          <span className="text-xs text-muted-foreground block">{selText}</span>
+                          <span className="text-xs text-primary/70 font-medium group-hover/combo:text-primary transition-colors">
+                            {isComboExpanded ? '▲ Ocultar' : `▼ ${r.comboDetail.selections.length} selecciones`}
+                          </span>
+                        </button>
+                      ) : (
+                        <>
+                          <span className="text-xs text-muted-foreground truncate block">{selText}</span>
+                          {r.legs.length > 0
+                            ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
+                            : r.singleBetDetail?.odds != null
+                              ? <span className="text-xs font-mono text-muted-foreground">@{r.singleBetDetail.odds.toFixed(2)}</span>
+                              : null
+                          }
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex items-center gap-1.5">
@@ -343,6 +366,30 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       </div>
                     </td>
                   </tr>
+                  {isComboExpanded && r.comboDetail && (
+                    <tr className="bg-muted/20">
+                      <td />
+                      <td colSpan={8} className="px-4 pb-3 pt-1">
+                        <div className="rounded-lg border bg-background/80 p-3 space-y-1.5">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Selecciones</p>
+                          {r.comboDetail.selections.map((s, i) => (
+                            <div key={s.id} className="flex items-start gap-2 text-xs">
+                              <span className="text-muted-foreground/50 w-4 shrink-0 font-mono">{i + 1}.</span>
+                              <div className="min-w-0">
+                                <span className="font-medium">{s.eventName || s.selection || '—'}</span>
+                                {(s.sport || s.competition) && (
+                                  <span className="text-muted-foreground ml-1.5">
+                                    {[s.sport ? (SPORT_LABEL[s.sport] ?? s.sport) : null, s.competition].filter(Boolean).join(' · ')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 )
               })}
             </tbody>
@@ -477,6 +524,35 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     )}
                   </div>
                 </div>
+
+                {/* Selecciones de combo (expandible) */}
+                {r.type === 'COMBO' && r.comboDetail && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleCombo(r.id) }}
+                      className="w-full text-left px-4 py-2 border-t text-xs text-primary/70 hover:bg-muted/20 transition-colors font-medium"
+                    >
+                      {expandedCombos.has(r.id) ? '▲ Ocultar selecciones' : `▼ Ver ${r.comboDetail.selections.length} selecciones`}
+                    </button>
+                    {expandedCombos.has(r.id) && (
+                      <div className="px-4 pb-3 bg-muted/10 space-y-1.5">
+                        {r.comboDetail.selections.map((s, i) => (
+                          <div key={s.id} className="flex items-start gap-2 text-xs">
+                            <span className="text-muted-foreground/50 w-4 shrink-0 font-mono">{i + 1}.</span>
+                            <div>
+                              <span className="font-medium">{s.eventName || s.selection || '—'}</span>
+                              {(s.sport || s.competition) && (
+                                <span className="text-muted-foreground ml-1">
+                                  · {[s.sport ? (SPORT_LABEL[s.sport] ?? s.sport) : null, s.competition].filter(Boolean).join(' · ')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
 
                 {/* Pie: acciones */}
                 <div className="px-4 pb-3 border-t pt-2 bg-muted/10 flex items-center justify-between gap-2">
