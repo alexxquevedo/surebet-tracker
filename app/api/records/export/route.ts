@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
     { header: 'Fecha reg.',          key: 'fecha',      width: 13 },
     { header: 'Hora reg.',           key: 'hora',       width: 8  },
     { header: 'Fecha evento',        key: 'fechaEvento',width: 13 },
-    { header: 'Hora evento',         key: 'horaEvento', width: 8  },
+    { header: 'Hora evento',         key: 'horaEvento', width: 12 },
     { header: 'Tipo',                key: 'tipo',       width: 12 },
     { header: 'Estado',              key: 'estado',     width: 11 },
     { header: 'Deporte',             key: 'deporte',    width: 13 },
@@ -222,11 +222,11 @@ export async function GET(request: NextRequest) {
     const leg2 = legs[1]
 
     const casa1  = bmLabel(leg1?.bookmaker) || bmLabel(r.primaryBookmaker)
-    const casa2  = isSingle ? 'X' : (bmLabel(leg2?.bookmaker) || 'X')
+    const casa2  = isSingle ? '' : (bmLabel(leg2?.bookmaker) || '')
     const cuota1 = leg1?.odds ? parseFloat(leg1.odds.toString()) : (r.singleBetDetail?.odds ? parseFloat(r.singleBetDetail.odds.toString()) : '')
-    const cuota2 = isSingle ? 'X' : (leg2?.odds ? parseFloat(leg2.odds.toString()) : 'X')
+    const cuota2 = isSingle ? '' : (leg2?.odds ? parseFloat(leg2.odds.toString()) : '')
     const stake1 = leg1?.stake ? parseFloat(leg1.stake.toString()) : (isSingle ? parseFloat(r.totalStake.toString()) : '')
-    const stake2 = isSingle ? 'X' : (leg2?.stake ? parseFloat(leg2.stake.toString()) : 'X')
+    const stake2 = isSingle ? '' : (leg2?.stake ? parseFloat(leg2.stake.toString()) : '')
     const pnl    = r.grossProfit     ? parseFloat(r.grossProfit.toString())     : ''
     const ret    = r.potentialReturn ? parseFloat(r.potentialReturn.toString()) : ''
     const title  = r.title ?? r.singleBetDetail?.selection ?? ''
