@@ -285,6 +285,57 @@ export async function getStatsData(userId: string, dateFrom?: Date): Promise<Sta
   }
 }
 
+// ─── Rendimiento por pareja de casas (surebets/middles) ──────────────────────
+
+export interface BookmakerPairStat {
+  pair:   string   // "Bet365 × Pinnacle"
+  count:  number
+  profit: number
+  yield:  number
+}
+
+export async function getBookmakerPairs(userId: string, dateFrom?: Date): Promise<BookmakerPairStat[]> {
+  const records = await prisma.betRecord.findMany({
+    where: {
+      userId,
+      deletedAt: null,
+      type:   { in: ['ARBITRAGE', 'MIDDLE'] },
+      status: { in: ['WON', 'LOST', 'CASHOUT', 'VOID'] },
+      ...(dateFrom ? { datePlaced: { gte: dateFrom } } : {}),
+    },
+    select: {
+      grossProfit: true,
+      totalStake:  true,
+      legs: {
+        where:  { deletedAt: null },
+        select: { bookmaker: { select: { name: true } } },
+      },
+    },
+  })
+
+  const pairMap = new Map<string, { count: number; profit: number; stake: number }>()
+  for (const r of records) {
+    if (r.legs.length < 2) continue
+    const names = r.legs.map((l) => l.bookmaker.name).sort()
+    const key   = names.join(' × ')
+    const prev  = pairMap.get(key) ?? { count: 0, profit: 0, stake: 0 }
+    pairMap.set(key, {
+      count:  prev.count  + 1,
+      profit: prev.profit + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0),
+      stake:  prev.stake  + parseFloat(r.totalStake.toString()),
+    })
+  }
+
+  return [...pairMap.entries()]
+    .map(([pair, v]) => ({
+      pair,
+      count:  v.count,
+      profit: v.profit,
+      yield:  v.stake > 0 ? (v.profit / v.stake) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+}
+
 // ─── Activity heatmap (últimos 365 días) ─────────────────────────────────────
 
 export interface HeatmapDay {

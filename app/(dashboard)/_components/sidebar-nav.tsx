@@ -479,6 +479,20 @@ function NewOperationModal({
     }
   }, [stake1, odds1, retorno1, stake2, odds2, comboOdds, comboRetorno, betType, isMulti, isCombo])
 
+  // ── Calculadora de stake 2 (surebets/middles) ─────────────────────────
+  const calculatorPreview = useMemo(() => {
+    if (!isMulti) return null
+    const s1n = parseFloat(stake1), o1n = parseFloat(odds1), o2n = parseFloat(odds2)
+    if (isNaN(s1n) || isNaN(o1n) || isNaN(o2n) || s1n <= 0 || o1n <= 1 || o2n <= 1) return null
+    const s2    = new Decimal(s1n).mul(o1n).div(o2n).toDecimalPlaces(2)
+    const total = new Decimal(s1n).plus(s2)
+    const r1    = new Decimal(s1n).mul(o1n).toDecimalPlaces(2)
+    const r2    = s2.mul(o2n).toDecimalPlaces(2)
+    const profit = Decimal.min(r1, r2).minus(total).toDecimalPlaces(2)
+    const pct    = total.isZero() ? new Decimal(0) : profit.div(total).mul(100).toDecimalPlaces(2)
+    return { stake2: s2.toString(), profit: profit.toNumber(), pct: pct.toNumber() }
+  }, [isMulti, stake1, odds1, odds2])
+
   // ── Reset ───────────────────────────────────────────────────────────────
   function resetForm() {
     setSelection(''); setEventName(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime()); setNotes('')
@@ -837,6 +851,31 @@ function NewOperationModal({
                       odds={odds1}  onOddsChange={setOdds1}
                       stakeErr={s1err} oddsErr={o1err}
                     />
+
+                    {/* Calculadora de stake equilibrado */}
+                    {calculatorPreview && (
+                      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30 px-3 py-2.5 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                            Stake 2 equilibrado:{' '}
+                            <span className="tabular-nums">{calculatorPreview.stake2} €</span>
+                          </p>
+                          <p className={`text-[11px] mt-0.5 tabular-nums ${calculatorPreview.profit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                            {calculatorPreview.profit >= 0
+                              ? `Beneficio garantizado: +${calculatorPreview.profit.toFixed(2)} € (+${calculatorPreview.pct.toFixed(2)}%)`
+                              : `Sin margen · ${calculatorPreview.pct.toFixed(2)}%`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setStake2(calculatorPreview.stake2)}
+                          className="shrink-0 text-xs px-2.5 py-1 rounded-md border border-blue-400 dark:border-blue-600 text-blue-700 dark:text-blue-300 font-semibold hover:bg-blue-600 hover:text-white dark:hover:bg-blue-700 transition-colors"
+                        >
+                          Usar →
+                        </button>
+                      </div>
+                    )}
+
                     <LegFields
                       label="🔴 Leg 2"
                       bookmakers={bookmakers}

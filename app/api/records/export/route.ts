@@ -146,6 +146,16 @@ export async function GET(request: NextRequest) {
         orderBy: { id: 'asc' },
         select:  { id: true, bookmaker: { select: { name: true, etiqueta: true } }, stake: true, odds: true },
       },
+      comboDetail: {
+        select: {
+          selections: {
+            orderBy: { id: 'asc' },
+            select:   { selection: true, eventName: true, sport: true, competition: true },
+          },
+        },
+      },
+      notes:         true,
+      isApproximate: true,
     },
   })
 
@@ -161,26 +171,28 @@ export async function GET(request: NextRequest) {
 
   // Columnas: nombre + ancho
   sheet.columns = [
-    { header: 'Fecha reg.',          key: 'fecha',      width: 13 },
-    { header: 'Hora reg.',           key: 'hora',       width: 8  },
-    { header: 'Fecha evento',        key: 'fechaEvento',width: 13 },
-    { header: 'Hora evento',         key: 'horaEvento', width: 12 },
-    { header: 'Tipo',                key: 'tipo',       width: 12 },
-    { header: 'Estado',              key: 'estado',     width: 11 },
-    { header: 'Deporte',             key: 'deporte',    width: 13 },
-    { header: 'Competición',         key: 'comp',       width: 22 },
-    { header: 'Momento',             key: 'momento',    width: 12 },
-    { header: 'Partido / Evento',    key: 'partido',    width: 28 },
-    { header: 'Selección',           key: 'seleccion',  width: 36 },
-    { header: 'Casa 1',              key: 'casa1',      width: 18 },
-    { header: 'Casa 2',              key: 'casa2',      width: 18 },
-    { header: 'Cuota 1',             key: 'cuota1',     width: 10 },
-    { header: 'Cuota 2',             key: 'cuota2',     width: 10 },
-    { header: 'Stake 1 (€)',         key: 'stake1',     width: 12 },
-    { header: 'Stake 2 (€)',         key: 'stake2',     width: 12 },
-    { header: 'P&L (€)',             key: 'pnl',          width: 11 },
-    { header: 'Casa ganada',          key: 'casaGanada',   width: 18 },
-    { header: 'Retorno potencial (€)', key: 'retorno',     width: 20 },
+    { header: 'Fecha apuesta',         key: 'fecha',      width: 13 },
+    { header: 'Hora apuesta',          key: 'hora',       width: 8  },
+    { header: 'Fecha evento',          key: 'fechaEvento',width: 13 },
+    { header: 'Hora evento',           key: 'horaEvento', width: 12 },
+    { header: 'Tipo',                  key: 'tipo',       width: 12 },
+    { header: 'Estado',                key: 'estado',     width: 11 },
+    { header: 'Deporte',               key: 'deporte',    width: 13 },
+    { header: 'Competición',           key: 'comp',       width: 22 },
+    { header: 'Momento',               key: 'momento',    width: 12 },
+    { header: 'Partido / Evento',      key: 'partido',    width: 28 },
+    { header: 'Selección',             key: 'seleccion',  width: 36 },
+    { header: 'Casa 1',                key: 'casa1',      width: 18 },
+    { header: 'Casa 2',                key: 'casa2',      width: 18 },
+    { header: 'Cuota 1',               key: 'cuota1',     width: 10 },
+    { header: 'Cuota 2',               key: 'cuota2',     width: 10 },
+    { header: 'Stake 1 (€)',           key: 'stake1',     width: 12 },
+    { header: 'Stake 2 (€)',           key: 'stake2',     width: 12 },
+    { header: 'P&L (€)',               key: 'pnl',        width: 11 },
+    { header: 'Casa ganada',           key: 'casaGanada', width: 18 },
+    { header: 'Retorno potencial (€)', key: 'retorno',    width: 20 },
+    { header: 'Notas',                 key: 'notas',      width: 30 },
+    { header: 'Aprox.',                key: 'aprox',      width: 8  },
   ]
 
   // Estilo de cabecera
@@ -229,6 +241,21 @@ export async function GET(request: NextRequest) {
     return ''
   }
 
+  // ── Helper: estilo común de fila de datos ────────────────────────────────
+  function styleDataRow(row: ExcelJS.Row, bgArgb: string) {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } }
+      cell.border = {
+        top:    { style: 'hair', color: { argb: 'FFCCCCCC' } },
+        left:   { style: 'hair', color: { argb: 'FFCCCCCC' } },
+        bottom: { style: 'hair', color: { argb: 'FFCCCCCC' } },
+        right:  { style: 'hair', color: { argb: 'FFCCCCCC' } },
+      }
+      cell.alignment = { vertical: 'middle' }
+    })
+    row.height = 18
+  }
+
   // Filas de datos
   records.forEach((r, idx) => {
     const dt      = new Date(r.datePlaced)
@@ -239,54 +266,95 @@ export async function GET(request: NextRequest) {
     const leg1 = legs[0]
     const leg2 = legs[1]
 
-    const casa1  = bmLabel(leg1?.bookmaker) || bmLabel(r.primaryBookmaker)
-    const casa2  = isSingle ? '' : (bmLabel(leg2?.bookmaker) || '')
-    const cuota1 = leg1?.odds ? parseFloat(leg1.odds.toString()) : (r.singleBetDetail?.odds ? parseFloat(r.singleBetDetail.odds.toString()) : '')
-    const cuota2 = isSingle ? '' : (leg2?.odds ? parseFloat(leg2.odds.toString()) : '')
-    const stake1 = leg1?.stake ? parseFloat(leg1.stake.toString()) : (isSingle ? parseFloat(r.totalStake.toString()) : '')
-    const stake2 = isSingle ? '' : (leg2?.stake ? parseFloat(leg2.stake.toString()) : '')
-    const pnl    = r.grossProfit     ? parseFloat(r.grossProfit.toString())     : ''
-    const ret    = r.potentialReturn ? parseFloat(r.potentialReturn.toString()) : ''
-    const title  = r.title ?? r.singleBetDetail?.selection ?? ''
+    const casa1v  = bmLabel(leg1?.bookmaker) || bmLabel(r.primaryBookmaker)
+    const casa2v  = isSingle ? '' : (bmLabel(leg2?.bookmaker) || '')
+    const cuota1v = leg1?.odds ? parseFloat(leg1.odds.toString()) : (r.singleBetDetail?.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null)
+    const cuota2v = isSingle ? null : (leg2?.odds ? parseFloat(leg2.odds.toString()) : null)
+    const stake1v = leg1?.stake ? parseFloat(leg1.stake.toString()) : (isSingle ? parseFloat(r.totalStake.toString()) : null)
+    const stake2v = isSingle ? null : (leg2?.stake ? parseFloat(leg2.stake.toString()) : null)
+    const pnlv    = r.grossProfit     ? parseFloat(r.grossProfit.toString())     : null
+    const retv    = r.potentialReturn ? parseFloat(r.potentialReturn.toString()) : null
+    const title   = r.title ?? r.singleBetDetail?.selection ?? ''
+    const bgMain  = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF5F7FA'
 
-    const row = sheet.addRow({
-      fecha:      fmtDate(dt, tz),
-      hora:       fmtTime(dt, tz),
-      fechaEvento: dtEvt ? fmtDate(dtEvt, tz) : '',
-      horaEvento:  dtEvt ? fmtTime(dtEvt, tz) : '',
-      tipo:     TYPE_LABEL[r.type]     ?? r.type,
-      estado:   STATUS_LABEL[r.status] ?? r.status,
-      deporte:  r.sport ? (SPORT_LABEL[r.sport] ?? r.sport) : '',
-      comp:     r.competition ?? '',
-      momento:  r.isLive ? 'Live' : 'Pre-partido',
-      partido:   r.eventName ?? '',
-      seleccion: title,
-      casa1,
-      casa2,
-      cuota1,
-      cuota2,
-      stake1,
-      stake2,
-      pnl,
-      casaGanada: getCasaGanada(r),
-      retorno: ret,
-    })
+    const sels = r.type === 'COMBO' ? (r.comboDetail?.selections ?? []) : []
 
-    // Fondo alternado claro
-    const bgColor = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF5F7FA'
+    if (sels.length > 0) {
+      // COMBO: una fila por selección — columnas de apuesta mergeadas verticalmente
+      let startRowNum = 0
 
-    row.eachCell({ includeEmpty: true }, (cell) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } }
-      cell.border = {
-        top:    { style: 'hair', color: { argb: 'FFCCCCCC' } },
-        left:   { style: 'hair', color: { argb: 'FFCCCCCC' } },
-        bottom: { style: 'hair', color: { argb: 'FFCCCCCC' } },
-        right:  { style: 'hair', color: { argb: 'FFCCCCCC' } },
+      sels.forEach((sel, si) => {
+        const isFirst = si === 0
+        const row = sheet.addRow({
+          fecha:       isFirst ? fmtDate(dt, tz) : null,
+          hora:        isFirst ? fmtTime(dt, tz) : null,
+          fechaEvento: null,
+          horaEvento:  null,
+          tipo:        isFirst ? (TYPE_LABEL[r.type] ?? r.type) : null,
+          estado:      isFirst ? (STATUS_LABEL[r.status] ?? r.status) : null,
+          deporte:     sel.sport ? (SPORT_LABEL[sel.sport] ?? sel.sport) : null,
+          comp:        sel.competition ?? null,
+          momento:     isFirst ? (r.isLive ? 'Live' : 'Pre-partido') : null,
+          partido:     sel.eventName ?? null,
+          seleccion:   sel.selection ?? null,
+          casa1:       isFirst ? casa1v : null,
+          casa2:       null,
+          cuota1:      null,
+          cuota2:      null,
+          stake1:      isFirst ? stake1v : null,
+          stake2:      null,
+          pnl:         isFirst ? pnlv : null,
+          casaGanada:  isFirst ? getCasaGanada(r) : null,
+          retorno:     isFirst ? retv : null,
+          notas:       isFirst ? (r.notes ?? null) : null,
+          aprox:       isFirst && r.isApproximate ? 'Sí' : null,
+        })
+        if (si === 0) startRowNum = row.number
+        // Sub-filas con fondo levemente diferente para distinguir selecciones
+        styleDataRow(row, isFirst ? bgMain : (idx % 2 === 0 ? 'FFF8F5FF' : 'FFEDE5FF'))
+      })
+
+      // Mergear columnas de apuesta a lo largo de todas las filas de selección
+      if (sels.length > 1 && startRowNum > 0) {
+        const endRowNum = startRowNum + sels.length - 1
+        const mergeKeys = ['fecha', 'hora', 'tipo', 'estado', 'momento',
+                           'casa1', 'stake1', 'pnl', 'casaGanada', 'retorno', 'notas', 'aprox']
+        for (const key of mergeKeys) {
+          const cn = sheet.getColumn(key).number
+          if (cn > 0) {
+            sheet.mergeCells(startRowNum, cn, endRowNum, cn)
+            sheet.getCell(startRowNum, cn).alignment = { vertical: 'middle', horizontal: 'center' }
+          }
+        }
       }
-      cell.alignment = { vertical: 'middle' }
-    })
-
-    row.height = 18
+    } else {
+      // Apuesta normal (single / arbitrage / middle / casino / custom)
+      const row = sheet.addRow({
+        fecha:       fmtDate(dt, tz),
+        hora:        fmtTime(dt, tz),
+        fechaEvento: dtEvt ? fmtDate(dtEvt, tz) : null,
+        horaEvento:  dtEvt ? fmtTime(dtEvt, tz) : null,
+        tipo:        TYPE_LABEL[r.type]     ?? r.type,
+        estado:      STATUS_LABEL[r.status] ?? r.status,
+        deporte:     r.sport ? (SPORT_LABEL[r.sport] ?? r.sport) : null,
+        comp:        r.competition ?? null,
+        momento:     r.isLive ? 'Live' : 'Pre-partido',
+        partido:     r.eventName ?? null,
+        seleccion:   title,
+        casa1:  casa1v,
+        casa2:  casa2v,
+        cuota1: cuota1v,
+        cuota2: cuota2v,
+        stake1: stake1v,
+        stake2: stake2v,
+        pnl:    pnlv,
+        casaGanada: getCasaGanada(r),
+        retorno: retv,
+        notas:   r.notes ?? null,
+        aprox:   r.isApproximate ? 'Sí' : null,
+      })
+      styleDataRow(row, bgMain)
+    }
   })
 
   // Formato numérico para columnas de euros y cuotas

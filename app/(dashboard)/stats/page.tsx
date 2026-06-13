@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
-import { getStatsData, getActivityHeatmap } from '@/lib/queries/stats'
-import type { HeatmapDay } from '@/lib/queries/stats'
+import { getStatsData, getActivityHeatmap, getBookmakerPairs } from '@/lib/queries/stats'
+import type { HeatmapDay, BookmakerPairStat } from '@/lib/queries/stats'
 import { getBankrollEvolution, getAdvancedStats } from '@/lib/queries/dashboard'
 import type { AdvancedStats } from '@/types/domain'
 import { AdvancedSection } from '@/app/(dashboard)/_components/advanced-section'
@@ -233,6 +233,7 @@ function StatsContent({
   evolution,
   advanced,
   byCompetition,
+  pairStats,
   period,
   monthlyPnlOverride,
   heatmap,
@@ -241,6 +242,7 @@ function StatsContent({
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
   advanced: AdvancedStats
   byCompetition: CompRow[]
+  pairStats: BookmakerPairStat[]
   period: string
   monthlyPnlOverride?: Awaited<ReturnType<typeof getStatsData>>['monthlyPnl'] | null
   heatmap: HeatmapDay[]
@@ -583,6 +585,46 @@ function StatsContent({
         </div>
       )}
 
+      {/* ── Rendimiento por pareja de casas (surebets/middles) ───────────── */}
+      {pairStats.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b bg-muted/30">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Rendimiento por pareja de casas
+            </h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Surebets y middles liquidados · ordenado por nº de ops.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[400px]">
+              <thead className="border-b bg-muted/20">
+                <tr>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pareja</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ops.</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">P&L</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yield</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {pairStats.map((row) => (
+                  <tr key={row.pair} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 font-medium">{row.pair}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.count}</td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.profit)}`}>
+                      {fmtProfit(row.profit)}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.yield)}`}>
+                      {row.yield > 0 ? '+' : ''}{row.yield.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -615,7 +657,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
   const evolutionDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '3m' ? 90 : period === '1y' ? 365 : 9999
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution, advanced, compRecords, historicalMonthlyPnl, heatmap] = await Promise.all([
+  const [stats, evolution, advanced, compRecords, historicalMonthlyPnl, heatmap, pairStats] = await Promise.all([
     getStatsData(userId, dateFrom),
     getBankrollEvolution(userId, evolutionDays),
     getAdvancedStats(userId, dateFrom),
@@ -631,6 +673,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
     // El gráfico mensual siempre muestra los últimos 12 meses sin filtro de período
     dateFrom ? getStatsData(userId).then((s) => s.monthlyPnl) : Promise.resolve(null),
     getActivityHeatmap(userId),
+    getBookmakerPairs(userId, dateFrom),
   ])
 
   const compMap = new Map<string, { count: number; won: number; profit: number; stake: number }>()
@@ -682,7 +725,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} pairStats={pairStats} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -690,7 +733,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} pairStats={pairStats} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
       )}
 
     </div>
