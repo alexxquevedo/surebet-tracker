@@ -259,6 +259,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                 const profitCls = profit === null
                   ? 'text-muted-foreground'
                   : profit > 0 ? 'text-green-600 font-semibold' : profit < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'
+                const expectedProfit = profit === null && r.type === 'ARBITRAGE'
+                  ? (r.potentialReturn ?? r.totalStake) - r.totalStake
+                  : null
 
                 const selText    = r.title ?? r.singleBetDetail?.selection ?? '—'
                 const legNames   = r.legs.map((l) => bmLabel(l.bookmaker)).join(' + ')
@@ -381,17 +384,16 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       {r.totalStake.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono text-xs ${profitCls}`}>
-                      {profit === null
-                        ? <span className="text-muted-foreground">{(r.potentialReturn ?? r.totalStake).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
-                        : `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
+                      {profit !== null
+                        ? `${profit >= 0 ? '+' : ''}${profit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`
+                        : expectedProfit !== null
+                          ? <span className="text-muted-foreground">~{expectedProfit >= 0 ? '+' : ''}{expectedProfit.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
+                          : <span className="text-muted-foreground">{(r.potentialReturn ?? r.totalStake).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
                       }
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-muted-foreground hidden sm:table-cell">
                       <span className="block">{dateFmt}</span>
                       <span className="block text-muted-foreground/60">{timeFmt}</span>
-                      {!r.eventDate && (
-                        <span className="block text-[10px] text-muted-foreground/40">reg.</span>
-                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
