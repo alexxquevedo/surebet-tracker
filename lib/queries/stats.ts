@@ -284,3 +284,40 @@ export async function getStatsData(userId: string, dateFrom?: Date): Promise<Sta
     currentStreak,
   }
 }
+
+// ─── Activity heatmap (últimos 365 días) ─────────────────────────────────────
+
+export interface HeatmapDay {
+  date:   string  // YYYY-MM-DD
+  profit: number
+  count:  number
+}
+
+export async function getActivityHeatmap(userId: string): Promise<HeatmapDay[]> {
+  const from = new Date()
+  from.setFullYear(from.getFullYear() - 1)
+
+  const records = await prisma.betRecord.findMany({
+    where: {
+      userId,
+      deletedAt: null,
+      status:    { in: ['WON', 'LOST', 'CASHOUT', 'VOID'] },
+      datePlaced: { gte: from },
+    },
+    select: { datePlaced: true, grossProfit: true },
+  })
+
+  const byDay = new Map<string, { profit: number; count: number }>()
+  for (const r of records) {
+    const key  = r.datePlaced.toISOString().slice(0, 10)
+    const prev = byDay.get(key) ?? { profit: 0, count: 0 }
+    byDay.set(key, {
+      profit: prev.profit + (r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0),
+      count:  prev.count + 1,
+    })
+  }
+
+  return [...byDay.entries()]
+    .map(([date, v]) => ({ date, profit: v.profit, count: v.count }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}

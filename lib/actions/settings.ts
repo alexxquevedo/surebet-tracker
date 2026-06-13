@@ -107,6 +107,27 @@ export async function updateNotificationPrefsAction(
   return { success: true, message: 'Preferencias de notificación guardadas' }
 }
 
+// ── Monthly P&L goal ──────────────────────────────────────────────────────────
+
+export async function saveMonthlyGoalAction(target: number | null): Promise<SettingsResult> {
+  const session = await auth()
+  const userId  = session?.user?.id
+  if (!userId) return { success: false, error: 'No autenticado' }
+
+  if (target !== null && (isNaN(target) || target < 0)) {
+    return { success: false, error: 'El objetivo debe ser un número positivo' }
+  }
+
+  await prisma.userSettings.upsert({
+    where:  { userId },
+    create: { userId, monthlyPnlTarget: target },
+    update: { monthlyPnlTarget: target },
+  })
+  revalidatePath('/dashboard')
+  revalidatePath('/settings')
+  return { success: true }
+}
+
 // ── Delete account ────────────────────────────────────────────────────────────
 
 export async function deleteAccountAction(formData: FormData): Promise<SettingsResult> {

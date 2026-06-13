@@ -338,6 +338,7 @@ function NewOperationModal({
   const [competition, setCompetition] = useState(iv?.competition ?? '')
   const [isLive, setIsLive]           = useState(false)
   const [datePlaced, setDatePlaced]   = useState(defaultDateTime)
+  const [notes, setNotes]             = useState('')
   const [middleRange, setMiddleRange] = useState('')
   const [bankrollId, setBankrollId]   = useState('')
 
@@ -475,7 +476,7 @@ function NewOperationModal({
 
   // ── Reset ───────────────────────────────────────────────────────────────
   function resetForm() {
-    setSelection(''); setEventName(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime())
+    setSelection(''); setEventName(''); setSport(''); setCompetition(''); setIsLive(false); setDatePlaced(defaultDateTime()); setNotes('')
     setMiddleRange(''); setStake1(''); setOdds1(''); setRetorno1('')
     setStake2(''); setOdds2(''); setBankrollId('')
     setBm1Id(bookmakers[0]?.id ?? ''); setBm2Id(bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
@@ -504,6 +505,7 @@ function NewOperationModal({
     fd.append('competition', competition)
     fd.append('isLive',      String(isLive))
     fd.append('datePlaced',  localToUTC(datePlaced))
+    if (notes.trim()) fd.append('notes', notes.trim())
     if (bankrollId) fd.append('bankrollId', bankrollId)
 
     let result: { success: boolean; error?: string; id?: string }
@@ -919,6 +921,20 @@ function NewOperationModal({
                 )}
               </div>
             )}
+
+            {/* Notas opcionales */}
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold">
+                Notas <span className="font-normal text-muted-foreground">(opcional)</span>
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="Observaciones personales…"
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
 
             {/* Status info */}
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 flex items-start gap-2 text-xs text-amber-800">

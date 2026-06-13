@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
-import { getStatsData } from '@/lib/queries/stats'
+import { getStatsData, getActivityHeatmap } from '@/lib/queries/stats'
+import type { HeatmapDay } from '@/lib/queries/stats'
 import { getBankrollEvolution, getAdvancedStats } from '@/lib/queries/dashboard'
 import type { AdvancedStats } from '@/types/domain'
 import { AdvancedSection } from '@/app/(dashboard)/_components/advanced-section'
@@ -108,6 +109,125 @@ function UpgradeOverlay() {
 
 type CompRow = { name: string; count: number; won: number; winRate: number; profit: number; yield: number }
 
+function ActivityHeatmap({ data }: { data: HeatmapDay[] }) {
+  if (data.length === 0) return null
+
+  // Build a lookup: date → { profit, count }
+  const map = new Map(data.map((d) => [d.date, d]))
+
+  // Generate the last 53 weeks (371 days) aligned to Sunday
+  const today    = new Date()
+  today.setHours(0, 0, 0, 0)
+  const endSun   = new Date(today)
+  endSun.setDate(today.getDate() + (7 - today.getDay()) % 7)  // next Sunday (or today if Sunday)
+  const startSun = new Date(endSun)
+  startSun.setDate(endSun.getDate() - 52 * 7)
+
+  const weeks: (string | null)[][] = []
+  const cur = new Date(startSun)
+  while (cur <= endSun) {
+    const week: (string | null)[] = []
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(cur)
+      day.setDate(cur.getDate() + d)
+      week.push(day <= today ? day.toISOString().slice(0, 10) : null)
+    }
+    weeks.push(week)
+    cur.setDate(cur.getDate() + 7)
+  }
+
+  function cellColor(date: string | null): string {
+    if (!date) return 'bg-transparent'
+    const entry = map.get(date)
+    if (!entry) return 'bg-muted/40 dark:bg-muted/20'
+    const p = entry.profit
+    if (p >  50) return 'bg-green-600 dark:bg-green-500'
+    if (p >  10) return 'bg-green-400 dark:bg-green-600'
+    if (p >   0) return 'bg-green-200 dark:bg-green-800'
+    if (p < -50) return 'bg-red-600 dark:bg-red-500'
+    if (p < -10) return 'bg-red-400 dark:bg-red-600'
+    return 'bg-red-200 dark:bg-red-800'
+  }
+
+  function cellTitle(date: string | null): string {
+    if (!date) return ''
+    const entry = map.get(date)
+    if (!entry) return date
+    const sign = entry.profit >= 0 ? '+' : ''
+    return `${date}: ${sign}${entry.profit.toFixed(2)}€ (${entry.count} op.)`
+  }
+
+  const months: { label: string; col: number }[] = []
+  weeks.forEach((week, wi) => {
+    const first = week.find((d) => d !== null)
+    if (first) {
+      const m = new Date(first)
+      if (m.getDate() <= 7) {
+        months.push({
+          label: m.toLocaleDateString('es-ES', { month: 'short' }),
+          col:   wi,
+        })
+      }
+    }
+  })
+
+  const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="inline-block min-w-max">
+        {/* Month labels */}
+        <div className="flex ml-5 mb-1" style={{ gap: '2px' }}>
+          {weeks.map((_, wi) => {
+            const m = months.find((m) => m.col === wi)
+            return (
+              <div key={wi} className="w-[11px] text-[9px] text-muted-foreground leading-none">
+                {m ? m.label : ''}
+              </div>
+            )
+          })}
+        </div>
+        {/* Grid */}
+        <div className="flex gap-0.5">
+          {/* Day labels */}
+          <div className="flex flex-col gap-0.5 mr-1">
+            {DAY_LABELS.map((l) => (
+              <div key={l} className="w-3 h-[11px] text-[9px] text-muted-foreground leading-none flex items-center">
+                {l}
+              </div>
+            ))}
+          </div>
+          {/* Cells */}
+          {weeks.map((week, wi) => (
+            <div key={wi} className="flex flex-col gap-0.5">
+              {week.map((date, di) => (
+                <div
+                  key={di}
+                  title={cellTitle(date)}
+                  className={`w-[11px] h-[11px] rounded-[2px] ${cellColor(date)}`}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* Legend */}
+        <div className="flex items-center gap-1.5 mt-2 ml-5 text-[10px] text-muted-foreground">
+          <span>Menos</span>
+          {['bg-muted/40','bg-green-200 dark:bg-green-800','bg-green-400 dark:bg-green-600','bg-green-600 dark:bg-green-500'].map((cls, i) => (
+            <div key={i} className={`w-[11px] h-[11px] rounded-[2px] ${cls}`} />
+          ))}
+          <span>Más ganancia</span>
+          <span className="ml-2">|</span>
+          {['bg-red-200 dark:bg-red-800','bg-red-400 dark:bg-red-600','bg-red-600 dark:bg-red-500'].map((cls, i) => (
+            <div key={i} className={`w-[11px] h-[11px] rounded-[2px] ${cls}`} />
+          ))}
+          <span>Más pérdida</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StatsContent({
   stats,
   evolution,
@@ -115,6 +235,7 @@ function StatsContent({
   byCompetition,
   period,
   monthlyPnlOverride,
+  heatmap,
 }: {
   stats: Awaited<ReturnType<typeof getStatsData>>
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
@@ -122,6 +243,7 @@ function StatsContent({
   byCompetition: CompRow[]
   period: string
   monthlyPnlOverride?: Awaited<ReturnType<typeof getStatsData>>['monthlyPnl'] | null
+  heatmap: HeatmapDay[]
 }) {
   const noData     = stats.totalAll === 0
   const hasPeriod  = period !== 'all'
@@ -230,6 +352,19 @@ function StatsContent({
           <p className="text-[10px] text-muted-foreground mt-0.5">por operación</p>
         </div>
       </div>
+
+      {/* ── Heatmap de actividad ─────────────────────────────────────────── */}
+      {heatmap.length > 0 && (
+        <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold">Actividad diaria</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Últimos 12 meses · Verde = ganancia · Rojo = pérdida
+            </p>
+          </div>
+          <ActivityHeatmap data={heatmap} />
+        </div>
+      )}
 
       {/* ── Evolución mensual P&L ─────────────────────────────────────────── */}
       <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
@@ -480,7 +615,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
   const evolutionDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '3m' ? 90 : period === '1y' ? 365 : 9999
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution, advanced, compRecords, historicalMonthlyPnl] = await Promise.all([
+  const [stats, evolution, advanced, compRecords, historicalMonthlyPnl, heatmap] = await Promise.all([
     getStatsData(userId, dateFrom),
     getBankrollEvolution(userId, evolutionDays),
     getAdvancedStats(userId, dateFrom),
@@ -495,6 +630,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
     }),
     // El gráfico mensual siempre muestra los últimos 12 meses sin filtro de período
     dateFrom ? getStatsData(userId).then((s) => s.monthlyPnl) : Promise.resolve(null),
+    getActivityHeatmap(userId),
   ])
 
   const compMap = new Map<string, { count: number; won: number; profit: number; stake: number }>()
@@ -546,7 +682,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -554,7 +690,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} heatmap={heatmap} />
       )}
 
     </div>

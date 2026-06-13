@@ -32,7 +32,7 @@ export default async function SettingsPage({
     }),
     prisma.userSettings.findUnique({
       where:  { userId },
-      select: { emailLoginAlert: true, emailOnSettle: true },
+      select: { emailLoginAlert: true, emailOnSettle: true, monthlyPnlTarget: true },
     }),
     prisma.apiKey.findMany({
       where:   { userId, isRevoked: false },
@@ -60,8 +60,11 @@ export default async function SettingsPage({
       paymentSuccess={paymentSuccess}
       paymentCanceled={paymentCanceled}
       settings={{
-        emailLoginAlert: settingsRow?.emailLoginAlert ?? true,
-        emailOnSettle:   settingsRow?.emailOnSettle   ?? true,
+        emailLoginAlert:  settingsRow?.emailLoginAlert  ?? true,
+        emailOnSettle:    settingsRow?.emailOnSettle    ?? true,
+        monthlyPnlTarget: settingsRow?.monthlyPnlTarget
+          ? parseFloat(settingsRow.monthlyPnlTarget.toString())
+          : null,
       }}
       telegram={{
         connected: !!user.telegramId,

@@ -73,10 +73,11 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   const bookmakerId = formData.get('bookmakerId') as string | null
   const rawStake    = formData.get('stake') as string | null
   const rawOdds     = formData.get('odds') as string | null
-  const selection    = ((formData.get('selection') as string | null) ?? '').trim()
+  const selection      = ((formData.get('selection') as string | null) ?? '').trim()
   const rawSport       = (formData.get('sport') as string | null)?.trim() || null
   const rawCompetition = (formData.get('competition') as string | null)?.trim() || null
   const rawEventName   = (formData.get('eventName') as string | null)?.trim() || null
+  const rawNotes       = (formData.get('notes') as string | null)?.trim() || null
   const isLive         = formData.get('isLive') === 'true'
   const datePlaced   = parseDatePlaced(formData.get('datePlaced') as string | null)
 
@@ -114,7 +115,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             userId, type: 'SINGLE', status: 'PLACED',
             totalStake: stake, potentialReturn: potReturn,
             datePlaced, createdVia: 'MANUAL',
-            isLive,
+            isLive, notes: rawNotes,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
             competition: rawCompetition,
             eventName: rawEventName,
@@ -133,7 +134,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             userId, type: betType, status: 'PLACED',
             totalStake: stake, potentialReturn: potReturn,
             datePlaced, createdVia: 'MANUAL',
-            isLive,
+            isLive, notes: rawNotes,
             sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
             primaryBookmakerId: bookmakerId,
             bankrollId: rawBankrollId ?? undefined,
@@ -197,11 +198,12 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
   const rawO1     = formData.get('odds1') as string | null
   const rawS2     = formData.get('stake2') as string | null
   const rawO2     = formData.get('odds2') as string | null
-  const selection  = ((formData.get('selection') as string | null) ?? '').trim()
+  const selection   = ((formData.get('selection') as string | null) ?? '').trim()
   const middleRange = ((formData.get('middleRange') as string | null) ?? '').trim()
-  const rawSport   = (formData.get('sport') as string | null)?.trim() || null
-  const isLive     = formData.get('isLive') === 'true'
-  const datePlaced = parseDatePlaced(formData.get('datePlaced') as string | null)
+  const rawSport    = (formData.get('sport') as string | null)?.trim() || null
+  const rawNotes2   = (formData.get('notes') as string | null)?.trim() || null
+  const isLive      = formData.get('isLive') === 'true'
+  const datePlaced  = parseDatePlaced(formData.get('datePlaced') as string | null)
 
   if (rawType !== 'ARBITRAGE' && rawType !== 'MIDDLE') {
     return { success: false, error: 'Tipo debe ser ARBITRAGE o MIDDLE' }
@@ -255,7 +257,7 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
           potentialReturn: betType === 'ARBITRAGE' ? guaranteedRet : ret1.plus(ret2).toDecimalPlaces(2),
           datePlaced,
           createdVia:     'MANUAL',
-          isLive,
+          isLive, notes: rawNotes2,
           sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
           bankrollId: rawBankrollId2 ?? undefined,
           title: finalTitle,
@@ -1157,6 +1159,7 @@ export async function createComboBetAction(formData: FormData): Promise<BetActio
   const rawTotalOdds   = formData.get('totalOdds') as string | null
   const rawBonusReturn = formData.get('bonusReturn') as string | null
   const rawSelections  = formData.get('selections') as string | null
+  const rawNotes3      = (formData.get('notes') as string | null)?.trim() || null
   const isLive         = formData.get('isLive') === 'true'
   const datePlaced     = parseDatePlaced(formData.get('datePlaced') as string | null)
   const bankrollId     = (formData.get('bankrollId') as string | null) || null
@@ -1201,7 +1204,7 @@ export async function createComboBetAction(formData: FormData): Promise<BetActio
           potentialReturn:   potReturn,
           datePlaced,
           createdVia:        'MANUAL',
-          isLive,
+          isLive, notes: rawNotes3,
           primaryBookmakerId: bookmakerId,
           bankrollId:         bankrollId ?? undefined,
           title:              finalTitle,

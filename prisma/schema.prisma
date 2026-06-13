@@ -251,6 +251,8 @@ model UserSettings {
   roiTargetPercent   Decimal? @db.Decimal(6, 2)
   emailOnDailyReport Boolean  @default(false)
 
+  monthlyPnlTarget   Decimal? @db.Decimal(12, 2)
+
   dashboardLayout    Json    @default("{}")
   defaultChartPeriod String  @default("30d")
   compactMode        Boolean @default(false)

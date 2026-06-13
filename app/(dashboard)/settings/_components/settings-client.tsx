@@ -12,6 +12,7 @@ import {
   deleteAccountAction,
   generateApiKeyAction,
   revokeApiKeyAction,
+  saveMonthlyGoalAction,
 } from '@/lib/actions/settings'
 import type { SettingsResult } from '@/lib/actions/settings'
 import {
@@ -58,6 +59,7 @@ export interface SettingsClientProps {
   settings: {
     emailLoginAlert: boolean
     emailOnSettle: boolean
+    monthlyPnlTarget: number | null
   }
   telegram: {
     connected: boolean
@@ -226,6 +228,9 @@ export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, 
   // Notifications
   const [emailLoginAlert, setEmailLoginAlert] = useState(settings.emailLoginAlert)
   const [emailOnSettle, setEmailOnSettle]     = useState(settings.emailOnSettle)
+
+  // Monthly goal
+  const [monthlyGoal,    setMonthlyGoal]      = useState(settings.monthlyPnlTarget !== null ? String(settings.monthlyPnlTarget) : '')
 
   // API keys — track revoked locally for optimistic UI
   const [revokedIds, setRevokedIds]       = useState<Set<string>>(new Set())
@@ -544,6 +549,7 @@ export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, 
 
       {/* ── Preferencias ──────────────────────────────────────────────────── */}
       {activeTab === 'preferencias' && (
+        <>
         <div className="rounded-lg border bg-card p-6 space-y-5">
           <h2 className="text-base font-semibold">Preferencias de aplicación</h2>
 
@@ -608,6 +614,43 @@ export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, 
             {isPending ? 'Guardando…' : 'Guardar preferencias'}
           </button>
         </div>
+
+        {/* ── Objetivo mensual ────────────────────────────────────────────── */}
+        <div className="rounded-lg border bg-card p-6 space-y-4">
+          <div>
+            <h2 className="text-base font-semibold">Objetivo mensual de P&L</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Muestra una barra de progreso en el dashboard. Deja en blanco para desactivarlo.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={monthlyGoal}
+              onChange={(e) => setMonthlyGoal(e.target.value)}
+              placeholder="Ej: 500"
+              className="w-36 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <span className="text-sm text-muted-foreground">€ / mes</span>
+            <button
+              onClick={() => {
+                const raw = monthlyGoal.trim().replace(',', '.')
+                const val = raw === '' ? null : parseFloat(raw)
+                if (val !== null && (isNaN(val) || val < 0)) return
+                startTransition(async () => {
+                  const r = await saveMonthlyGoalAction(val)
+                  showToast(r)
+                })
+              }}
+              disabled={isPending}
+              className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors"
+            >
+              {isPending ? 'Guardando…' : 'Guardar objetivo'}
+            </button>
+          </div>
+        </div>
+        </>
       )}
 
       {/* ── Notificaciones ────────────────────────────────────────────────── */}

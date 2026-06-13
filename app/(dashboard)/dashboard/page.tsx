@@ -7,6 +7,7 @@ import { getDashboardMetrics, getRecentBetRecords, getOpenBets } from '@/lib/que
 import type { OpenBetItem } from '@/lib/queries/dashboard'
 import { StrategyChart } from './_components/strategy-chart'
 import { SetupProgress } from './_components/setup-progress'
+import { MonthlyGoalWidget } from './_components/monthly-goal-widget'
 import { formatCurrency, formatPercentage, formatDate } from '@/lib/utils/format'
 import type {
   BankrollMetrics,
@@ -69,7 +70,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const params     = await searchParams
   const bankrollId = typeof params['bankroll'] === 'string' ? params['bankroll'] : undefined
 
-  const [metrics, recentRecords, openBets, bankrolls, setupData] = await Promise.all([
+  const now         = new Date()
+  const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  const [metrics, recentRecords, openBets, bankrolls, setupData, settingsRow, monthlyPnlRaw] = await Promise.all([
     getDashboardMetrics(userId, bankrollId),
     getRecentBetRecords(userId, 5),
     getOpenBets(userId),
@@ -89,6 +93,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         },
       },
     }),
+    prisma.userSettings.findUnique({
+      where:  { userId },
+      select: { monthlyPnlTarget: true },
+    }),
+    prisma.betRecord.aggregate({
+      where: {
+        userId,
+        deletedAt: null,
+        status:    { in: ['WON', 'LOST', 'CASHOUT', 'VOID'] },
+        datePlaced: { gte: monthStart },
+      },
+      _sum: { grossProfit: true },
+    }),
   ])
 
   const setupStep1 = (setupData?.bookmakers.length ?? 0) > 0
@@ -97,6 +114,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const { bankroll, byType, byBookmaker, advanced } = metrics
   const activeBankroll = bankrolls.find((b) => b.id === bankrollId)
+
+  const monthlyTarget = settingsRow?.monthlyPnlTarget
+    ? parseFloat(settingsRow.monthlyPnlTarget.toString())
+    : null
+  const monthlyPnl = monthlyPnlRaw._sum.grossProfit
+    ? parseFloat(monthlyPnlRaw._sum.grossProfit.toString())
+    : 0
 
   return (
     <div className="space-y-8">
@@ -155,6 +179,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </span>
           )}
         </div>
+      )}
+
+      {/* ── Objetivo mensual ────────────────────────────────────────────── */}
+      {monthlyTarget !== null && (
+        <MonthlyGoalWidget target={monthlyTarget} current={monthlyPnl} />
       )}
 
       {/* ── S1: Bankroll Global ─────────────────────────────────────────── */}
