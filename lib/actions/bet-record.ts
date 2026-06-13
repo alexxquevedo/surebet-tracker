@@ -1004,9 +1004,15 @@ export async function updateBetMetadataAction(
     sport?:       string | null
     isLive?:      boolean
     datePlaced?:  string
-    // Odds (solo para PLACED — no modifica balances, solo potentialReturn)
     legUpdates?:  Array<{ id: string; odds: number }>
     singleOdds?:  number | null
+    comboSelectionUpdates?: Array<{
+      id:           string
+      selection?:   string | null
+      eventName?:   string | null
+      sport?:       string | null
+      competition?: string | null
+    }>
   },
 ): Promise<UpdateMetadataResult> {
   const session = await auth()
@@ -1082,7 +1088,22 @@ export async function updateBetMetadataAction(
       return { success: true }
     }
 
-    await prisma.betRecord.update({ where: { id: betId }, data: base })
+    if (bet.type === 'COMBO' && data.comboSelectionUpdates?.length) {
+      const selUpdates = data.comboSelectionUpdates.map((su) => {
+        const d: Record<string, unknown> = {}
+        if (su.selection   !== undefined) d.selection   = su.selection   || 'Selección'
+        if (su.eventName   !== undefined) d.eventName   = su.eventName   || null
+        if (su.sport       !== undefined) d.sport       = su.sport       || null
+        if (su.competition !== undefined) d.competition = su.competition || null
+        return prisma.comboSelection.update({ where: { id: su.id }, data: d })
+      })
+      await prisma.$transaction([
+        prisma.betRecord.update({ where: { id: betId }, data: base }),
+        ...selUpdates,
+      ])
+    } else {
+      await prisma.betRecord.update({ where: { id: betId }, data: base })
+    }
     return { success: true }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Error al actualizar la apuesta' }

@@ -54,13 +54,14 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   if (!userId) redirect('/login')
 
   const params       = await searchParams
-  const filterSport  = typeof params['sport']    === 'string' ? params['sport']    : undefined
-  const filterBm     = typeof params['bm']       === 'string' ? params['bm']       : undefined
-  const filterStatus = typeof params['status']   === 'string' ? params['status']   : undefined
-  const filterLive   = typeof params['live']     === 'string' ? params['live']     : undefined
-  const filterFrom   = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
-  const filterTo     = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
-  const filterSort   = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
+  const filterSport       = typeof params['sport']    === 'string' ? params['sport']    : undefined
+  const filterBm          = typeof params['bm']       === 'string' ? params['bm']       : undefined
+  const filterStatus      = typeof params['status']   === 'string' ? params['status']   : undefined
+  const filterLive        = typeof params['live']     === 'string' ? params['live']     : undefined
+  const filterFrom        = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
+  const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
+  const filterCompetition = typeof params['comp']     === 'string' ? params['comp']     : undefined
+  const filterSort        = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
 
   // Build where clause — DRAFTs siempre excluidos (se muestran en su propia sección)
   const where: Prisma.BetRecordWhereInput = {
@@ -84,6 +85,12 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         ...(filterTo   ? { lte: new Date(`${filterTo}T23:59:59`)   } : {}),
       },
     } : {}),
+    ...(filterCompetition ? {
+      OR: [
+        { competition: filterCompetition },
+        { comboDetail: { selections: { some: { competition: filterCompetition } } } },
+      ],
+    } : {}),
   }
 
   const orderBy: Prisma.BetRecordOrderByWithRelationInput[] =
@@ -100,7 +107,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const userTz = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } })
   const tz = userTz?.timezone ?? 'Europe/Madrid'
 
-  const [records, bookmakers, bankrolls, totalBetCount, draftRecords] = await Promise.all([
+  const [records, bookmakers, bankrolls, totalBetCount, betCompsRaw, comboCompsRaw, draftRecords] = await Promise.all([
     prisma.betRecord.findMany({
       where,
       orderBy,
@@ -160,6 +167,16 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       ? prisma.betRecord.count({ where: { userId, deletedAt: null } })
       : Promise.resolve(null),
     prisma.betRecord.findMany({
+      where:    { userId, deletedAt: null, competition: { not: null } },
+      select:   { competition: true },
+      distinct: ['competition'],
+    }),
+    prisma.comboSelection.findMany({
+      where:    { competition: { not: null }, comboDetail: { betRecord: { userId, deletedAt: null } } },
+      select:   { competition: true },
+      distinct: ['competition'],
+    }),
+    prisma.betRecord.findMany({
       where:   { userId, status: 'DRAFT', deletedAt: null },
       orderBy: { datePlaced: 'desc' },
       select: {
@@ -175,6 +192,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       },
     }),
   ])
+
+  const allCompetitions = [...new Set([
+    ...betCompsRaw.map((r) => r.competition as string),
+    ...comboCompsRaw.map((r) => r.competition as string),
+  ])].filter(Boolean).sort()
 
   // ─── Serializar registros (Decimal → number, Date → ISO) ─────────────────
   const serializedRecords: SerializedRecord[] = records.map((r) => ({
@@ -251,10 +273,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   // ─── Build date preset URLs ───────────────────────────────────────────────
   const presets    = getDatePresets()
   const extraParams = [
-    filterSport  ? `&sport=${filterSport}`   : '',
-    filterBm     ? `&bm=${filterBm}`         : '',
-    filterStatus ? `&status=${filterStatus}` : '',
-    filterLive   ? `&live=${filterLive}`     : '',
+    filterSport       ? `&sport=${filterSport}`             : '',
+    filterBm          ? `&bm=${filterBm}`                   : '',
+    filterStatus      ? `&status=${filterStatus}`           : '',
+    filterLive        ? `&live=${filterLive}`               : '',
+    filterCompetition ? `&comp=${encodeURIComponent(filterCompetition)}` : '',
   ].join('')
 
   return (
@@ -263,12 +286,13 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       {/* Header */}
       {(() => {
         const csvParams = new URLSearchParams()
-        if (filterFrom)   csvParams.set('dateFrom', filterFrom)
-        if (filterTo)     csvParams.set('dateTo',   filterTo)
-        if (filterSport)  csvParams.set('sport',    filterSport)
-        if (filterBm)     csvParams.set('bm',       filterBm)
-        if (filterStatus) csvParams.set('status',   filterStatus)
-        if (filterLive)   csvParams.set('live',     filterLive)
+        if (filterFrom)        csvParams.set('dateFrom', filterFrom)
+        if (filterTo)          csvParams.set('dateTo',   filterTo)
+        if (filterSport)       csvParams.set('sport',    filterSport)
+        if (filterBm)          csvParams.set('bm',       filterBm)
+        if (filterStatus)      csvParams.set('status',   filterStatus)
+        if (filterLive)        csvParams.set('live',     filterLive)
+        if (filterCompetition) csvParams.set('comp',     filterCompetition)
         return (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -345,10 +369,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
           {/* Custom range */}
           <form method="GET" className="flex flex-wrap items-center gap-2">
-            {filterSport  && <input type="hidden" name="sport"  value={filterSport}  />}
-            {filterBm     && <input type="hidden" name="bm"     value={filterBm}     />}
-            {filterStatus && <input type="hidden" name="status" value={filterStatus} />}
-            {filterLive   && <input type="hidden" name="live"   value={filterLive}   />}
+            {filterSport       && <input type="hidden" name="sport"  value={filterSport}       />}
+            {filterBm          && <input type="hidden" name="bm"     value={filterBm}          />}
+            {filterStatus      && <input type="hidden" name="status" value={filterStatus}      />}
+            {filterLive        && <input type="hidden" name="live"   value={filterLive}        />}
+            {filterCompetition && <input type="hidden" name="comp"   value={filterCompetition} />}
             <input
               type="date"
               name="dateFrom"
@@ -380,12 +405,14 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       {/* ─── Filters (auto-apply con debounce 300ms) ────────────────────── */}
       <RecordsFilters
         bookmakers={bookmakers}
+        competitions={allCompetitions}
         filterSport={filterSport}
         filterBm={filterBm}
         filterStatus={filterStatus}
         filterLive={filterLive}
         filterFrom={filterFrom}
         filterTo={filterTo}
+        filterCompetition={filterCompetition}
       />
 
       {/* ─── Registros ──────────────────────────────────────────────────── */}
@@ -407,12 +434,13 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         tz={tz}
         filterSort={filterSort}
         filterParams={{
-          ...(filterFrom   ? { dateFrom: filterFrom   } : {}),
-          ...(filterTo     ? { dateTo:   filterTo     } : {}),
-          ...(filterSport  ? { sport:    filterSport  } : {}),
-          ...(filterBm     ? { bm:       filterBm     } : {}),
-          ...(filterStatus ? { status:   filterStatus } : {}),
-          ...(filterLive   ? { live:     filterLive   } : {}),
+          ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
+          ...(filterTo          ? { dateTo:   filterTo          } : {}),
+          ...(filterSport       ? { sport:    filterSport       } : {}),
+          ...(filterBm          ? { bm:       filterBm          } : {}),
+          ...(filterStatus      ? { status:   filterStatus      } : {}),
+          ...(filterLive        ? { live:     filterLive        } : {}),
+          ...(filterCompetition ? { comp:     filterCompetition } : {}),
         }}
       />
     </div>

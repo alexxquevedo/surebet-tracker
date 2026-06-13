@@ -84,11 +84,37 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
     r.singleBetDetail?.odds != null ? String(r.singleBetDetail.odds) : ''
   )
 
+  type ComboSelEdit = { id: string; selection: string; eventName: string; sport: string; competition: string }
+  const [comboSels, setComboSels] = useState<ComboSelEdit[]>(
+    r.type === 'COMBO'
+      ? (r.comboDetail?.selections ?? []).map((s) => ({
+          id:          s.id,
+          selection:   s.selection   ?? '',
+          eventName:   s.eventName   ?? '',
+          sport:       s.sport       ?? '',
+          competition: s.competition ?? '',
+        }))
+      : []
+  )
+  function updateComboSel(idx: number, field: keyof Omit<ComboSelEdit, 'id'>, val: string) {
+    setComboSels((prev) => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s))
+  }
+
   function handleSave() {
     setError(null)
     start(async () => {
       const legUpdates = canEditOdds
         ? r.legs.map((l) => ({ id: l.id, odds: parseFloat(legOdds[l.id] ?? String(l.odds)) })).filter((l) => !isNaN(l.odds))
+        : undefined
+
+      const comboSelectionUpdates = r.type === 'COMBO' && comboSels.length > 0
+        ? comboSels.map((s) => ({
+            id:          s.id,
+            selection:   s.selection   || null,
+            eventName:   s.eventName   || null,
+            sport:       s.sport       || null,
+            competition: s.competition || null,
+          }))
         : undefined
 
       const res = await updateBetMetadataAction(r.id, {
@@ -101,6 +127,7 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
         datePlaced: localToUTC(datePlaced),
         legUpdates,
         singleOdds:  canEditSingleOdds && singleOdds ? parseFloat(singleOdds) : undefined,
+        comboSelectionUpdates,
       })
       if (res.success) {
         router.refresh()
@@ -241,6 +268,53 @@ function EditModal({ record: r, onClose }: { record: SerializedRecord; onClose: 
                 onChange={(e) => setSingleOdds(e.target.value.replace(',', '.'))}
                 className="w-32 rounded-lg border bg-background px-3 py-2 text-sm font-mono text-right outline-none focus:ring-2 focus:ring-ring"
               />
+            </div>
+          )}
+
+          {/* Selecciones de combinada (COMBO) */}
+          {r.type === 'COMBO' && comboSels.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Selecciones de la combinada</p>
+              <div className="space-y-3">
+                {comboSels.map((s, idx) => (
+                  <div key={s.id} className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sel. {idx + 1}</p>
+                    <input
+                      type="text"
+                      value={s.selection}
+                      onChange={(e) => updateComboSel(idx, 'selection', e.target.value)}
+                      placeholder="Selección / Descripción"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <input
+                      type="text"
+                      value={s.eventName}
+                      onChange={(e) => updateComboSel(idx, 'eventName', e.target.value)}
+                      placeholder="Partido (ej. Real Madrid vs Barça)"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={s.sport}
+                        onChange={(e) => updateComboSel(idx, 'sport', e.target.value)}
+                        className="rounded-lg border bg-background px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="">— Deporte —</option>
+                        {SPORTS.map((sp) => (
+                          <option key={sp.value} value={sp.value}>{sp.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={s.competition}
+                        onChange={(e) => updateComboSel(idx, 'competition', e.target.value)}
+                        placeholder="Competición"
+                        className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
