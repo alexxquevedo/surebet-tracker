@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
 
   const sp           = request.nextUrl.searchParams
   const filterType   = sp.get('type')     ?? undefined
-  const filterAprox  = sp.get('aprox')    ?? undefined
+  const filterAprox    = sp.get('aprox')    ?? undefined
+  const filterBankroll = sp.get('bankroll') ?? undefined
   const filterSport  = sp.get('sport')    ?? undefined
   const filterBm     = sp.get('bm')       ?? undefined
   const filterStatus = sp.get('status')   ?? undefined
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest) {
     ...(filterType               ? { type:          filterType  as Prisma.EnumBetTypeFilter['equals']           } : {}),
     ...(filterAprox === 'true'   ? { isApproximate: true  } : {}),
     ...(filterAprox === 'false'  ? { isApproximate: false } : {}),
+    ...(filterBankroll           ? { bankrollId: filterBankroll } : {}),
     ...(filterSport  ? { sport:         filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterStatus ? { status: filterStatus as Prisma.EnumBetStatusFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),

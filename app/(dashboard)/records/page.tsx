@@ -59,6 +59,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterStatus      = typeof params['status']   === 'string' ? params['status']   : undefined
   const filterType        = typeof params['type']     === 'string' ? params['type']     : undefined
   const filterAprox       = typeof params['aprox']    === 'string' ? params['aprox']    : undefined
+  const filterBankroll    = typeof params['bankroll'] === 'string' ? params['bankroll'] : undefined
   const filterLive        = typeof params['live']     === 'string' ? params['live']     : undefined
   const filterFrom        = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
   const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
@@ -78,6 +79,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     ...(filterType        ? { type:          filterType  as Prisma.EnumBetTypeFilter['equals']           } : {}),
     ...(filterAprox === 'true'  ? { isApproximate: true  } : {}),
     ...(filterAprox === 'false' ? { isApproximate: false } : {}),
+    ...(filterBankroll    ? { bankrollId:     filterBankroll } : {}),
     ...(filterSport       ? { sport:         filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
     ...(filterLive === 'false' ? { isLive: false } : {}),
@@ -111,8 +113,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     filterSort === 'date-asc'    ? [{ datePlaced: 'asc' }] :
     filterSort === 'stake-desc'  ? [{ totalStake: 'desc' }, { datePlaced: 'desc' }] :
     filterSort === 'stake-asc'   ? [{ totalStake: 'asc'  }, { datePlaced: 'desc' }] :
-    filterSort === 'profit-desc' ? [{ grossProfit: { sort: 'desc', nulls: 'last' } }, { datePlaced: 'desc' }] :
-    filterSort === 'profit-asc'  ? [{ grossProfit: { sort: 'asc',  nulls: 'last' } }, { datePlaced: 'desc' }] :
+    filterSort === 'profit-desc' ? [{ grossProfit: { sort: 'desc', nulls: 'first' } }, { potentialReturn: { sort: 'desc', nulls: 'last' } }, { datePlaced: 'desc' }] :
+    filterSort === 'profit-asc'  ? [{ grossProfit: { sort: 'asc',  nulls: 'last'  } }, { potentialReturn: { sort: 'asc',  nulls: 'last' } }, { datePlaced: 'desc' }] :
                                    [{ datePlaced: 'desc' }]
 
   const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
@@ -291,6 +293,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const extraParams = [
     filterType        ? `&type=${filterType}`                           : '',
     filterAprox       ? `&aprox=${filterAprox}`                         : '',
+    filterBankroll    ? `&bankroll=${filterBankroll}`                   : '',
     filterSport       ? `&sport=${filterSport}`                         : '',
     filterBm          ? `&bm=${filterBm}`                               : '',
     filterStatus      ? `&status=${filterStatus}`                       : '',
@@ -308,7 +311,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         if (filterFrom)        csvParams.set('dateFrom', filterFrom)
         if (filterTo)          csvParams.set('dateTo',   filterTo)
         if (filterType)        csvParams.set('type',     filterType)
-        if (filterAprox)       csvParams.set('aprox',    filterAprox)
+        if (filterAprox)       csvParams.set('aprox',     filterAprox)
+        if (filterBankroll)    csvParams.set('bankroll',  filterBankroll)
         if (filterSport)       csvParams.set('sport',    filterSport)
         if (filterBm)          csvParams.set('bm',       filterBm)
         if (filterStatus)      csvParams.set('status',   filterStatus)
@@ -392,8 +396,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           {/* Custom range */}
           <form method="GET" className="flex flex-wrap items-center gap-2">
             {filterType        && <input type="hidden" name="type"  value={filterType}        />}
-            {filterAprox       && <input type="hidden" name="aprox"  value={filterAprox}       />}
-            {filterSport       && <input type="hidden" name="sport"  value={filterSport}       />}
+            {filterAprox       && <input type="hidden" name="aprox"     value={filterAprox}    />}
+            {filterBankroll    && <input type="hidden" name="bankroll" value={filterBankroll}  />}
+            {filterSport       && <input type="hidden" name="sport"    value={filterSport}     />}
             {filterBm          && <input type="hidden" name="bm"     value={filterBm}          />}
             {filterStatus      && <input type="hidden" name="status" value={filterStatus}      />}
             {filterLive        && <input type="hidden" name="live"   value={filterLive}        />}
@@ -430,9 +435,11 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       {/* ─── Filters (auto-apply con debounce 300ms) ────────────────────── */}
       <RecordsFilters
         bookmakers={bookmakers}
+        bankrolls={bankrolls}
         competitions={allCompetitions}
         filterType={filterType}
         filterAprox={filterAprox}
+        filterBankroll={filterBankroll}
         filterSport={filterSport}
         filterBm={filterBm}
         filterStatus={filterStatus}
@@ -449,7 +456,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           <p className="text-3xl mb-3">📋</p>
           <p className="font-semibold">Sin operaciones</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {(filterType ?? filterAprox ?? filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
+            {(filterType ?? filterAprox ?? filterBankroll ?? filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
               ? 'No hay operaciones que coincidan con los filtros actuales.'
               : 'Usa el botón + para registrar tu primera apuesta.'}
           </p>
@@ -465,7 +472,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
           ...(filterTo          ? { dateTo:   filterTo          } : {}),
           ...(filterType        ? { type:     filterType        } : {}),
-          ...(filterAprox       ? { aprox:    filterAprox       } : {}),
+          ...(filterAprox       ? { aprox:     filterAprox       } : {}),
+          ...(filterBankroll    ? { bankroll:  filterBankroll    } : {}),
           ...(filterSport       ? { sport:    filterSport       } : {}),
           ...(filterBm          ? { bm:       filterBm          } : {}),
           ...(filterStatus      ? { status:   filterStatus      } : {}),
@@ -483,8 +491,9 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
             ...(filterTo          ? { dateTo:   filterTo          } : {}),
             ...(filterType        ? { type:     filterType        } : {}),
-            ...(filterAprox       ? { aprox:    filterAprox       } : {}),
-            ...(filterSport       ? { sport:    filterSport       } : {}),
+            ...(filterAprox       ? { aprox:     filterAprox       } : {}),
+            ...(filterBankroll    ? { bankroll:  filterBankroll    } : {}),
+            ...(filterSport       ? { sport:     filterSport       } : {}),
             ...(filterBm          ? { bm:       filterBm          } : {}),
             ...(filterStatus      ? { status:   filterStatus      } : {}),
             ...(filterLive        ? { live:     filterLive        } : {}),

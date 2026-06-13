@@ -398,6 +398,7 @@ export async function PATCH(request: NextRequest) {
     telegram_id?:    unknown
     bot_pending_id?: string
     legs?:           Array<{ leg_index: number; odds: number }>
+    notas?:          string | null
   }
   try {
     body = await request.json()
@@ -405,10 +406,13 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { telegram_id, bot_pending_id, legs } = body
-  if (!telegram_id || !bot_pending_id || !Array.isArray(legs) || legs.length === 0) {
+  const { telegram_id, bot_pending_id, legs, notas } = body
+  const hasLegs  = Array.isArray(legs) && legs.length > 0
+  const hasNotas = notas !== undefined
+
+  if (!telegram_id || !bot_pending_id || (!hasLegs && !hasNotas)) {
     return NextResponse.json(
-      { error: 'telegram_id, bot_pending_id, and legs are required' },
+      { error: 'telegram_id, bot_pending_id, and at least one of legs or notas are required' },
       { status: 400 },
     )
   }
@@ -438,13 +442,26 @@ export async function PATCH(request: NextRequest) {
   })
   if (!record) return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   if (record.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  // ── Actualizar notas (no requiere estado PLACED) ──────────────────────
+  if (hasNotas) {
+    await prisma.betRecord.update({
+      where: { id: record.id },
+      data:  { notes: notas?.trim() || null },
+    })
+  }
+
+  if (!hasLegs) {
+    return NextResponse.json({ success: true, updated: 0, notesUpdated: hasNotas })
+  }
+
   if (record.status !== 'PLACED') {
     return NextResponse.json({ error: 'Can only update odds for PLACED records' }, { status: 400 })
   }
 
-  const validUpdates = legs.filter(({ leg_index }) => record.legs[leg_index] !== undefined)
+  const validUpdates = legs!.filter(({ leg_index }) => record.legs[leg_index] !== undefined)
   if (validUpdates.length === 0) {
-    return NextResponse.json({ success: true, updated: 0 })
+    return NextResponse.json({ success: true, updated: 0, notesUpdated: hasNotas })
   }
 
   // Actualizar cuotas en las piernas indicadas
@@ -485,5 +502,5 @@ export async function PATCH(request: NextRequest) {
     })
   }
 
-  return NextResponse.json({ success: true, updated: validUpdates.length })
+  return NextResponse.json({ success: true, updated: validUpdates.length, notesUpdated: hasNotas })
 }
