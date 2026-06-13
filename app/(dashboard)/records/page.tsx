@@ -330,7 +330,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
               href={`/api/records/export?${csvParams.toString()}`}
               className="shrink-0 flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
-              📥 Exportar CSV
+              📥 Exportar Excel
             </a>
           </div>
         )
