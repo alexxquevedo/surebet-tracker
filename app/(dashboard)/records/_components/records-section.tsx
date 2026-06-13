@@ -431,9 +431,12 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                             <div key={s.id} className="flex items-start gap-2 text-xs">
                               <span className="text-muted-foreground/50 w-4 shrink-0 font-mono">{i + 1}.</span>
                               <div className="min-w-0">
-                                <span className="font-medium">{s.eventName || s.selection || '—'}</span>
+                                <span className="font-medium">{s.selection || '—'}</span>
+                                {s.eventName && s.eventName !== s.selection && (
+                                  <span className="text-muted-foreground/70 block text-[10px]">{s.eventName}</span>
+                                )}
                                 {(s.sport || s.competition) && (
-                                  <span className="text-muted-foreground ml-1.5">
+                                  <span className="text-muted-foreground/60 block text-[10px]">
                                     {[s.sport ? (SPORT_LABEL[s.sport] ?? s.sport) : null, s.competition].filter(Boolean).join(' · ')}
                                   </span>
                                 )}
@@ -613,10 +616,13 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                           <div key={s.id} className="flex items-start gap-2 text-xs">
                             <span className="text-muted-foreground/50 w-4 shrink-0 font-mono">{i + 1}.</span>
                             <div>
-                              <span className="font-medium">{s.eventName || s.selection || '—'}</span>
+                              <span className="font-medium">{s.selection || '—'}</span>
+                              {s.eventName && s.eventName !== s.selection && (
+                                <span className="text-muted-foreground/70 block text-[10px]">{s.eventName}</span>
+                              )}
                               {(s.sport || s.competition) && (
-                                <span className="text-muted-foreground ml-1">
-                                  · {[s.sport ? (SPORT_LABEL[s.sport] ?? s.sport) : null, s.competition].filter(Boolean).join(' · ')}
+                                <span className="text-muted-foreground/60 block text-[10px]">
+                                  {[s.sport ? (SPORT_LABEL[s.sport] ?? s.sport) : null, s.competition].filter(Boolean).join(' · ')}
                                 </span>
                               )}
                             </div>

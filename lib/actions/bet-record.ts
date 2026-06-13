@@ -198,12 +198,14 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
   const rawO1     = formData.get('odds1') as string | null
   const rawS2     = formData.get('stake2') as string | null
   const rawO2     = formData.get('odds2') as string | null
-  const selection   = ((formData.get('selection') as string | null) ?? '').trim()
-  const middleRange = ((formData.get('middleRange') as string | null) ?? '').trim()
-  const rawSport    = (formData.get('sport') as string | null)?.trim() || null
-  const rawNotes2   = (formData.get('notes') as string | null)?.trim() || null
-  const isLive      = formData.get('isLive') === 'true'
-  const datePlaced  = parseDatePlaced(formData.get('datePlaced') as string | null)
+  const selection      = ((formData.get('selection') as string | null) ?? '').trim()
+  const middleRange    = ((formData.get('middleRange') as string | null) ?? '').trim()
+  const rawSport       = (formData.get('sport') as string | null)?.trim() || null
+  const rawCompetition = (formData.get('competition') as string | null)?.trim() || null
+  const rawEventName   = (formData.get('eventName') as string | null)?.trim() || null
+  const rawNotes2      = (formData.get('notes') as string | null)?.trim() || null
+  const isLive         = formData.get('isLive') === 'true'
+  const datePlaced     = parseDatePlaced(formData.get('datePlaced') as string | null)
 
   if (rawType !== 'ARBITRAGE' && rawType !== 'MIDDLE') {
     return { success: false, error: 'Tipo debe ser ARBITRAGE o MIDDLE' }
@@ -258,9 +260,11 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
           datePlaced,
           createdVia:     'MANUAL',
           isLive, notes: rawNotes2,
-          sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
-          bankrollId: rawBankrollId2 ?? undefined,
-          title: finalTitle,
+          sport:       rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
+          competition: rawCompetition,
+          eventName:   rawEventName,
+          bankrollId:  rawBankrollId2 ?? undefined,
+          title:       finalTitle,
           // Create type-specific detail
           ...(betType === 'ARBITRAGE' ? {
             arbitrageDetail: {
