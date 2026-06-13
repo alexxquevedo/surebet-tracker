@@ -356,7 +356,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
 
   // Fetch user email + notification prefs in parallel (fire-and-forget settle email later)
   const [userRow, userPrefs] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, telegramId: true } }),
     prisma.userSettings.findUnique({ where: { userId }, select: { emailOnSettle: true } }),
   ])
 
@@ -366,6 +366,22 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
     }
   }
 
+  function maybeTelegramNotify(status: string, profit: number, title: string | null) {
+    const chatId = userRow?.telegramId
+    const token  = process.env.TELEGRAM_BOT_TOKEN
+    if (!chatId || !token) return
+    const emoji  = status === 'WON' ? '✅' : status === 'LOST' ? '❌' : status === 'CASHOUT' ? '💸' : '🔄'
+    const label  = status === 'WON' ? 'Ganada' : status === 'LOST' ? 'Perdida' : status === 'CASHOUT' ? 'Cashout' : 'Anulada'
+    const sign   = profit > 0 ? '+' : ''
+    const line   = title ? `\n_${title}_` : ''
+    const text   = `${emoji} *Apuesta ${label}*${line}\n${sign}${profit.toFixed(2).replace('.', ',')}€`
+    void fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+    }).catch(console.error)
+  }
+
   try {
     // Fetch the bet with legs and detail
     const bet = await prisma.betRecord.findFirst({
@@ -373,6 +389,8 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
       select: {
         id: true,
         type: true,
+        title: true,
+        eventName: true,
         totalStake: true,
         potentialReturn: true,
         primaryBookmakerId: true,
@@ -440,6 +458,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
           }
         })
         maybeEmailSettle('VOID', totalStake.toNumber(), 0)
+        maybeTelegramNotify('VOID', 0, bet.title ?? bet.eventName)
         return { success: true, id: betRecordId }
       }
 
@@ -491,6 +510,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
           }
         })
         maybeEmailSettle('CASHOUT', totalStake.toNumber(), grossProfit.toNumber())
+        maybeTelegramNotify('CASHOUT', grossProfit.toNumber(), bet.title ?? bet.eventName)
         return { success: true, id: betRecordId }
       }
 
@@ -562,6 +582,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
           }
         })
         maybeEmailSettle('WON', totalStake.toNumber(), grossProfit.toNumber())
+        maybeTelegramNotify('WON', grossProfit.toNumber(), bet.title ?? bet.eventName)
         return { success: true, id: betRecordId }
       }
 
@@ -654,6 +675,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
     })
 
     maybeEmailSettle(finalStatus, totalStake.toNumber(), grossProfit.toNumber())
+    maybeTelegramNotify(finalStatus, grossProfit.toNumber(), bet.title ?? bet.eventName)
     return { success: true, id: betRecordId }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Error al liquidar la operación' }

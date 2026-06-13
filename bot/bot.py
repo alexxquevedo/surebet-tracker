@@ -3481,6 +3481,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: page = 0
         await mostrar_resultados(update, context, page=page)
     elif data == "DS_desvincular":     await handle_desvincular(update, context)
+    elif data.startswith("DS_resumen_"):
+        period = data[len("DS_resumen_"):]  # "7d" | "30d" | "all"
+        if user_id not in dualstats_vinculados:
+            await query.answer("Vincula tu cuenta primero con /vincular", show_alert=True); return
+        api_data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period={period}", {}, method="GET")
+        if not api_data:
+            await query.answer("❌ Error al obtener datos. Inténtalo de nuevo.", show_alert=True); return
+        texto, keyboard = _fmt_resumen(api_data, period)
+        await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "DS_info_vincular":
         await query.edit_message_text(
             "🔗 *Cómo vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
@@ -4110,23 +4119,10 @@ async def cmd_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # RESUMEN DUALSTATS (/resumen)
 # ============================================================
 
-async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        _auto_delete(context, update.message.chat_id, update.message.message_id)
-    user_id = update.effective_user.id
-    if not tiene_suscripcion(user_id):
-        await update.message.reply_text(BLOQUEADO_MSG); return
-    if user_id not in dualstats_vinculados:
-        await update.message.reply_text(
-            "📊 *Resumen DualStats*\n━━━━━━━━━━━━━━━━━━\n\n"
-            "⚠️ Aún no tienes DualStats vinculado.\n"
-            "Usa /vincular para conectar tu cuenta web.",
-            parse_mode="Markdown"); return
+_PERIOD_LABEL = {"7d": "7 días", "30d": "30 días", "all": "Histórico"}
 
-    data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period=all", {}, method="GET")
-    if not data:
-        await update.message.reply_text("❌ No se pudo obtener el resumen. Inténtalo de nuevo."); return
-
+def _fmt_resumen(data: dict, period: str) -> tuple[str, list]:
+    """Formatea el texto e inline keyboard del resumen de DualStats."""
     profit     = data.get("totalProfit", 0)
     roi        = data.get("roi", 0)
     win_rate   = data.get("winRate", 0)
@@ -4145,18 +4141,52 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             streak_txt = f"\n❄️ Racha actual: *{streak['count']} derrotas* ❌"
 
+    period_label = _PERIOD_LABEL.get(period, "Histórico")
     texto = (
-        f"📊 *Tu Resumen DualStats*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 *Tu Resumen DualStats — {period_label}*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"💰 P&L: *{profit_sign}{fmt_eur(profit)}€*  (ROI: {roi_sign}{roi:.1f}%)\n"
         f"🏆 Win Rate: *{win_rate:.1f}%*  ({won}/{settled} ganadas)\n"
         f"📋 Liquidadas: *{settled}*  |  En juego: *{open_count}*"
         f"{streak_txt}\n\n"
         f"_Ver análisis completo en la web_ 👇"
     )
-    keyboard = [[
-        InlineKeyboardButton("📈 Abrir DualStats", url=ds_url("/stats", "bot_resumen")),
-        InlineKeyboardButton("🏠 Menú", callback_data="menu_principal"),
-    ]]
+
+    def _lbl(p: str) -> str:
+        label = _PERIOD_LABEL.get(p, p)
+        return f"· {label} ·" if p == period else label
+
+    keyboard = [
+        [
+            InlineKeyboardButton(_lbl("7d"),  callback_data="DS_resumen_7d"),
+            InlineKeyboardButton(_lbl("30d"), callback_data="DS_resumen_30d"),
+            InlineKeyboardButton(_lbl("all"), callback_data="DS_resumen_all"),
+        ],
+        [
+            InlineKeyboardButton("📈 Abrir DualStats", url=ds_url("/stats", "bot_resumen")),
+            InlineKeyboardButton("🏠 Menú", callback_data="menu_principal"),
+        ],
+    ]
+    return texto, keyboard
+
+
+async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    user_id = update.effective_user.id
+    if not tiene_suscripcion(user_id):
+        await update.message.reply_text(BLOQUEADO_MSG); return
+    if user_id not in dualstats_vinculados:
+        await update.message.reply_text(
+            "📊 *Resumen DualStats*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ Aún no tienes DualStats vinculado.\n"
+            "Usa /vincular para conectar tu cuenta web.",
+            parse_mode="Markdown"); return
+
+    data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period=all", {}, method="GET")
+    if not data:
+        await update.message.reply_text("❌ No se pudo obtener el resumen. Inténtalo de nuevo."); return
+
+    texto, keyboard = _fmt_resumen(data, "all")
     await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 

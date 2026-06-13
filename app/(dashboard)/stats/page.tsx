@@ -114,12 +114,14 @@ function StatsContent({
   advanced,
   byCompetition,
   period,
+  monthlyPnlOverride,
 }: {
   stats: Awaited<ReturnType<typeof getStatsData>>
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
   advanced: AdvancedStats
   byCompetition: CompRow[]
   period: string
+  monthlyPnlOverride?: Awaited<ReturnType<typeof getStatsData>>['monthlyPnl'] | null
 }) {
   const noData     = stats.totalAll === 0
   const hasPeriod  = period !== 'all'
@@ -237,7 +239,7 @@ function StatsContent({
             Últimos 12 meses · Verde = beneficio · Rojo = pérdida
           </p>
         </div>
-        <MonthlyPnlChart data={stats.monthlyPnl} />
+        <MonthlyPnlChart data={monthlyPnlOverride ?? stats.monthlyPnl} />
       </div>
 
       {/* ── Estadísticas Avanzadas ───────────────────────────────────────── */}
@@ -478,7 +480,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
   const evolutionDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '3m' ? 90 : period === '1y' ? 365 : 9999
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution, advanced, compRecords] = await Promise.all([
+  const [stats, evolution, advanced, compRecords, historicalMonthlyPnl] = await Promise.all([
     getStatsData(userId, dateFrom),
     getBankrollEvolution(userId, evolutionDays),
     getAdvancedStats(userId, dateFrom),
@@ -491,6 +493,8 @@ export default async function StatsPage({ searchParams }: PageProps) {
       },
       select: { competition: true, grossProfit: true, totalStake: true, status: true },
     }),
+    // El gráfico mensual siempre muestra los últimos 12 meses sin filtro de período
+    dateFrom ? getStatsData(userId).then((s) => s.monthlyPnl) : Promise.resolve(null),
   ])
 
   const compMap = new Map<string, { count: number; won: number; profit: number; stake: number }>()
@@ -542,7 +546,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -550,7 +554,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} monthlyPnlOverride={historicalMonthlyPnl} />
       )}
 
     </div>

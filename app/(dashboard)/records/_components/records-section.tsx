@@ -122,6 +122,7 @@ function buildSortUrl(key: string, current: string, params: Record<string, strin
   const next = current === `${key}-desc` ? `${key}-asc` : `${key}-desc`
   const p    = new URLSearchParams(params)
   p.set('sort', next)
+  p.delete('page')
   return `/records?${p.toString()}`
 }
 
