@@ -28,6 +28,7 @@ interface Props {
   filterBm:          string | undefined
   filterStatus:      string | undefined
   filterType:        string | undefined
+  filterAprox:       string | undefined
   filterLive:        string | undefined
   filterFrom:        string | undefined
   filterTo:          string | undefined
@@ -42,6 +43,7 @@ export function RecordsFilters({
   filterBm,
   filterStatus,
   filterType,
+  filterAprox,
   filterLive,
   filterFrom,
   filterTo,
@@ -52,7 +54,7 @@ export function RecordsFilters({
   const searchParams = useSearchParams()
   const timerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterType ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition ?? filterQ)
+  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterType ?? filterAprox ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition ?? filterQ)
 
   // Aplica un cambio de filtro con debounce de 300ms
   const applyFilter = useCallback((key: string, value: string) => {
@@ -100,6 +102,20 @@ export function RecordsFilters({
           <option value="MIDDLE">🎯 Middlebet</option>
           <option value="SINGLE">⚽ Single</option>
           <option value="COMBO">📋 Combo</option>
+        </select>
+      </div>
+
+      {/* Aproximadas */}
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Origen</label>
+        <select
+          defaultValue={filterAprox ?? ''}
+          onChange={(e) => applyFilter('aprox', e.target.value)}
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[130px]"
+        >
+          <option value="">Todas</option>
+          <option value="true">⚠️ Solo aprox.</option>
+          <option value="false">✓ Solo exactas</option>
         </select>
       </div>
 
