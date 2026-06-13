@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
+import { prisma } from '@/lib/db/client'
 import { getStatsData } from '@/lib/queries/stats'
 import { getBankrollEvolution, getAdvancedStats } from '@/lib/queries/dashboard'
 import type { AdvancedStats } from '@/types/domain'
@@ -68,14 +69,18 @@ function UpgradeOverlay() {
 
 // ─── Contenido de estadísticas ────────────────────────────────────────────────
 
+type CompRow = { name: string; count: number; won: number; winRate: number; profit: number; yield: number }
+
 function StatsContent({
   stats,
   evolution,
   advanced,
+  byCompetition,
 }: {
   stats: Awaited<ReturnType<typeof getStatsData>>
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
   advanced: AdvancedStats
+  byCompetition: CompRow[]
 }) {
   const noData = stats.totalAll === 0
 
@@ -354,6 +359,49 @@ function StatsContent({
         </div>
       )}
 
+      {/* ── Tabla por competición ─────────────────────────────────────────── */}
+      {byCompetition.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b bg-muted/30">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Rendimiento por competición
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[420px] sm:min-w-[560px]">
+              <thead className="border-b bg-muted/20">
+                <tr>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Competición</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ops.</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ganadas</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">P&L</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yield</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {byCompetition.map((row) => (
+                  <tr key={row.name} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3.5 font-medium">{row.name}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.count}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.won}</td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${row.winRate >= 55 ? 'text-green-600 dark:text-green-400' : row.winRate >= 45 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {row.winRate.toFixed(1)}%
+                    </td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.profit)}`}>
+                      {fmtProfit(row.profit)}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${profitCls(row.yield)}`}>
+                      {row.yield > 0 ? '+' : ''}{row.yield.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -369,11 +417,37 @@ export default async function StatsPage() {
   const isFree   = userPlan === 'FREE'
 
   // Siempre cargamos los datos — en FREE los mostramos borrosos
-  const [stats, evolution, advanced] = await Promise.all([
+  const [stats, evolution, advanced, compRecords] = await Promise.all([
     getStatsData(userId),
     getBankrollEvolution(userId),
     getAdvancedStats(userId),
+    prisma.betRecord.findMany({
+      where: { userId, deletedAt: null, status: { in: ['WON', 'LOST', 'CASHOUT'] }, competition: { not: null } },
+      select: { competition: true, grossProfit: true, totalStake: true, status: true },
+    }),
   ])
+
+  const compMap = new Map<string, { count: number; won: number; profit: number; stake: number }>()
+  for (const r of compRecords) {
+    const key   = r.competition!
+    const entry = compMap.get(key) ?? { count: 0, won: 0, profit: 0, stake: 0 }
+    entry.count++
+    if (r.status === 'WON') entry.won++
+    entry.profit += r.grossProfit ? parseFloat(r.grossProfit.toString()) : 0
+    entry.stake  += parseFloat(r.totalStake.toString())
+    compMap.set(key, entry)
+  }
+  const byCompetition = [...compMap.entries()]
+    .map(([name, v]) => ({
+      name,
+      count:   v.count,
+      won:     v.won,
+      winRate: v.count > 0 ? (v.won / v.count) * 100 : 0,
+      profit:  v.profit,
+      yield:   v.stake > 0 ? (v.profit / v.stake) * 100 : 0,
+    }))
+    .filter((v) => v.count >= 2)
+    .sort((a, b) => b.profit - a.profit)
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -397,7 +471,7 @@ export default async function StatsPage() {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} advanced={advanced} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -405,7 +479,7 @@ export default async function StatsPage() {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} advanced={advanced} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} />
       )}
 
     </div>

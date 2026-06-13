@@ -149,6 +149,12 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
   const [isPending,      startTransition]    = useTransition()
   const [bulkError,      setBulkError]       = useState<string | null>(null)
   const [expandedCombos, setExpandedCombos] = useState<Set<string>>(new Set())
+  const [expandedNotes,  setExpandedNotes]  = useState<Set<string>>(new Set())
+  const [search,         setSearch]         = useState('')
+
+  function toggleNotes(id: string) {
+    setExpandedNotes((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
 
   function toggleCombo(id: string) {
     setExpandedCombos((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -163,7 +169,22 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
     })
   }
 
-  function selectAll() { setSelected(new Set(records.map((r) => r.id))) }
+  const visibleRecords = search.trim()
+    ? records.filter((r) => {
+        const q = search.toLowerCase()
+        return (
+          r.title?.toLowerCase().includes(q) ||
+          r.eventName?.toLowerCase().includes(q) ||
+          r.competition?.toLowerCase().includes(q) ||
+          r.singleBetDetail?.selection?.toLowerCase().includes(q) ||
+          r.comboDetail?.selections.some(
+            (s) => s.eventName?.toLowerCase().includes(q) || s.selection?.toLowerCase().includes(q)
+          )
+        )
+      })
+    : records
+
+  function selectAll() { setSelected(new Set(visibleRecords.map((r) => r.id))) }
   function clearAll()  { setSelected(new Set()); setBulkBankrollId('__unchanged__'); setBulkError(null) }
 
   function handleBulkMove() {
@@ -181,13 +202,41 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
     })
   }
 
-  const allSelected = records.length > 0 && selected.size === records.length
+  const allSelected = visibleRecords.length > 0 && visibleRecords.every((r) => selected.has(r.id))
 
   return (
     <div className="relative">
 
-      {/* ─── Tabla (escritorio) ─────────────────────────────────────────── */}
+      {/* ─── Búsqueda ───────────────────────────────────────────────────── */}
       {records.length > 0 && (
+        <div className="relative mb-4">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none">🔍</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar en esta página…"
+            className="w-full rounded-xl border bg-background py-2.5 pl-9 pr-9 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs px-1"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {records.length > 0 && visibleRecords.length === 0 && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Sin resultados para &ldquo;{search}&rdquo;
+        </p>
+      )}
+
+      {/* ─── Tabla (escritorio) ─────────────────────────────────────────── */}
+      {visibleRecords.length > 0 && (
         <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/40">
@@ -225,7 +274,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
               </tr>
             </thead>
             <tbody className="divide-y">
-              {records.map((r) => {
+              {visibleRecords.map((r) => {
                 const profit    = r.grossProfit
                 const profitCls = profit === null
                   ? 'text-muted-foreground'
@@ -302,6 +351,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       ) : (
                         <>
                           <span className="text-xs text-muted-foreground truncate block">{selText}</span>
+                          {r.eventName && (
+                            <span className="text-[10px] text-muted-foreground/60 truncate block">{r.eventName}</span>
+                          )}
                           {r.legs.length > 0
                             ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
                             : r.singleBetDetail?.odds != null
@@ -358,6 +410,16 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
+                        {r.notes && (
+                          <button
+                            onClick={() => toggleNotes(r.id)}
+                            className={`text-xs px-1 transition-colors ${expandedNotes.has(r.id) ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                            title="Ver notas"
+                            aria-label="Ver notas"
+                          >
+                            📝
+                          </button>
+                        )}
                         {r.status === 'PLACED' && (
                           <SettleButton bet={betForSettle} />
                         )}
@@ -389,6 +451,16 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       </td>
                     </tr>
                   )}
+                  {expandedNotes.has(r.id) && r.notes && (
+                    <tr className="bg-muted/10">
+                      <td />
+                      <td colSpan={8} className="px-4 pb-3 pt-1">
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-background/80 border rounded-lg p-3">
+                          {r.notes}
+                        </p>
+                      </td>
+                    </tr>
+                  )}
                   </React.Fragment>
                 )
               })}
@@ -398,9 +470,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
       )}
 
       {/* ─── Tarjetas (móvil) ───────────────────────────────────────────── */}
-      {records.length > 0 && (
+      {visibleRecords.length > 0 && (
         <div className="block md:hidden space-y-3">
-          {records.map((r) => {
+          {visibleRecords.map((r) => {
             const profit    = r.grossProfit
             const pnlCls    =
               profit === null
@@ -462,6 +534,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-semibold leading-tight truncate">{selText}</p>
+                      {r.eventName && (
+                        <p className="text-[11px] text-muted-foreground/70 truncate">{r.eventName}</p>
+                      )}
                       <p className="text-xs text-muted-foreground">{BET_TYPE_LABEL[r.type] ?? r.type}</p>
                     </div>
                   </div>
@@ -549,6 +624,23 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Notas inline */}
+                {r.notes && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleNotes(r.id) }}
+                      className={`w-full text-left px-4 py-2 border-t text-xs transition-colors ${expandedNotes.has(r.id) ? 'text-foreground bg-muted/20' : 'text-muted-foreground hover:bg-muted/20'}`}
+                    >
+                      {expandedNotes.has(r.id) ? '▲ Ocultar notas' : '📝 Ver notas'}
+                    </button>
+                    {expandedNotes.has(r.id) && (
+                      <div className="px-4 pb-3 bg-muted/10">
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap">{r.notes}</p>
                       </div>
                     )}
                   </>

@@ -73,8 +73,9 @@ export async function GET(request: NextRequest) {
   const filterBm     = sp.get('bm')       ?? undefined
   const filterStatus = sp.get('status')   ?? undefined
   const filterLive   = sp.get('live')     ?? undefined
-  const filterFrom   = sp.get('dateFrom') ?? undefined
-  const filterTo     = sp.get('dateTo')   ?? undefined
+  const filterFrom        = sp.get('dateFrom') ?? undefined
+  const filterTo          = sp.get('dateTo')   ?? undefined
+  const filterCompetition = sp.get('comp')     ?? undefined
 
   // Datos del usuario (nombre + timezone)
   const userData = await prisma.user.findUnique({
@@ -103,6 +104,12 @@ export async function GET(request: NextRequest) {
         ...(filterTo   ? { lte: fromZonedTime(`${filterTo}T23:59:59`,   tz) } : {}),
       },
     } : {}),
+    ...(filterCompetition ? {
+      OR: [
+        { competition: filterCompetition },
+        { comboDetail: { selections: { some: { competition: filterCompetition } } } },
+      ],
+    } : {}),
   }
 
   const records = await prisma.betRecord.findMany({
@@ -115,6 +122,7 @@ export async function GET(request: NextRequest) {
       status:          true,
       sport:           true,
       competition:     true,
+      eventName:       true,
       isLive:          true,
       totalStake:      true,
       grossProfit:     true,
@@ -153,6 +161,7 @@ export async function GET(request: NextRequest) {
     { header: 'Deporte',             key: 'deporte',    width: 13 },
     { header: 'Competición',         key: 'comp',       width: 22 },
     { header: 'Momento',             key: 'momento',    width: 12 },
+    { header: 'Partido / Evento',    key: 'partido',    width: 28 },
     { header: 'Selección',           key: 'seleccion',  width: 36 },
     { header: 'Casa 1',              key: 'casa1',      width: 18 },
     { header: 'Casa 2',              key: 'casa2',      width: 18 },
@@ -241,6 +250,7 @@ export async function GET(request: NextRequest) {
       deporte:  r.sport ? (SPORT_LABEL[r.sport] ?? r.sport) : '',
       comp:     r.competition ?? '',
       momento:  r.isLive ? 'Live' : 'Pre-partido',
+      partido:   r.eventName ?? '',
       seleccion: title,
       casa1,
       casa2,

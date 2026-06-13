@@ -62,6 +62,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
   const filterCompetition = typeof params['comp']     === 'string' ? params['comp']     : undefined
   const filterSort        = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
+  const filterPage        = typeof params['page']     === 'string' ? Math.max(1, parseInt(params['page']) || 1) : 1
+  const PAGE_SIZE         = 50
 
   // Build where clause — DRAFTs siempre excluidos (se muestran en su propia sección)
   const where: Prisma.BetRecordWhereInput = {
@@ -107,11 +109,12 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const userTz = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } })
   const tz = userTz?.timezone ?? 'Europe/Madrid'
 
-  const [records, bookmakers, bankrolls, totalBetCount, betCompsRaw, comboCompsRaw, draftRecords] = await Promise.all([
+  const [records, bookmakers, bankrolls, totalBetCount, betCompsRaw, comboCompsRaw, draftRecords, filteredCount] = await Promise.all([
     prisma.betRecord.findMany({
       where,
       orderBy,
-      take: 100,
+      take: PAGE_SIZE,
+      skip: (filterPage - 1) * PAGE_SIZE,
       select: {
         id: true,
         type: true,
@@ -191,6 +194,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         },
       },
     }),
+    prisma.betRecord.count({ where }),
   ])
 
   const allCompetitions = [...new Set([
@@ -298,7 +302,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Operaciones</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {records.length} registros · {totalPlaced} en juego ·{' '}
+                {filteredCount} registros · {totalPlaced} en juego ·{' '}
                 <span className={totalPnl >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
                   {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} P&L
                 </span>
@@ -443,6 +447,46 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           ...(filterCompetition ? { comp:     filterCompetition } : {}),
         }}
       />
+
+      {/* ─── Paginación ─────────────────────────────────────────────────── */}
+      {filteredCount > PAGE_SIZE && (() => {
+        const totalPages = Math.ceil(filteredCount / PAGE_SIZE)
+        const buildUrl   = (p: number) => {
+          const ps = new URLSearchParams({
+            ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
+            ...(filterTo          ? { dateTo:   filterTo          } : {}),
+            ...(filterSport       ? { sport:    filterSport       } : {}),
+            ...(filterBm          ? { bm:       filterBm          } : {}),
+            ...(filterStatus      ? { status:   filterStatus      } : {}),
+            ...(filterLive        ? { live:     filterLive        } : {}),
+            ...(filterCompetition ? { comp:     filterCompetition } : {}),
+            ...(p > 1             ? { page:     String(p)         } : {}),
+          })
+          const s = ps.toString()
+          return `/records${s ? '?' + s : ''}`
+        }
+        return (
+          <div className="flex items-center justify-center gap-3 text-sm py-2">
+            {filterPage > 1 ? (
+              <a href={buildUrl(filterPage - 1)} className="px-4 py-2 rounded-lg border hover:bg-muted transition-colors">
+                ← Anterior
+              </a>
+            ) : (
+              <span className="px-4 py-2 rounded-lg border opacity-40 cursor-not-allowed">← Anterior</span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              Página {filterPage} de {totalPages}
+            </span>
+            {filterPage < totalPages ? (
+              <a href={buildUrl(filterPage + 1)} className="px-4 py-2 rounded-lg border hover:bg-muted transition-colors">
+                Siguiente →
+              </a>
+            ) : (
+              <span className="px-4 py-2 rounded-lg border opacity-40 cursor-not-allowed">Siguiente →</span>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
