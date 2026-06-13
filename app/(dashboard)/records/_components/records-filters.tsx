@@ -27,6 +27,7 @@ interface Props {
   filterSport:       string | undefined
   filterBm:          string | undefined
   filterStatus:      string | undefined
+  filterType:        string | undefined
   filterLive:        string | undefined
   filterFrom:        string | undefined
   filterTo:          string | undefined
@@ -40,6 +41,7 @@ export function RecordsFilters({
   filterSport,
   filterBm,
   filterStatus,
+  filterType,
   filterLive,
   filterFrom,
   filterTo,
@@ -50,7 +52,7 @@ export function RecordsFilters({
   const searchParams = useSearchParams()
   const timerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition ?? filterQ)
+  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterType ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition ?? filterQ)
 
   // Aplica un cambio de filtro con debounce de 300ms
   const applyFilter = useCallback((key: string, value: string) => {
@@ -83,6 +85,22 @@ export function RecordsFilters({
             className="rounded-lg border bg-background py-1.5 pl-7 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[240px] w-full"
           />
         </div>
+      </div>
+
+      {/* Tipo */}
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tipo</label>
+        <select
+          defaultValue={filterType ?? ''}
+          onChange={(e) => applyFilter('type', e.target.value)}
+          className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[130px]"
+        >
+          <option value="">Todos los tipos</option>
+          <option value="ARBITRAGE">⚡ Surebet</option>
+          <option value="MIDDLE">🎯 Middlebet</option>
+          <option value="SINGLE">⚽ Single</option>
+          <option value="COMBO">📋 Combo</option>
+        </select>
       </div>
 
       {/* Momento */}
@@ -145,6 +163,7 @@ export function RecordsFilters({
           <option value="LOST">Perdida</option>
           <option value="VOID">Anulada</option>
           <option value="CASHOUT">Cashout</option>
+          <option value="PARTIAL_WIN">Parcial</option>
         </select>
       </div>
 

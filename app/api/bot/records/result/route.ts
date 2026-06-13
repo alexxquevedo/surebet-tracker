@@ -20,7 +20,7 @@ import type { BetStatus } from '@prisma/client'
  * }
  */
 
-const VALID_RESULTS = new Set<string>(['WON', 'LOST', 'VOID', 'CASHOUT'])
+const VALID_RESULTS = new Set<string>(['WON', 'LOST', 'VOID', 'CASHOUT', 'PARTIAL_WIN'])
 
 function D(v: unknown): Decimal {
   return new Decimal(String(v ?? 0))

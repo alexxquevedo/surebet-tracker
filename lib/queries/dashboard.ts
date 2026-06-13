@@ -620,6 +620,7 @@ export interface OpenBetItem {
   title:            string | null
   eventName:        string | null
   totalStake:       number
+  potentialReturn:  number | null
   datePlaced:       Date
   primaryBookmaker: { name: string } | null
   legs:             { bookmaker: { name: string } }[]
@@ -629,12 +630,13 @@ export async function getOpenBets(userId: string): Promise<OpenBetItem[]> {
   const records = await prisma.betRecord.findMany({
     where:   { userId, status: 'PLACED', deletedAt: null },
     select: {
-      id:        true,
-      type:      true,
-      title:     true,
-      eventName: true,
-      totalStake: true,
-      datePlaced: true,
+      id:              true,
+      type:            true,
+      title:           true,
+      eventName:       true,
+      totalStake:      true,
+      potentialReturn: true,
+      datePlaced:      true,
       primaryBookmaker: { select: { name: true } },
       legs: {
         where:  { deletedAt: null },
@@ -646,7 +648,8 @@ export async function getOpenBets(userId: string): Promise<OpenBetItem[]> {
 
   return records.map((r) => ({
     ...r,
-    totalStake: D(r.totalStake).toDecimalPlaces(2).toNumber(),
+    totalStake:      D(r.totalStake).toDecimalPlaces(2).toNumber(),
+    potentialReturn: r.potentialReturn ? D(r.potentialReturn).toDecimalPlaces(2).toNumber() : null,
   }))
 }
 

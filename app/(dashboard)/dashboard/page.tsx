@@ -529,6 +529,9 @@ function RecentRecordsSection({ records }: { records: BetRecordListItem[] }) {
 
 function OpenBetsSection({ bets }: { bets: OpenBetItem[] }) {
   const totalStake = bets.reduce((sum, b) => sum + b.totalStake, 0)
+  const totalGuaranteed = bets
+    .filter((b) => b.type === 'ARBITRAGE' && b.potentialReturn !== null)
+    .reduce((sum, b) => sum + (b.potentialReturn! - b.totalStake), 0)
 
   return (
     <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-card overflow-hidden">
@@ -540,6 +543,11 @@ function OpenBetsSection({ bets }: { bets: OpenBetItem[] }) {
             {bets.length === 1 ? '1 operación en juego' : `${bets.length} operaciones en juego`}
             {' '}·{' '}
             <span className="tabular-nums">{formatCurrency(totalStake)}</span> en riesgo
+            {totalGuaranteed > 0 && (
+              <span className="ml-1.5 text-green-700 dark:text-green-400 font-semibold">
+                · ~+{formatCurrency(totalGuaranteed)} garantizados
+              </span>
+            )}
           </span>
         </div>
         <a
@@ -558,6 +566,9 @@ function OpenBetsSection({ bets }: { bets: OpenBetItem[] }) {
             bet.legs.length > 0
               ? bet.legs.map((l) => l.bookmaker.name).join(' + ')
               : (bet.primaryBookmaker?.name ?? '—')
+          const expectedProfit = bet.type === 'ARBITRAGE' && bet.potentialReturn !== null
+            ? bet.potentialReturn - bet.totalStake
+            : null
 
           return (
             <a
@@ -585,12 +596,25 @@ function OpenBetsSection({ bets }: { bets: OpenBetItem[] }) {
               </div>
 
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-semibold tabular-nums">
-                  {formatCurrency(bet.totalStake)}
-                </p>
-                <span className="inline-block text-[10px] font-medium rounded-full px-2 py-0.5 mt-0.5 bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
-                  en juego
-                </span>
+                {expectedProfit !== null ? (
+                  <>
+                    <p className="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">
+                      ~+{formatCurrency(expectedProfit)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                      {formatCurrency(bet.totalStake)} stake
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(bet.totalStake)}
+                    </p>
+                    <span className="inline-block text-[10px] font-medium rounded-full px-2 py-0.5 mt-0.5 bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
+                      en juego
+                    </span>
+                  </>
+                )}
               </div>
             </a>
           )

@@ -36,13 +36,15 @@ export async function GET(request: NextRequest) {
     orderBy: { datePlaced: 'desc' },
     take: 50,
     select: {
-      id:           true,
-      botPendingId: true,
-      type:         true,
-      title:        true,
-      sport:        true,
-      totalStake:   true,
-      datePlaced:   true,
+      id:              true,
+      botPendingId:    true,
+      type:            true,
+      title:           true,
+      sport:           true,
+      totalStake:      true,
+      potentialReturn: true,
+      eventDate:       true,
+      datePlaced:      true,
       legs: {
         select: {
           bookmaker: { select: { name: true, etiqueta: true } },
@@ -55,21 +57,31 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    records: records.map((r) => ({
-      id:           r.id,
-      botPendingId: r.botPendingId,
-      type:         r.type,
-      title:        r.title,
-      sport:        r.sport,
-      totalStake:   parseFloat(r.totalStake.toString()),
-      datePlaced:   r.datePlaced.toISOString(),
-      legs:         r.legs.map((l) => ({
-        bookmaker: l.bookmaker.etiqueta
-          ? `${l.bookmaker.name} · ${l.bookmaker.etiqueta}`
-          : l.bookmaker.name,
-        stake:     parseFloat(l.stake.toString()),
-        odds:      parseFloat(l.odds.toString()),
-      })),
-    })),
+    records: records.map((r) => {
+      const totalStake      = parseFloat(r.totalStake.toString())
+      const potentialReturn = r.potentialReturn ? parseFloat(r.potentialReturn.toString()) : null
+      const expectedProfit  = r.type === 'ARBITRAGE' && potentialReturn !== null
+        ? parseFloat((potentialReturn - totalStake).toFixed(2))
+        : null
+      return {
+        id:             r.id,
+        botPendingId:   r.botPendingId,
+        type:           r.type,
+        title:          r.title,
+        sport:          r.sport,
+        totalStake,
+        potentialReturn,
+        expectedProfit,
+        eventDate:      r.eventDate ? r.eventDate.toISOString() : null,
+        datePlaced:     r.datePlaced.toISOString(),
+        legs:           r.legs.map((l) => ({
+          bookmaker: l.bookmaker.etiqueta
+            ? `${l.bookmaker.name} · ${l.bookmaker.etiqueta}`
+            : l.bookmaker.name,
+          stake:     parseFloat(l.stake.toString()),
+          odds:      parseFloat(l.odds.toString()),
+        })),
+      }
+    }),
   })
 }

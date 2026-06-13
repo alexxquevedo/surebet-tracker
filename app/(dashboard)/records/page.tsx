@@ -57,6 +57,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterSport       = typeof params['sport']    === 'string' ? params['sport']    : undefined
   const filterBm          = typeof params['bm']       === 'string' ? params['bm']       : undefined
   const filterStatus      = typeof params['status']   === 'string' ? params['status']   : undefined
+  const filterType        = typeof params['type']     === 'string' ? params['type']     : undefined
   const filterLive        = typeof params['live']     === 'string' ? params['live']     : undefined
   const filterFrom        = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
   const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
@@ -73,6 +74,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     status: filterStatus
       ? filterStatus as Prisma.EnumBetStatusFilter['equals']
       : { not: 'DRAFT' as const },
+    ...(filterType        ? { type:  filterType  as Prisma.EnumBetTypeFilter['equals']           } : {}),
     ...(filterSport       ? { sport: filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
     ...(filterLive === 'false' ? { isLive: false } : {}),
@@ -284,6 +286,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   // ─── Build date preset URLs ───────────────────────────────────────────────
   const presets    = getDatePresets()
   const extraParams = [
+    filterType        ? `&type=${filterType}`                           : '',
     filterSport       ? `&sport=${filterSport}`                         : '',
     filterBm          ? `&bm=${filterBm}`                               : '',
     filterStatus      ? `&status=${filterStatus}`                       : '',
@@ -300,6 +303,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         const csvParams = new URLSearchParams()
         if (filterFrom)        csvParams.set('dateFrom', filterFrom)
         if (filterTo)          csvParams.set('dateTo',   filterTo)
+        if (filterType)        csvParams.set('type',     filterType)
         if (filterSport)       csvParams.set('sport',    filterSport)
         if (filterBm)          csvParams.set('bm',       filterBm)
         if (filterStatus)      csvParams.set('status',   filterStatus)
@@ -382,6 +386,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
           {/* Custom range */}
           <form method="GET" className="flex flex-wrap items-center gap-2">
+            {filterType        && <input type="hidden" name="type"  value={filterType}        />}
             {filterSport       && <input type="hidden" name="sport"  value={filterSport}       />}
             {filterBm          && <input type="hidden" name="bm"     value={filterBm}          />}
             {filterStatus      && <input type="hidden" name="status" value={filterStatus}      />}
@@ -420,6 +425,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
       <RecordsFilters
         bookmakers={bookmakers}
         competitions={allCompetitions}
+        filterType={filterType}
         filterSport={filterSport}
         filterBm={filterBm}
         filterStatus={filterStatus}
@@ -436,7 +442,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           <p className="text-3xl mb-3">📋</p>
           <p className="font-semibold">Sin operaciones</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
+            {(filterType ?? filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
               ? 'No hay operaciones que coincidan con los filtros actuales.'
               : 'Usa el botón + para registrar tu primera apuesta.'}
           </p>
@@ -451,6 +457,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         filterParams={{
           ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
           ...(filterTo          ? { dateTo:   filterTo          } : {}),
+          ...(filterType        ? { type:     filterType        } : {}),
           ...(filterSport       ? { sport:    filterSport       } : {}),
           ...(filterBm          ? { bm:       filterBm          } : {}),
           ...(filterStatus      ? { status:   filterStatus      } : {}),
@@ -467,6 +474,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           const ps = new URLSearchParams({
             ...(filterFrom        ? { dateFrom: filterFrom        } : {}),
             ...(filterTo          ? { dateTo:   filterTo          } : {}),
+            ...(filterType        ? { type:     filterType        } : {}),
             ...(filterSport       ? { sport:    filterSport       } : {}),
             ...(filterBm          ? { bm:       filterBm          } : {}),
             ...(filterStatus      ? { status:   filterStatus      } : {}),

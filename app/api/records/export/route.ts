@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
   if (!userId) return new NextResponse('Unauthorized', { status: 401 })
 
   const sp           = request.nextUrl.searchParams
+  const filterType   = sp.get('type')     ?? undefined
   const filterSport  = sp.get('sport')    ?? undefined
   const filterBm     = sp.get('bm')       ?? undefined
   const filterStatus = sp.get('status')   ?? undefined
@@ -89,6 +90,7 @@ export async function GET(request: NextRequest) {
   const where: Prisma.BetRecordWhereInput = {
     userId,
     deletedAt: null,
+    ...(filterType   ? { type:   filterType   as Prisma.EnumBetTypeFilter['equals']           } : {}),
     ...(filterSport  ? { sport:  filterSport  as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterStatus ? { status: filterStatus as Prisma.EnumBetStatusFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
