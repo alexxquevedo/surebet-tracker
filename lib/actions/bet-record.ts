@@ -433,6 +433,8 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
       if (bet.legs.length > 0) {
         // Multi-leg VOID: devuelve el stake de cada pierna a su bookmaker
         await prisma.$transaction(async (tx) => {
+          const stillOpen = await tx.betRecord.count({ where: { id: betRecordId, status: 'PLACED' } })
+          if (!stillOpen) return // idempotency: already settled by concurrent request
           await tx.betRecord.update({
             where: { id: betRecordId },
             data:  { status: 'VOID', grossProfit: D(0), totalReturn: totalStake, roi: D(0), dateSettled: now },
@@ -482,6 +484,8 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         // Multi-leg CASHOUT: distribuir proporcionalmente entre las piernas
         const roi = totalStake.isZero() ? D(0) : grossProfit.div(totalStake).mul(100).toDecimalPlaces(4)
         await prisma.$transaction(async (tx) => {
+          const stillOpen = await tx.betRecord.count({ where: { id: betRecordId, status: 'PLACED' } })
+          if (!stillOpen) return // idempotency: already settled by concurrent request
           await tx.betRecord.update({
             where: { id: betRecordId },
             data:  { status: 'CASHOUT', grossProfit, totalReturn: cashout, roi, dateSettled: now },
@@ -562,6 +566,8 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
       // Special: middle BOTH — handle in transaction
       if (betType === 'MIDDLE' && winningLeg === 'BOTH') {
         await prisma.$transaction(async (tx) => {
+          const stillOpen = await tx.betRecord.count({ where: { id: betRecordId, status: 'PLACED' } })
+          if (!stillOpen) return // idempotency: already settled by concurrent request
           await tx.betRecord.update({
             where: { id: betRecordId },
             data: {
@@ -620,6 +626,8 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
     // ── Commit to DB ─────────────────────────────────────────────────────────
 
     await prisma.$transaction(async (tx) => {
+      const stillOpen = await tx.betRecord.count({ where: { id: betRecordId, status: 'PLACED' } })
+      if (!stillOpen) return // idempotency: already settled by concurrent request
       await tx.betRecord.update({
         where: { id: betRecordId },
         data: {

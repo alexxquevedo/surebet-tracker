@@ -454,6 +454,8 @@ model BetRecord {
   @@index([userId, type, status])
   @@index([userId, sport])
   @@index([userId, deletedAt])
+  @@index([userId, sport, deletedAt])
+  @@index([userId, status, deletedAt])
   @@index([bankrollId])
   @@map("bet_records")
 }

@@ -60,7 +60,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterLive        = typeof params['live']     === 'string' ? params['live']     : undefined
   const filterFrom        = typeof params['dateFrom'] === 'string' ? params['dateFrom'] : undefined
   const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
-  const filterCompetition = typeof params['comp']     === 'string' ? params['comp']     : undefined
+  const filterCompetition = typeof params['comp']     === 'string' ? params['comp'].slice(0, 100) : undefined
   const filterSort        = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
   const filterQ           = typeof params['q']        === 'string' && params['q'].trim() ? params['q'].trim() : undefined
   const filterPage        = typeof params['page']     === 'string' ? Math.max(1, parseInt(params['page']) || 1) : 1

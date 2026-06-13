@@ -430,7 +430,12 @@ function NewOperationModal({
   const s2err   = isMulti  ? validateStake(stake2)          : null
   const o2err   = isMulti  ? validateOdds(odds2, 'Cuota 2') : null
   const coErr   = isCombo  ? validateOdds(comboOdds, 'Cuota total') : null
-  const hasErr  = !!(s1err || o1err || s2err || o2err || coErr)
+  const hasMissingRequired =
+    !stake1 ||
+    (!isMulti && !isCombo && !odds1) ||
+    (isMulti  && (!odds1 || !stake2 || !odds2)) ||
+    (isCombo  && !comboOdds)
+  const hasErr  = !!(s1err || o1err || s2err || o2err || coErr || hasMissingRequired)
 
   // ── Profit preview ──────────────────────────────────────────────────────
   const profitPreview = useMemo(() => {
