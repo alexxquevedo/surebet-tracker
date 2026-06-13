@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
   const filterFrom        = sp.get('dateFrom') ?? undefined
   const filterTo          = sp.get('dateTo')   ?? undefined
   const filterCompetition = sp.get('comp')     ?? undefined
+  const filterQ           = sp.get('q')?.trim() || undefined
 
   // Datos del usuario (nombre + timezone)
   const userData = await prisma.user.findUnique({
@@ -92,24 +93,32 @@ export async function GET(request: NextRequest) {
     ...(filterStatus ? { status: filterStatus as Prisma.EnumBetStatusFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
     ...(filterLive === 'false' ? { isLive: false } : {}),
-    ...(filterBm ? {
-      OR: [
-        { primaryBookmakerId: filterBm },
-        { legs: { some: { bookmakerId: filterBm } } },
-      ],
-    } : {}),
     ...(filterFrom || filterTo ? {
       datePlaced: {
         ...(filterFrom ? { gte: fromZonedTime(`${filterFrom}T00:00:00`, tz) } : {}),
         ...(filterTo   ? { lte: fromZonedTime(`${filterTo}T23:59:59`,   tz) } : {}),
       },
     } : {}),
-    ...(filterCompetition ? {
-      OR: [
+    AND: [
+      ...(filterBm ? [{ OR: [
+        { primaryBookmakerId: filterBm },
+        { legs: { some: { bookmakerId: filterBm } } },
+      ] }] : []),
+      ...(filterCompetition ? [{ OR: [
         { competition: filterCompetition },
         { comboDetail: { selections: { some: { competition: filterCompetition } } } },
-      ],
-    } : {}),
+      ] }] : []),
+      ...(filterQ ? [{ OR: [
+        { title:       { contains: filterQ, mode: 'insensitive' as const } },
+        { eventName:   { contains: filterQ, mode: 'insensitive' as const } },
+        { competition: { contains: filterQ, mode: 'insensitive' as const } },
+        { singleBetDetail: { selection: { contains: filterQ, mode: 'insensitive' as const } } },
+        { comboDetail: { selections: { some: { OR: [
+          { selection: { contains: filterQ, mode: 'insensitive' as const } },
+          { eventName: { contains: filterQ, mode: 'insensitive' as const } },
+        ] } } } },
+      ] }] : []),
+    ],
   }
 
   const records = await prisma.betRecord.findMany({

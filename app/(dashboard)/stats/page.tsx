@@ -13,6 +13,43 @@ import { BankrollEvolutionChart } from './_components/bankroll-evolution-chart'
 
 export const metadata: Metadata = { title: 'Estadísticas — DualStats Tracker' }
 
+// ─── Selector de período ──────────────────────────────────────────────────────
+
+const PERIODS = [
+  { label: 'Todo',     value: 'all' },
+  { label: '7 días',   value: '7d'  },
+  { label: 'Mes',      value: '30d' },
+  { label: '3 meses',  value: '3m'  },
+  { label: 'Año',      value: '1y'  },
+] as const
+
+const PERIOD_LABEL: Record<string, string> = {
+  '7d':  'Últimos 7 días',
+  '30d': 'Último mes',
+  '3m':  'Últimos 3 meses',
+  '1y':  'Último año',
+}
+
+function PeriodNav({ current }: { current: string }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {PERIODS.map((p) => (
+        <a
+          key={p.value}
+          href={p.value === 'all' ? '/stats' : `/stats?period=${p.value}`}
+          className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+            current === p.value
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'border-muted-foreground/20 text-muted-foreground hover:text-foreground hover:bg-muted'
+          }`}
+        >
+          {p.label}
+        </a>
+      ))}
+    </div>
+  )
+}
+
 function profitCls(v: number) {
   if (v > 0) return 'text-green-600 dark:text-green-400'
   if (v < 0) return 'text-red-600 dark:text-red-400'
@@ -76,21 +113,28 @@ function StatsContent({
   evolution,
   advanced,
   byCompetition,
+  period,
 }: {
   stats: Awaited<ReturnType<typeof getStatsData>>
   evolution: Awaited<ReturnType<typeof getBankrollEvolution>>
   advanced: AdvancedStats
   byCompetition: CompRow[]
+  period: string
 }) {
-  const noData = stats.totalAll === 0
+  const noData     = stats.totalAll === 0
+  const hasPeriod  = period !== 'all'
 
   if (noData) {
     return (
       <div className="rounded-xl border border-dashed p-16 text-center">
         <p className="text-4xl mb-3">📈</p>
-        <p className="font-semibold text-lg">Sin datos todavía</p>
+        <p className="font-semibold text-lg">
+          {hasPeriod ? 'Sin operaciones en este período' : 'Sin datos todavía'}
+        </p>
         <p className="text-sm text-muted-foreground mt-1">
-          Registra y liquida apuestas para ver tus estadísticas aquí.
+          {hasPeriod
+            ? 'Prueba con un período más amplio o registra nuevas operaciones.'
+            : 'Registra y liquida apuestas para ver tus estadísticas aquí.'}
         </p>
       </div>
     )
@@ -408,7 +452,11 @@ function StatsContent({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function StatsPage() {
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function StatsPage({ searchParams }: PageProps) {
   const session = await auth()
   const userId  = session?.user?.id
   if (!userId) redirect('/login')
@@ -416,13 +464,31 @@ export default async function StatsPage() {
   const userPlan = (session?.user as { plan?: string })?.plan ?? 'FREE'
   const isFree   = userPlan === 'FREE'
 
+  // ── Período ───────────────────────────────────────────────────────────────
+  const params = await searchParams
+  const period = typeof params['period'] === 'string' ? params['period'] : 'all'
+
+  let dateFrom: Date | undefined
+  const now = new Date()
+  if      (period === '7d')  dateFrom = new Date(now.getTime() -   7 * 24 * 60 * 60 * 1000)
+  else if (period === '30d') dateFrom = new Date(now.getTime() -  30 * 24 * 60 * 60 * 1000)
+  else if (period === '3m')  dateFrom = new Date(now.getTime() -  90 * 24 * 60 * 60 * 1000)
+  else if (period === '1y')  dateFrom = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+
+  const evolutionDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '3m' ? 90 : period === '1y' ? 365 : 9999
+
   // Siempre cargamos los datos — en FREE los mostramos borrosos
   const [stats, evolution, advanced, compRecords] = await Promise.all([
-    getStatsData(userId),
-    getBankrollEvolution(userId),
-    getAdvancedStats(userId),
+    getStatsData(userId, dateFrom),
+    getBankrollEvolution(userId, evolutionDays),
+    getAdvancedStats(userId, dateFrom),
     prisma.betRecord.findMany({
-      where: { userId, deletedAt: null, status: { in: ['WON', 'LOST', 'CASHOUT'] }, competition: { not: null } },
+      where: {
+        userId, deletedAt: null,
+        status: { in: ['WON', 'LOST', 'CASHOUT'] },
+        competition: { not: null },
+        ...(dateFrom ? { datePlaced: { gte: dateFrom } } : {}),
+      },
       select: { competition: true, grossProfit: true, totalStake: true, status: true },
     }),
   ])
@@ -453,13 +519,18 @@ export default async function StatsPage() {
     <div className="space-y-8 max-w-4xl">
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Estadísticas</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {isFree
-            ? 'Análisis avanzado de rendimiento · Plan PRO'
-            : `Análisis detallado de tus ${stats.totalAll} operaciones registradas`}
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Estadísticas</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {isFree
+              ? 'Análisis avanzado de rendimiento · Plan PRO'
+              : period === 'all'
+                ? `Análisis histórico · ${stats.totalAll} operaciones`
+                : `${PERIOD_LABEL[period] ?? period} · ${stats.totalAll} operaciones`}
+          </p>
+        </div>
+        <PeriodNav current={period} />
       </div>
 
       {isFree ? (
@@ -471,7 +542,7 @@ export default async function StatsPage() {
             style={{ filter: 'blur(5px)', opacity: 0.7 }}
             aria-hidden="true"
           >
-            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} />
+            <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} />
           </div>
 
           {/* Overlay de upgrade */}
@@ -479,7 +550,7 @@ export default async function StatsPage() {
         </div>
       ) : (
         /* ── PRO: estadísticas completas ────────────────────────────────── */
-        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} />
+        <StatsContent stats={stats} evolution={evolution} advanced={advanced} byCompetition={byCompetition} period={period} />
       )}
 
     </div>

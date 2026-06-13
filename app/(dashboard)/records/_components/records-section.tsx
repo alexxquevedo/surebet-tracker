@@ -150,7 +150,6 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
   const [bulkError,      setBulkError]       = useState<string | null>(null)
   const [expandedCombos, setExpandedCombos] = useState<Set<string>>(new Set())
   const [expandedNotes,  setExpandedNotes]  = useState<Set<string>>(new Set())
-  const [search,         setSearch]         = useState('')
 
   function toggleNotes(id: string) {
     setExpandedNotes((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -169,22 +168,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
     })
   }
 
-  const visibleRecords = search.trim()
-    ? records.filter((r) => {
-        const q = search.toLowerCase()
-        return (
-          r.title?.toLowerCase().includes(q) ||
-          r.eventName?.toLowerCase().includes(q) ||
-          r.competition?.toLowerCase().includes(q) ||
-          r.singleBetDetail?.selection?.toLowerCase().includes(q) ||
-          r.comboDetail?.selections.some(
-            (s) => s.eventName?.toLowerCase().includes(q) || s.selection?.toLowerCase().includes(q)
-          )
-        )
-      })
-    : records
-
-  function selectAll() { setSelected(new Set(visibleRecords.map((r) => r.id))) }
+  function selectAll() { setSelected(new Set(records.map((r) => r.id))) }
   function clearAll()  { setSelected(new Set()); setBulkBankrollId('__unchanged__'); setBulkError(null) }
 
   function handleBulkMove() {
@@ -202,41 +186,36 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
     })
   }
 
-  const allSelected = visibleRecords.length > 0 && visibleRecords.every((r) => selected.has(r.id))
+  const allSelected = records.length > 0 && selected.size === records.length
+
+  function handleClone(r: SerializedRecord) {
+    const validTypes = ['SINGLE', 'CASINO', 'COMBO', 'ARBITRAGE', 'MIDDLE']
+    const payload = {
+      betType:     validTypes.includes(r.type) ? r.type : 'SINGLE',
+      selection:   r.singleBetDetail?.selection ?? r.title ?? '',
+      eventName:   r.eventName ?? '',
+      sport:       r.sport ?? '',
+      competition: r.competition ?? '',
+      bm1Id:       r.primaryBookmakerId ?? r.legs[0]?.bookmakerId ?? '',
+      bm2Id:       r.legs[1]?.bookmakerId ?? '',
+      comboRows:   r.type === 'COMBO' && r.comboDetail
+        ? r.comboDetail.selections.map((s) => ({
+            description: s.selection   ?? '',
+            eventName:   s.eventName   ?? '',
+            sport:       s.sport       ?? '',
+            competition: s.competition ?? '',
+          }))
+        : [{ description: '', eventName: '', sport: '', competition: '' }],
+    }
+    localStorage.setItem('clone_bet', JSON.stringify(payload))
+    window.dispatchEvent(new CustomEvent('dualstats:clone_bet'))
+  }
 
   return (
     <div className="relative">
 
-      {/* ─── Búsqueda ───────────────────────────────────────────────────── */}
-      {records.length > 0 && (
-        <div className="relative mb-4">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none">🔍</span>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar en esta página…"
-            className="w-full rounded-xl border bg-background py-2.5 pl-9 pr-9 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs px-1"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      )}
-
-      {records.length > 0 && visibleRecords.length === 0 && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          Sin resultados para &ldquo;{search}&rdquo;
-        </p>
-      )}
-
       {/* ─── Tabla (escritorio) ─────────────────────────────────────────── */}
-      {visibleRecords.length > 0 && (
+      {records.length > 0 && (
         <div className="hidden md:block rounded-xl border shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/40">
@@ -274,7 +253,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
               </tr>
             </thead>
             <tbody className="divide-y">
-              {visibleRecords.map((r) => {
+              {records.map((r) => {
                 const profit    = r.grossProfit
                 const profitCls = profit === null
                   ? 'text-muted-foreground'
@@ -354,6 +333,11 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                           {r.eventName && (
                             <span className="text-[10px] text-muted-foreground/60 truncate block">{r.eventName}</span>
                           )}
+                          {r.competition && (
+                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-muted-foreground/20 text-muted-foreground/60 mt-0.5">
+                              {r.competition}
+                            </span>
+                          )}
                           {r.legs.length > 0
                             ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
                             : r.singleBetDetail?.odds != null
@@ -410,6 +394,14 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleClone(r)}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+                          title="Clonar apuesta"
+                          aria-label="Clonar apuesta"
+                        >
+                          🔁
+                        </button>
                         {r.notes && (
                           <button
                             onClick={() => toggleNotes(r.id)}
@@ -470,9 +462,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
       )}
 
       {/* ─── Tarjetas (móvil) ───────────────────────────────────────────── */}
-      {visibleRecords.length > 0 && (
+      {records.length > 0 && (
         <div className="block md:hidden space-y-3">
-          {visibleRecords.map((r) => {
+          {records.map((r) => {
             const profit    = r.grossProfit
             const pnlCls    =
               profit === null
@@ -536,6 +528,11 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       <p className="text-sm font-semibold leading-tight truncate">{selText}</p>
                       {r.eventName && (
                         <p className="text-[11px] text-muted-foreground/70 truncate">{r.eventName}</p>
+                      )}
+                      {r.competition && (
+                        <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted border border-muted-foreground/20 text-muted-foreground/60">
+                          {r.competition}
+                        </span>
                       )}
                       <p className="text-xs text-muted-foreground">{BET_TYPE_LABEL[r.type] ?? r.type}</p>
                     </div>
@@ -654,6 +651,14 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                     )}
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleClone(r)}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+                      title="Clonar apuesta"
+                      aria-label="Clonar apuesta"
+                    >
+                      🔁
+                    </button>
                     <EditButton record={r} />
                     <DeleteButton betRecordId={r.id} />
                   </div>

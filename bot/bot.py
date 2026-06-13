@@ -4107,6 +4107,116 @@ async def cmd_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ============================================================
+# RESUMEN DUALSTATS (/resumen)
+# ============================================================
+
+async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    user_id = update.effective_user.id
+    if not tiene_suscripcion(user_id):
+        await update.message.reply_text(BLOQUEADO_MSG); return
+    if user_id not in dualstats_vinculados:
+        await update.message.reply_text(
+            "📊 *Resumen DualStats*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ Aún no tienes DualStats vinculado.\n"
+            "Usa /vincular para conectar tu cuenta web.",
+            parse_mode="Markdown"); return
+
+    data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period=all", {}, method="GET")
+    if not data:
+        await update.message.reply_text("❌ No se pudo obtener el resumen. Inténtalo de nuevo."); return
+
+    profit     = data.get("totalProfit", 0)
+    roi        = data.get("roi", 0)
+    win_rate   = data.get("winRate", 0)
+    settled    = data.get("settled", 0)
+    won        = data.get("won", 0)
+    open_count = data.get("openCount", 0)
+    streak     = data.get("currentStreak")
+
+    profit_sign = "+" if profit >= 0 else ""
+    roi_sign    = "+" if roi    >= 0 else ""
+
+    streak_txt = ""
+    if streak:
+        if streak["type"] == "WON":
+            streak_txt = f"\n🔥 Racha actual: *{streak['count']} victorias* ✅"
+        else:
+            streak_txt = f"\n❄️ Racha actual: *{streak['count']} derrotas* ❌"
+
+    texto = (
+        f"📊 *Tu Resumen DualStats*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 P&L: *{profit_sign}{fmt_eur(profit)}€*  (ROI: {roi_sign}{roi:.1f}%)\n"
+        f"🏆 Win Rate: *{win_rate:.1f}%*  ({won}/{settled} ganadas)\n"
+        f"📋 Liquidadas: *{settled}*  |  En juego: *{open_count}*"
+        f"{streak_txt}\n\n"
+        f"_Ver análisis completo en la web_ 👇"
+    )
+    keyboard = [[
+        InlineKeyboardButton("📈 Abrir DualStats", url=ds_url("/stats", "bot_resumen")),
+        InlineKeyboardButton("🏠 Menú", callback_data="menu_principal"),
+    ]]
+    await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+# ============================================================
+# DIGEST SEMANAL (lunes 9:00 AM)
+# ============================================================
+
+def _segundos_hasta_lunes_9am() -> float:
+    """Segundos hasta el próximo lunes a las 09:00 hora Madrid."""
+    ahora = local_now()
+    # weekday(): 0=lun … 6=dom
+    dias = (7 - ahora.weekday()) % 7
+    if dias == 0 and (ahora.hour > 9 or (ahora.hour == 9 and ahora.minute >= 1)):
+        dias = 7  # hoy es lunes pero ya pasó la hora → esperar al siguiente
+    objetivo = ahora.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=dias)
+    return max(60.0, (objetivo - ahora).total_seconds())
+
+async def tarea_digest_semanal(context: ContextTypes.DEFAULT_TYPE):
+    """Envía el resumen de la semana anterior a todos los usuarios vinculados."""
+    if local_now().weekday() != 0:
+        return  # solo se ejecuta el lunes
+    logger.info("[Digest] Enviando resumen semanal...")
+    for user_id in list(dualstats_vinculados):
+        if not tiene_suscripcion(user_id):
+            continue
+        try:
+            data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period=week", {}, method="GET")
+            if not data or data.get("settled", 0) == 0:
+                continue
+            profit   = data.get("totalProfit", 0)
+            roi      = data.get("roi", 0)
+            win_rate = data.get("winRate", 0)
+            settled  = data.get("settled", 0)
+            won      = data.get("won", 0)
+            ahora    = local_now()
+            semana   = ahora - timedelta(days=7)
+            rango    = f"{semana.day:02d}/{semana.month:02d} — {ahora.day:02d}/{ahora.month:02d}"
+            profit_sign = "+" if profit >= 0 else ""
+            roi_sign    = "+" if roi    >= 0 else ""
+            texto = (
+                f"📅 *Resumen semanal · {rango}*\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"💰 P&L: *{profit_sign}{fmt_eur(profit)}€*  (ROI: {roi_sign}{roi:.1f}%)\n"
+                f"🏆 Win Rate: *{win_rate:.1f}%*  ({won}/{settled})\n"
+                f"📋 Operaciones liquidadas: *{settled}*\n\n"
+                f"_¡Buenos días! Que la semana empiece con buen pie 🍀_"
+            )
+            keyboard = [[InlineKeyboardButton(
+                "📈 Ver estadísticas", url=ds_url("/stats?period=7d", "digest_semanal")
+            )]]
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=texto,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.warning(f"[Digest] Error enviando a {user_id}: {e}")
+
+
+# ============================================================
 # MAIN
 # ============================================================
 async def main():
@@ -4128,6 +4238,7 @@ async def main():
     app.add_handler(CommandHandler("resultados",    cmd_resultados))
     app.add_handler(CommandHandler("testalerta",    cmd_testalerta))
     app.add_handler(CommandHandler("resetstats",    cmd_resetstats))
+    app.add_handler(CommandHandler("resumen",       cmd_resumen))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_texto))
@@ -4137,6 +4248,7 @@ async def main():
     app.job_queue.run_repeating(tarea_escaneo,                    interval=BOT_CONFIG["scan_interval"], first=15)
     app.job_queue.run_repeating(tarea_verificar_suscripciones,    interval=3600,  first=60)
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,   interval=3600,  first=120)  # cada 1h
+    app.job_queue.run_repeating(tarea_digest_semanal,             interval=24*3600, first=_segundos_hasta_lunes_9am())  # digest semanal lunes 9h
 
     logger.info("🚀 FidesBot v22 iniciado — DualStats Tracker integration active.")
     await app.initialize()

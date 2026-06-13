@@ -31,6 +31,7 @@ interface Props {
   filterFrom:        string | undefined
   filterTo:          string | undefined
   filterCompetition: string | undefined
+  filterQ:           string | undefined
 }
 
 export function RecordsFilters({
@@ -43,12 +44,13 @@ export function RecordsFilters({
   filterFrom,
   filterTo,
   filterCompetition,
+  filterQ,
 }: Props) {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const timerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition)
+  const hasAnyFilter = !!(filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo ?? filterCompetition ?? filterQ)
 
   // Aplica un cambio de filtro con debounce de 300ms
   const applyFilter = useCallback((key: string, value: string) => {
@@ -60,12 +62,28 @@ export function RecordsFilters({
       } else {
         params.delete(key)
       }
+      params.delete('page')
       router.push(`/records?${params.toString()}`)
     }, 300)
   }, [router, searchParams])
 
   return (
     <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:items-end">
+
+      {/* Búsqueda global */}
+      <div className="col-span-2 sm:flex-none flex flex-col gap-1">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Buscar</label>
+        <div className="relative">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none select-none">🔍</span>
+          <input
+            type="text"
+            defaultValue={filterQ ?? ''}
+            onChange={(e) => applyFilter('q', e.target.value.trim())}
+            placeholder="Título, partido, competición…"
+            className="rounded-lg border bg-background py-1.5 pl-7 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring sm:min-w-[240px] w-full"
+          />
+        </div>
+      </div>
 
       {/* Momento */}
       <div className="flex flex-col gap-1">

@@ -78,9 +78,9 @@ const TYPE_LABEL_MAP: Record<string, string> = {
   CUSTOM:    'Custom',
 }
 
-export async function getStatsData(userId: string): Promise<StatsData> {
+export async function getStatsData(userId: string, dateFrom?: Date): Promise<StatsData> {
   const records = await prisma.betRecord.findMany({
-    where:   { userId, deletedAt: null },
+    where:   { userId, deletedAt: null, ...(dateFrom ? { datePlaced: { gte: dateFrom } } : {}) },
     orderBy: { datePlaced: 'desc' },
     select: {
       status:      true,

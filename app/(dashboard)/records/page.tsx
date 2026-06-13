@@ -62,6 +62,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   const filterTo          = typeof params['dateTo']   === 'string' ? params['dateTo']   : undefined
   const filterCompetition = typeof params['comp']     === 'string' ? params['comp']     : undefined
   const filterSort        = typeof params['sort']     === 'string' ? params['sort']     : 'date-desc'
+  const filterQ           = typeof params['q']        === 'string' && params['q'].trim() ? params['q'].trim() : undefined
   const filterPage        = typeof params['page']     === 'string' ? Math.max(1, parseInt(params['page']) || 1) : 1
   const PAGE_SIZE         = 50
 
@@ -72,27 +73,33 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     status: filterStatus
       ? filterStatus as Prisma.EnumBetStatusFilter['equals']
       : { not: 'DRAFT' as const },
-    ...(filterSport  ? { sport: filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
+    ...(filterSport       ? { sport: filterSport as Prisma.EnumSportTypeNullableFilter['equals'] } : {}),
     ...(filterLive === 'true'  ? { isLive: true  } : {}),
     ...(filterLive === 'false' ? { isLive: false } : {}),
-    ...(filterBm ? {
-      OR: [
+    AND: [
+      ...(filterBm ? [{ OR: [
         { primaryBookmakerId: filterBm },
         { legs: { some: { bookmakerId: filterBm } } },
-      ],
-    } : {}),
-    ...(filterFrom || filterTo ? {
-      datePlaced: {
+      ] }] : []),
+      ...(filterFrom || filterTo ? [{ datePlaced: {
         ...(filterFrom ? { gte: new Date(`${filterFrom}T00:00:00`) } : {}),
         ...(filterTo   ? { lte: new Date(`${filterTo}T23:59:59`)   } : {}),
-      },
-    } : {}),
-    ...(filterCompetition ? {
-      OR: [
+      } }] : []),
+      ...(filterCompetition ? [{ OR: [
         { competition: filterCompetition },
         { comboDetail: { selections: { some: { competition: filterCompetition } } } },
-      ],
-    } : {}),
+      ] }] : []),
+      ...(filterQ ? [{ OR: [
+        { title:       { contains: filterQ, mode: 'insensitive' as const } },
+        { eventName:   { contains: filterQ, mode: 'insensitive' as const } },
+        { competition: { contains: filterQ, mode: 'insensitive' as const } },
+        { singleBetDetail: { selection: { contains: filterQ, mode: 'insensitive' as const } } },
+        { comboDetail: { selections: { some: { OR: [
+          { selection: { contains: filterQ, mode: 'insensitive' as const } },
+          { eventName: { contains: filterQ, mode: 'insensitive' as const } },
+        ] } } } },
+      ] }] : []),
+    ],
   }
 
   const orderBy: Prisma.BetRecordOrderByWithRelationInput[] =
@@ -277,11 +284,12 @@ export default async function RecordsPage({ searchParams }: PageProps) {
   // ─── Build date preset URLs ───────────────────────────────────────────────
   const presets    = getDatePresets()
   const extraParams = [
-    filterSport       ? `&sport=${filterSport}`             : '',
-    filterBm          ? `&bm=${filterBm}`                   : '',
-    filterStatus      ? `&status=${filterStatus}`           : '',
-    filterLive        ? `&live=${filterLive}`               : '',
+    filterSport       ? `&sport=${filterSport}`                         : '',
+    filterBm          ? `&bm=${filterBm}`                               : '',
+    filterStatus      ? `&status=${filterStatus}`                       : '',
+    filterLive        ? `&live=${filterLive}`                           : '',
     filterCompetition ? `&comp=${encodeURIComponent(filterCompetition)}` : '',
+    filterQ           ? `&q=${encodeURIComponent(filterQ)}`             : '',
   ].join('')
 
   return (
@@ -297,6 +305,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         if (filterStatus)      csvParams.set('status',   filterStatus)
         if (filterLive)        csvParams.set('live',     filterLive)
         if (filterCompetition) csvParams.set('comp',     filterCompetition)
+        if (filterQ)           csvParams.set('q',        filterQ)
         return (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -378,6 +387,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             {filterStatus      && <input type="hidden" name="status" value={filterStatus}      />}
             {filterLive        && <input type="hidden" name="live"   value={filterLive}        />}
             {filterCompetition && <input type="hidden" name="comp"   value={filterCompetition} />}
+            {filterQ           && <input type="hidden" name="q"      value={filterQ}           />}
             <input
               type="date"
               name="dateFrom"
@@ -417,6 +427,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         filterFrom={filterFrom}
         filterTo={filterTo}
         filterCompetition={filterCompetition}
+        filterQ={filterQ}
       />
 
       {/* ─── Registros ──────────────────────────────────────────────────── */}
@@ -445,6 +456,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           ...(filterStatus      ? { status:   filterStatus      } : {}),
           ...(filterLive        ? { live:     filterLive        } : {}),
           ...(filterCompetition ? { comp:     filterCompetition } : {}),
+          ...(filterQ           ? { q:        filterQ           } : {}),
         }}
       />
 
@@ -460,6 +472,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
             ...(filterStatus      ? { status:   filterStatus      } : {}),
             ...(filterLive        ? { live:     filterLive        } : {}),
             ...(filterCompetition ? { comp:     filterCompetition } : {}),
+            ...(filterQ           ? { q:        filterQ           } : {}),
             ...(p > 1             ? { page:     String(p)         } : {}),
           })
           const s = ps.toString()

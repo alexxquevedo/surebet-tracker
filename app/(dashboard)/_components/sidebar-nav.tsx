@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo, useCallback } from 'react'
+import { useState, useEffect, useTransition, useMemo, useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
@@ -107,6 +107,21 @@ function localToUTC(datetimeLocal: string): string {
 export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, isAdmin, usedCompetitions }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [cloneData, setCloneData] = useState<CloneData | null>(null)
+
+  useEffect(() => {
+    function handleClone() {
+      const raw = localStorage.getItem('clone_bet')
+      if (!raw) return
+      localStorage.removeItem('clone_bet')
+      try {
+        setCloneData(JSON.parse(raw) as CloneData)
+        setOpen(true)
+      } catch {}
+    }
+    window.addEventListener('dualstats:clone_bet', handleClone)
+    return () => window.removeEventListener('dualstats:clone_bet', handleClone)
+  }, [])
 
   return (
     <>
@@ -265,7 +280,8 @@ export function SidebarNav({ bookmakers, bankrolls, plan, userName, userEmail, i
           bookmakers={bookmakers}
           bankrolls={bankrolls}
           usedCompetitions={usedCompetitions}
-          onClose={() => setOpen(false)}
+          initialValues={cloneData ?? undefined}
+          onClose={() => { setOpen(false); setCloneData(null) }}
         />
       )}
     </>
@@ -283,49 +299,63 @@ interface ComboRow {
   competition: string
 }
 
+interface CloneData {
+  betType:      ModalBetType
+  selection?:   string
+  eventName?:   string
+  sport?:       string
+  competition?: string
+  bm1Id?:       string
+  bm2Id?:       string
+  comboRows?:   ComboRow[]
+}
+
 function NewOperationModal({
   bookmakers,
   bankrolls,
   usedCompetitions,
+  initialValues,
   onClose,
 }: {
   bookmakers:        BookmakerOption[]
   bankrolls:         BankrollOption[]
   usedCompetitions:  string[]
+  initialValues?:    CloneData
   onClose:           () => void
 }) {
+  const iv = initialValues
   const router = useRouter()
   const [, startTransition] = useTransition()
 
-  const [betType, setBetType] = useState<ModalBetType>('SINGLE')
+  const [betType, setBetType] = useState<ModalBetType>(iv?.betType ?? 'SINGLE')
   const isMulti  = BET_TYPES.find((t) => t.value === betType)?.multi  ?? false
   const isCombo  = BET_TYPES.find((t) => t.value === betType)?.combo  ?? false
 
   // ── Shared metadata ─────────────────────────────────────────────────────
-  const [selection, setSelection]     = useState('')
-  const [eventName, setEventName]     = useState('')
-  const [sport, setSport]             = useState('')
-  const [competition, setCompetition] = useState('')
+  const [selection, setSelection]     = useState(iv?.selection   ?? '')
+  const [eventName, setEventName]     = useState(iv?.eventName   ?? '')
+  const [sport, setSport]             = useState(iv?.sport       ?? '')
+  const [competition, setCompetition] = useState(iv?.competition ?? '')
   const [isLive, setIsLive]           = useState(false)
   const [datePlaced, setDatePlaced]   = useState(defaultDateTime)
   const [middleRange, setMiddleRange] = useState('')
   const [bankrollId, setBankrollId]   = useState('')
 
   // ── Leg 1 (single + multi) ───────────────────────────────────────────────
-  const [bm1Id, setBm1Id]     = useState(bookmakers[0]?.id ?? '')
+  const [bm1Id, setBm1Id]     = useState(iv?.bm1Id ?? bookmakers[0]?.id ?? '')
   const [stake1, setStake1]   = useState('')
   const [odds1, setOdds1]     = useState('')
   const [retorno1, setRetorno1] = useState('') // retorno bruto = stake × odds
 
   // ── Leg 2 (multi only) ──────────────────────────────────────────────────
-  const [bm2Id, setBm2Id]     = useState(bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
+  const [bm2Id, setBm2Id]     = useState(iv?.bm2Id ?? bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
   const [stake2, setStake2]   = useState('')
   const [odds2, setOdds2]     = useState('')
 
   // ── Combinada fields ────────────────────────────────────────────────────
-  const [comboRows, setComboRows]         = useState<ComboRow[]>([
-    { description: '', eventName: '', sport: '', competition: '' },
-  ])
+  const [comboRows, setComboRows]         = useState<ComboRow[]>(
+    iv?.comboRows ?? [{ description: '', eventName: '', sport: '', competition: '' }]
+  )
   const [comboOdds, setComboOdds]         = useState('')
   const [comboRetorno, setComboRetorno]   = useState('') // opcional: retorno total incluyendo bonus
 
@@ -521,7 +551,7 @@ function NewOperationModal({
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Nueva Operación</h2>
+          <h2 className="text-lg font-semibold">{iv ? 'Clonar Operación' : 'Nueva Operación'}</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted text-xl transition-colors">
             ×

@@ -481,24 +481,25 @@ export async function getDashboardMetrics(
 // overhead de bankroll/bookmakers. Usada por la página de Estadísticas.
 // ════════════════════════════════════════════════════════════════════════════
 
-export async function getAdvancedStats(userId: string): Promise<AdvancedStats> {
+export async function getAdvancedStats(userId: string, dateFrom?: Date): Promise<AdvancedStats> {
   const now           = new Date()
   const sevenDaysAgo  = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const dateFilter    = dateFrom ? { datePlaced: { gte: dateFrom } } : {}
 
   const [settledRecords, inPlayAgg, statusCounts] = await Promise.all([
     prisma.betRecord.findMany({
-      where:   { userId, status: { in: ['WON', 'LOST', 'CASHOUT'] }, deletedAt: null },
+      where:   { userId, status: { in: ['WON', 'LOST', 'CASHOUT'] }, deletedAt: null, ...dateFilter },
       select:  { grossProfit: true, totalStake: true, totalReturn: true, dateSettled: true, sport: true },
       orderBy: { dateSettled: 'asc' },
     }),
     prisma.betRecord.aggregate({
-      where: { userId, status: 'PLACED', deletedAt: null },
+      where: { userId, status: 'PLACED', deletedAt: null, ...dateFilter },
       _count: { id: true },
     }),
     prisma.betRecord.groupBy({
       by:    ['status'],
-      where: { userId, deletedAt: null },
+      where: { userId, deletedAt: null, ...dateFilter },
       _count: { id: true },
     }),
   ])
