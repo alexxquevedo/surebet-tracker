@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
       tipo?:       string
       fuente?:     string
       aproximado?: boolean
+      notas?:      string
     }
   }
   try {
@@ -277,6 +278,7 @@ export async function POST(request: NextRequest) {
           botPendingId:   bot_pending_id ?? null,
           title:          autoTitle,
           bankrollId:     fidesBot?.id ?? null,
+          notes:          apuesta.notas?.trim() || null,
           ...typeDetail,
         },
         select: { id: true },
@@ -422,13 +424,15 @@ export async function PATCH(request: NextRequest) {
   const record = await prisma.betRecord.findUnique({
     where:  { botPendingId: bot_pending_id },
     select: {
-      id:     true,
-      userId: true,
-      status: true,
+      id:         true,
+      userId:     true,
+      status:     true,
+      type:       true,
+      totalStake: true,
       legs: {
         where:   { deletedAt: null },
         orderBy: { id: 'asc' },
-        select:  { id: true },
+        select:  { id: true, stake: true, odds: true },
       },
     },
   })
@@ -439,15 +443,46 @@ export async function PATCH(request: NextRequest) {
   }
 
   const validUpdates = legs.filter(({ leg_index }) => record.legs[leg_index] !== undefined)
-  if (validUpdates.length > 0) {
-    await prisma.$transaction(
-      validUpdates.map(({ leg_index, odds }) =>
-        prisma.betLeg.update({
-          where: { id: record.legs[leg_index]!.id },
-          data:  { odds: new Decimal(odds) },
-        }),
-      ),
-    )
+  if (validUpdates.length === 0) {
+    return NextResponse.json({ success: true, updated: 0 })
+  }
+
+  // Actualizar cuotas en las piernas indicadas
+  await prisma.$transaction(
+    validUpdates.map(({ leg_index, odds }) =>
+      prisma.betLeg.update({
+        where: { id: record.legs[leg_index]!.id },
+        data:  { odds: new Decimal(odds) },
+      }),
+    ),
+  )
+
+  // Recalcular potentialReturn y (para ARBITRAGE) arbPercentage con las cuotas actualizadas
+  const updatedOddsMap = new Map(validUpdates.map(({ leg_index, odds }) => [leg_index, new Decimal(odds)]))
+  const legReturns = record.legs.map((l, i) => {
+    const currentOdds = updatedOddsMap.get(i) ?? new Decimal(l.odds)
+    return new Decimal(l.stake).mul(currentOdds).toDecimalPlaces(2)
+  })
+  const totalStake = new Decimal(record.totalStake)
+
+  const newPotReturn = record.type === 'ARBITRAGE'
+    ? Decimal.min.apply(Decimal, legReturns).toDecimalPlaces(2)
+    : legReturns.reduce((a, r) => a.plus(r), new Decimal(0)).toDecimalPlaces(2)
+
+  await prisma.betRecord.update({
+    where: { id: record.id },
+    data:  { potentialReturn: newPotReturn },
+  })
+
+  if (record.type === 'ARBITRAGE') {
+    const newProfit = newPotReturn.minus(totalStake).toDecimalPlaces(2)
+    const newPct    = totalStake.isZero()
+      ? new Decimal(0)
+      : newProfit.div(totalStake).mul(100).toDecimalPlaces(4)
+    await prisma.arbitrageDetail.updateMany({
+      where: { betRecordId: record.id },
+      data:  { arbPercentage: newPct, expectedReturn: newPotReturn },
+    })
   }
 
   return NextResponse.json({ success: true, updated: validUpdates.length })

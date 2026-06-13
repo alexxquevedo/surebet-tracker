@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     }),
   ])
 
-  const won     = settled.filter((r) => r.status === 'WON').length
+  const won     = settled.filter((r) => r.status === 'WON' || r.status === 'PARTIAL_WIN').length
   const nonVoid = settled.filter((r) => r.status !== 'VOID')
   const winRate = nonVoid.length > 0 ? (won / nonVoid.length) * 100 : 0
 
@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
     won,
     winRate:      Math.round(winRate * 10) / 10,
     totalProfit:  Math.round(totalProfit * 100) / 100,
+    totalStake:   Math.round(totalStake * 100) / 100,
     roi:          Math.round(roi * 100) / 100,
     openCount,
     currentStreak,
