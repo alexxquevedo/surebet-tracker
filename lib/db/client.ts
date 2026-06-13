@@ -14,3 +14,6 @@ export const prisma =
   })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+
+// Warm the connection pool on module load (avoids cold-start failures on Vercel)
+prisma.$connect().catch(() => { /* ignore — next query will reconnect */ })
