@@ -343,7 +343,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                             </span>
                           )}
                           {r.legs.length > 0
-                            ? <span className="text-xs font-mono text-muted-foreground">@{r.legs[0]!.odds.toFixed(2)}</span>
+                            ? <span className="text-xs font-mono text-muted-foreground">{r.legs.map(l => `@${l.odds.toFixed(2)}`).join(' / ')}</span>
                             : r.singleBetDetail?.odds != null
                               ? <span className="text-xs font-mono text-muted-foreground">@{r.singleBetDetail.odds.toFixed(2)}</span>
                               : null
@@ -566,7 +566,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                       {r.legs.length > 0 ? (
                         <>
                           <span>·</span>
-                          <span className="font-mono">@{r.legs[0]!.odds.toFixed(2)}</span>
+                          <span className="font-mono">{r.legs.map(l => `@${l.odds.toFixed(2)}`).join(' / ')}</span>
                         </>
                       ) : r.singleBetDetail?.odds != null ? (
                         <>

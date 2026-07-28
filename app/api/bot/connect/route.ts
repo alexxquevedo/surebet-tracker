@@ -66,41 +66,40 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── Si este telegram_id ya estaba vinculado a otra cuenta, desvincular ──
+  // ── Si este telegram_id ya estaba vinculado a otra cuenta, lo necesitamos saber ──
   const previousUser = await prisma.user.findUnique({
     where:  { telegramId: telegramIdStr },
     select: { id: true },
   })
-  if (previousUser && previousUser.id !== linkToken.userId) {
-    await prisma.user.update({
-      where: { id: previousUser.id },
-      data:  { telegramId: null, telegramUsername: null },
-    })
-    // Marcar integración anterior como REVOKED
-    await prisma.userIntegration.updateMany({
-      where: { userId: previousUser.id, type: 'TELEGRAM' },
-      data:  { status: 'REVOKED' },
-    })
-  }
 
   const usernameStr = telegram_username
     ? String(telegram_username).replace(/^@/, '')
     : null
 
-  // ── Vincular en una transacción atómica ──────────────────
-  await prisma.$transaction([
+  // ── Desvincular anterior + vincular nuevo en una sola transacción atómica ──
+  await prisma.$transaction(async (tx) => {
+    if (previousUser && previousUser.id !== linkToken.userId) {
+      await tx.user.update({
+        where: { id: previousUser.id },
+        data:  { telegramId: null, telegramUsername: null },
+      })
+      await tx.userIntegration.updateMany({
+        where: { userId: previousUser.id, type: 'TELEGRAM' },
+        data:  { status: 'REVOKED' },
+      })
+    }
     // Guardar telegram_id en el usuario
-    prisma.user.update({
+    await tx.user.update({
       where: { id: linkToken.userId },
       data:  { telegramId: telegramIdStr, telegramUsername: usernameStr },
-    }),
+    })
     // Marcar token como usado
-    prisma.linkToken.update({
+    await tx.linkToken.update({
       where: { id: linkToken.id },
       data:  { usedAt: new Date() },
-    }),
+    })
     // Upsert integración TELEGRAM (registro de estado)
-    prisma.userIntegration.upsert({
+    await tx.userIntegration.upsert({
       where:  { userId_type: { userId: linkToken.userId, type: 'TELEGRAM' } },
       create: {
         userId:    linkToken.userId,
@@ -118,8 +117,8 @@ export async function POST(request: NextRequest) {
         errorCount: 0,
         lastError:  null,
       },
-    }),
-  ])
+    })
+  })
 
   // ── Auto-crear bankroll "FidesBot" si no existe ───────────────────────────
   const existingBankroll = await prisma.bankroll.findFirst({

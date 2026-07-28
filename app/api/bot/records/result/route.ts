@@ -131,6 +131,11 @@ export async function POST(request: NextRequest) {
   } else if (newStatus === 'VOID') {
     grossProfit = D(0)
     totalReturn = totalStake
+  } else if (newStatus === 'PARTIAL_WIN') {
+    return NextResponse.json(
+      { error: 'PARTIAL_WIN requires ganancia_real' },
+      { status: 422 },
+    )
   } else {
     // WON sin ganancia_real: usamos potentialReturn
     totalReturn = D(betRecord.potentialReturn ?? betRecord.totalStake)

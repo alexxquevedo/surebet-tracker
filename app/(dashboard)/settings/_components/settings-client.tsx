@@ -261,7 +261,7 @@ export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, 
 
   function copyKey() {
     if (!generatedKey) return
-    void navigator.clipboard.writeText(generatedKey)
+    navigator.clipboard.writeText(generatedKey).catch(() => null)
     setCopiedKey(true)
     setTimeout(() => setCopiedKey(false), 2000)
   }
@@ -929,7 +929,7 @@ export function SettingsClient({ user, settings, telegram, apiKeys, initialTab, 
                     </code>
                     <button
                       onClick={() => {
-                        void navigator.clipboard.writeText(`/start ${tgLinkData.manualToken}`)
+                        navigator.clipboard.writeText(`/start ${tgLinkData.manualToken}`).catch(() => null)
                         setCopiedToken(true)
                         setTimeout(() => setCopiedToken(false), 2000)
                       }}

@@ -46,7 +46,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing metadata' }, { status: 400 })
     }
 
-    const daysNum     = parseInt(days, 10)
+    const validPlans = ['PRO', 'PRO_TRACKER'] as const
+    if (!(validPlans as readonly string[]).includes(plan)) {
+      console.error('[webhook] Invalid plan in metadata:', plan, session.id)
+      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
+    }
+
+    const daysNum = parseInt(days, 10)
+    if (isNaN(daysNum) || daysNum <= 0) {
+      console.error('[webhook] Invalid days in metadata:', days, session.id)
+      return NextResponse.json({ error: 'Invalid days' }, { status: 400 })
+    }
+
     const planExpires = new Date()
     planExpires.setDate(planExpires.getDate() + daysNum)
 
@@ -85,18 +96,20 @@ export async function POST(req: NextRequest) {
         update: { plan, expiresAt: planExpires },
       })
 
-      // Si tiene cuenta web vinculada y plan = PRO_TRACKER → sincronizar web
-      if (plan === 'PRO_TRACKER') {
-        const webUser = await prisma.user.findUnique({
-          where:  { telegramId: telegram_id },
-          select: { id: true },
+      // Si tiene cuenta web vinculada → marcar hasEverPaid siempre (evita reusar el cupón)
+      // y si es PRO_TRACKER también sincronizar plan y fecha en la web
+      const webUser = await prisma.user.findUnique({
+        where:  { telegramId: telegram_id },
+        select: { id: true },
+      })
+      if (webUser) {
+        await prisma.user.update({
+          where: { id: webUser.id },
+          data: {
+            hasEverPaid: true,
+            ...(plan === 'PRO_TRACKER' ? { plan: 'PRO_TRACKER', planExpiresAt: planExpires } : {}),
+          },
         })
-        if (webUser) {
-          await prisma.user.update({
-            where: { id: webUser.id },
-            data:  { plan: 'PRO_TRACKER', planExpiresAt: planExpires, hasEverPaid: true },
-          })
-        }
       }
 
       const planLabel = plan === 'PRO_TRACKER' ? 'PRO+Tracker' : 'PRO'

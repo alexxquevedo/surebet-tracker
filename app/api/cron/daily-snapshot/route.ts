@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
         balances,
         inPlay,
         dailyByType,
+        todayInflows,
+        todayOutflows,
       ] = await Promise.all([
         // placed yesterday
         prisma.betRecord.aggregate({
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
           where: { userId, type: 'WITHDRAWAL', createdAt: { lte: ydayEnd } },
           _sum: { amount: true },
         }),
-        // current balances (best approximation of end-of-yesterday state)
+        // current live balances (will be adjusted with today's tx delta below)
         prisma.bookmaker.aggregate({
           where: { userId, status: 'ACTIVE' },
           _sum: { currentBalance: true },
@@ -100,6 +102,16 @@ export async function GET(req: NextRequest) {
         prisma.betRecord.aggregate({
           where: { userId, deletedAt: null, status: 'PLACED' },
           _sum: { totalStake: true },
+        }),
+        // today's inflows since midnight UTC (deposits + bet returns) — to subtract from live balance
+        prisma.bookmakerTransaction.aggregate({
+          where: { userId, type: { in: ['INITIAL_DEPOSIT', 'DEPOSIT', 'BET_RETURN', 'BET_VOID_RETURN', 'CASHOUT'] }, createdAt: { gte: todayStart } },
+          _sum: { amount: true },
+        }),
+        // today's outflows since midnight UTC (withdrawals) — to add back to live balance
+        prisma.bookmakerTransaction.aggregate({
+          where: { userId, type: 'WITHDRAWAL', createdAt: { gte: todayStart } },
+          _sum: { amount: true },
         }),
         // daily breakdown by bet type
         prisma.betRecord.groupBy({
@@ -110,7 +122,10 @@ export async function GET(req: NextRequest) {
         }),
       ])
 
-      const totalBal  = Number(balances._sum?.currentBalance ?? 0)
+      // EOD balance: current live balance minus net transactions since midnight UTC
+      const liveBal   = Number(balances._sum?.currentBalance ?? 0)
+      const todayNet  = Number(todayInflows._sum?.amount ?? 0) - Number(todayOutflows._sum?.amount ?? 0)
+      const totalBal  = liveBal - todayNet
       const inPlayBal = Number(inPlay._sum.totalStake ?? 0)
 
       const snapData = {

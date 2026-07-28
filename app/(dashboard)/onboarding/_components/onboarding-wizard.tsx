@@ -316,7 +316,7 @@ function Step3({ plan }: { plan: string }) {
 
   function copyToken() {
     if (!linkData) return
-    void navigator.clipboard.writeText(linkData.manualToken)
+    navigator.clipboard.writeText(linkData.manualToken).catch(() => null)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

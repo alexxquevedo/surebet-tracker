@@ -82,17 +82,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, converted: 0, notified: 0, errors: 0 })
   }
 
-  // Bulk-convert all qualifying drafts
-  const ids = staleDrafts.map((d) => d.id)
-  await prisma.betRecord.updateMany({
-    where: { id: { in: ids } },
-    data:  { status: 'PLACED', isApproximate: true },
-  })
-
   let notified = 0
   let errors   = 0
 
-  // One Telegram message per user listing their converted bets
+  // Group by user, then process per-user: mark PLACED then notify.
+  // Processing per-user means a mid-run crash only leaves unprocessed users
+  // in DRAFT (they'll be retried next cron), avoiding partial bulk updates.
   const byUser = new Map<string, typeof staleDrafts>()
   for (const d of staleDrafts) {
     const uid = d.user.id
@@ -101,7 +96,21 @@ export async function GET(req: NextRequest) {
   }
 
   for (const bets of byUser.values()) {
+    const userIds    = bets.map((b) => b.id)
     const telegramId = bets[0]!.user.telegramId
+
+    // Mark this user's bets PLACED first (independent of notification success)
+    try {
+      await prisma.betRecord.updateMany({
+        where: { id: { in: userIds } },
+        data:  { status: 'PLACED', isApproximate: true },
+      })
+    } catch (e) {
+      console.error(`[cron/auto-register-approximate] updateMany failed for user ${bets[0]!.user.id}:`, e)
+      errors++
+      continue
+    }
+
     if (!telegramId) continue
 
     const lines = bets.map((b) => {

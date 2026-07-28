@@ -886,6 +886,76 @@ model Notification {
 }
 
 // ════════════════════════════════════════════
+// SCANNER — Odds scraping & arb detection
+// ════════════════════════════════════════════
+
+model ScannedOdds {
+  id        String    @id @default(cuid())
+  bookmaker String    // "betfair" | "marathonbet" | "codere" | etc.
+  sport     SportType
+  eventKey  String    // normalized key: "football:barcelona:realmadrid:2026-06-14"
+  eventName String    // display: "Real Madrid vs Barcelona"
+  league    String?
+  startTime DateTime?
+  isLive    Boolean   @default(false)
+  market    String    // "h2h" | "totals" | "handicap"
+  // h2h:      [{name:"Home",odds:2.1},{name:"Draw",odds:3.4},{name:"Away",odds:3.2}]
+  // totals:   [{line:2.5,over:1.85,under:2.1},{line:3.5,over:1.4,under:2.9}]
+  outcomes  Json
+  scrapedAt DateTime  @default(now())
+
+  @@unique([bookmaker, eventKey, market])
+  @@index([sport, isLive, scrapedAt])
+  @@index([eventKey])
+  @@map("scanned_odds")
+}
+
+model DetectedArb {
+  id         String    @id @default(cuid())
+  type       String    // "SUREBET" | "MIDDLE"
+  sport      SportType
+  isLive     Boolean   @default(false)
+  eventName  String
+  market     String
+  profitPct  Float     // e.g. 2.5 = 2.5% guaranteed profit
+  worstLoss  Float?    // middles only: worst-case loss % if middle misses
+  detectedAt DateTime  @default(now())
+
+  legs          DetectedArbLeg[]
+  notifications ArbNotification[]
+
+  @@index([sport, isLive, detectedAt])
+  @@index([detectedAt])
+  @@map("detected_arbs")
+}
+
+model DetectedArbLeg {
+  id        String      @id @default(cuid())
+  arbId     String
+  arb       DetectedArb @relation(fields: [arbId], references: [id], onDelete: Cascade)
+  bookmaker String      // "betfair"
+  selection String      // "Real Madrid" | "Over 2.5"
+  odds      Float
+  stake     Float?      // suggested stake % of bankroll for equal-profit distribution
+  url       String?
+
+  @@index([arbId])
+  @@map("detected_arb_legs")
+}
+
+model ArbNotification {
+  id         String      @id @default(cuid())
+  arbId      String
+  arb        DetectedArb @relation(fields: [arbId], references: [id], onDelete: Cascade)
+  telegramId String
+  sentAt     DateTime    @default(now())
+
+  @@unique([arbId, telegramId])
+  @@index([telegramId])
+  @@map("arb_notifications")
+}
+
+// ════════════════════════════════════════════
 // TEAMS — STUB para ENTERPRISE (Fase 4)
 // ════════════════════════════════════════════
 

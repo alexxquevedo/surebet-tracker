@@ -155,29 +155,6 @@ export async function POST(request: NextRequest) {
   const sport      = toSportType(apuesta.sport)
   const isApprox   = apuesta.aproximado === true || apuesta.fuente === 'auto'
 
-  // ── Buscar (o crear) bankroll FidesBot del usuario ───────────────────────
-  // Normalmente se crea al vincular Telegram (/api/bot/connect), pero si el
-  // usuario ya estaba vinculado antes de que se añadiera esta feature, lo
-  // creamos aquí la primera vez que registre una apuesta.
-  let fidesBot = await prisma.bankroll.findFirst({
-    where:  { userId, isBot: true },
-    select: { id: true },
-  })
-  if (!fidesBot) {
-    fidesBot = await prisma.bankroll.create({
-      data: {
-        userId,
-        name:        'FidesBot',
-        description: 'Apuestas registradas desde el bot de Telegram',
-        color:       '#2563eb',
-        isBot:       true,
-        isDefault:   false,
-        isActive:    true,
-      },
-      select: { id: true },
-    })
-  }
-
   // ── Verificar capital inicial antes de entrar en la transacción ────────────
   // Si algún bookmaker (ya existente) no tiene initialCapital → DRAFT
   // Los bookmakers nuevos (creados por first-time) también irán a DRAFT.
@@ -211,6 +188,26 @@ export async function POST(request: NextRequest) {
 
   try {
     const record = await prisma.$transaction(async (tx) => {
+      // ── Buscar (o crear) bankroll FidesBot — dentro de tx para evitar race ──
+      let fidesBot = await tx.bankroll.findFirst({
+        where:  { userId, isBot: true },
+        select: { id: true },
+      })
+      if (!fidesBot) {
+        fidesBot = await tx.bankroll.create({
+          data: {
+            userId,
+            name:        'FidesBot',
+            description: 'Apuestas registradas desde el bot de Telegram',
+            color:       '#2563eb',
+            isBot:       true,
+            isDefault:   false,
+            isActive:    true,
+          },
+          select: { id: true },
+        })
+      }
+
       // ── Find-or-create bookmakers por nombre ─────────────
       const bmIds: string[] = []
       for (const lc of legCalcs) {
@@ -443,17 +440,17 @@ export async function PATCH(request: NextRequest) {
   if (!record) return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   if (record.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  // ── Actualizar notas (no requiere estado PLACED) ──────────────────────
-  if (hasNotas) {
-    await prisma.betRecord.update({
-      where: { id: record.id },
-      data:  { notes: notas?.trim() || null },
-    })
-  }
-
+  // ── Si solo hay notas (sin piernas): actualizar y salir ───────────────
   if (!hasLegs) {
+    if (hasNotas) {
+      await prisma.betRecord.update({
+        where: { id: record.id },
+        data:  { notes: notas?.trim() || null },
+      })
+    }
     return NextResponse.json({ success: true, updated: 0, notesUpdated: hasNotas })
   }
+  // hasLegs garantizado a partir de aquí; si hay notas irán en la misma tx que las piernas
 
   if (record.status !== 'PLACED') {
     return NextResponse.json({ error: 'Can only update odds for PLACED records' }, { status: 400 })
@@ -464,15 +461,18 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, updated: 0, notesUpdated: hasNotas })
   }
 
-  // Actualizar cuotas en las piernas indicadas
-  await prisma.$transaction(
-    validUpdates.map(({ leg_index, odds }) =>
+  // Actualizar cuotas (y notas si vienen juntas) en una sola transacción
+  await prisma.$transaction([
+    ...(hasNotas
+      ? [prisma.betRecord.update({ where: { id: record.id }, data: { notes: notas?.trim() || null } })]
+      : []),
+    ...validUpdates.map(({ leg_index, odds }) =>
       prisma.betLeg.update({
         where: { id: record.legs[leg_index]!.id },
         data:  { odds: new Decimal(odds) },
       }),
     ),
-  )
+  ])
 
   // Recalcular potentialReturn y (para ARBITRAGE) arbPercentage con las cuotas actualizadas
   const updatedOddsMap = new Map(validUpdates.map(({ leg_index, odds }) => [leg_index, new Decimal(odds)]))
