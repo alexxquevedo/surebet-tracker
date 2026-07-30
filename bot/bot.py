@@ -58,14 +58,14 @@ DEFAULT_USER_CONFIG = {
     "min_profit_middle": 2.0, "min_prob_middle": 5.0, "min_profit_value": 5.0,
     "max_days": 2,
     "sports": {
-        "soccer": True, "basketball_nba": True, "basketball_euroleague": False,
+        "soccer": True, "basketball": True,
         "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
-        "baseball_mlb": True, "rugbyleague": True, "cricket": True, "golf": True,
+        "baseball_mlb": True, "rugbyleague": True, "cricket": False, "golf": False,
     },
     "bookmakers": {
         "bet365": True, "winamax": True, "pokerstars": True,
         "bwin": True, "betfair": True, "betsson": True, "leovegas": True,
-        "williamhill": True, "888sport": True,
+        "williamhill": True, "888sport": True, "daznbet": True,
         "codere": True, "sportium": True, "retabet": True,
     },
     "stake": 100.0,
@@ -105,8 +105,7 @@ avisos_enviados = set() # {"{uid}_7d", "{uid}_1d", "{uid}_expired"} — evita re
 # ============================================================
 SPORT_DISPLAY = {
     "soccer":               ("⚽", "Fútbol"),
-    "basketball_nba":       ("🏀", "Baloncesto NBA"),
-    "basketball_euroleague":("🏀", "Baloncesto EuroLeague"),
+    "basketball":           ("🏀", "Baloncesto"),
     "tennis":               ("🎾", "Tenis"),
     "americanfootball_nfl": ("🏈", "Fútbol Americano"),
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
@@ -117,8 +116,7 @@ SPORT_DISPLAY = {
 }
 LEAGUE_MAP = {
     "soccer":               "Fútbol",
-    "basketball_nba":       "NBA",
-    "basketball_euroleague":"EuroLeague",
+    "basketball":           "NBA / EuroLeague",
     "tennis":               "ATP/WTA",
     "americanfootball_nfl": "NFL",
     "icehockey_nhl":        "NHL",
@@ -127,10 +125,12 @@ LEAGUE_MAP = {
     "cricket":              "Cricket",
     "golf":                 "Golf",
 }
+BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
+
 BOOKMAKER_NAMES = {
     "bet365": "Bet365", "winamax": "Winamax", "pokerstars": "PokerStars",
     "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
-    "marathonbet": "Marathonbet", "williamhill": "William Hill", "888sport": "888sport",
+    "marathonbet": "Marathonbet", "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
     "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
 }
 
@@ -399,6 +399,11 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
         cfg.get("bookmakers", {}).pop("marathonbet", None)  # eliminada del mercado español
+        # Migrar basketball_nba/euroleague -> basketball
+        bk_nba = cfg.get("sports", {}).pop("basketball_nba", None)
+        bk_eu  = cfg.get("sports", {}).pop("basketball_euroleague", None)
+        if bk_nba is not None or bk_eu is not None:
+            cfg.setdefault("sports", {})["basketball"] = bool(bk_nba or bk_eu)
         for sp in DEFAULT_USER_CONFIG["sports"]:
             if sp not in cfg.get("sports", {}):
                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
@@ -496,6 +501,11 @@ async def cargar_db():
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
                         cfg.get("bookmakers", {}).pop("marathonbet", None)
+                        # Migrar basketball_nba/euroleague -> basketball
+                        bk_nba = cfg.get("sports", {}).pop("basketball_nba", None)
+                        bk_eu  = cfg.get("sports", {}).pop("basketball_euroleague", None)
+                        if bk_nba is not None or bk_eu is not None:
+                            cfg.setdefault("sports", {})["basketball"] = bool(bk_nba or bk_eu)
                         for sp in DEFAULT_USER_CONFIG["sports"]:
                             if sp not in cfg.get("sports", {}):
                                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
@@ -959,7 +969,12 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
     for sport_key in all_sports:
-        events = await fetch_odds(sport_key, live=live)
+        if sport_key == "basketball":
+            events = []
+            for _bk in BASKETBALL_API_KEYS:
+                events.extend(await fetch_odds(_bk, live=live))
+        else:
+            events = await fetch_odds(sport_key, live=live)
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
             except: commence = None
@@ -4161,9 +4176,9 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             "profit_sure": 2.37, "profit_base": 0.8, "profit_max": 7.2, "prob_mid": 28.0,
         },
-        "basketball_nba": {
+        "basketball": {
             "home": "Lakers", "away": "Warriors",
-            "sport_key": "basketball_nba", "liga": "NBA",
+            "sport_key": "basketball", "liga": "NBA / EuroLeague",
             "time": "2026-06-10T21:30:00Z",
             "legs_sure": [
                 {"bookmaker": "Bet365",  "outcome": "Lakers",  "odd": 2.05, "stake_pct": 50.0, "point": None, "description": ""},
@@ -4278,7 +4293,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Alias de nombres para el arg del usuario
     SPORT_ALIAS = {
         "futbol": "soccer", "fútbol": "soccer", "football": "soccer",
-        "baloncesto": "basketball_nba", "basket": "basketball_nba", "nba": "basketball_nba",
+        "baloncesto": "basketball", "basket": "basketball", "nba": "basketball", "euroleague": "basketball",
         "tenis": "tennis", "tennis": "tennis",
         "golf": "golf",
         "hockey": "icehockey_nhl", "nhl": "icehockey_nhl",
@@ -4307,7 +4322,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
         else:
-            sport_key = "basketball_nba" if es_middle else "soccer"
+            sport_key = "basketball" if es_middle else "soccer"
 
         datos = FAKE_EVENTS[sport_key]
         dualstats_vinculados.add(user_id)
