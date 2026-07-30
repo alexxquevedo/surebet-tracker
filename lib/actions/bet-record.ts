@@ -239,7 +239,7 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
 
   // Middle: best case = both sides win
   const middleBestCase  = ret1.plus(ret2).minus(totalStake).toDecimalPlaces(2)
-  const middleWorstCase = Decimal.max(ret1, ret2).minus(totalStake).toDecimalPlaces(2) // worst = better losing leg
+  const middleWorstCase = Decimal.min(ret1, ret2).minus(totalStake).toDecimalPlaces(2) // worst = lower-returning leg wins
 
   try {
     const record = await prisma.$transaction(async (tx) => {
@@ -654,12 +654,16 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         if (bm) {
           const balBefore = D(bm.currentBalance)
           const balAfter  = balBefore.plus(returnAmount)
-          const profit    = grossProfit
+          // Winning leg profit = return - its own stake (not total stake)
+          const winningLeg = bet.legs.find((l) => l.bookmakerId === returnBookmakerId)
+          const winningLegProfit = winningLeg
+            ? returnAmount.minus(D(winningLeg.stake)).toDecimalPlaces(2)
+            : grossProfit
           await tx.bookmaker.update({
             where: { id: returnBookmakerId },
             data: {
               currentBalance: balAfter,
-              totalProfit: { increment: profit.toNumber() },
+              totalProfit: { increment: winningLegProfit.toNumber() },
               totalReturn: { increment: returnAmount.toNumber() },
             },
           })
@@ -676,6 +680,18 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
                 referenceId:   betRecordId,
                 referenceType: 'BetRecord',
               },
+            })
+          }
+        }
+
+        // For multi-leg bets: update losing legs' bookmakers (profit decrement only — balance already settled at placement)
+        if (bet.legs.length > 1) {
+          for (const leg of bet.legs) {
+            if (leg.bookmakerId === returnBookmakerId) continue
+            const legLoss = D(leg.stake).neg().toDecimalPlaces(2) // stake was already deducted at placement
+            await tx.bookmaker.update({
+              where: { id: leg.bookmakerId },
+              data: { totalProfit: { increment: legLoss.toNumber() } },
             })
           }
         }
@@ -1092,17 +1108,18 @@ export async function updateBetMetadataAction(
             data:  { odds, potentialReturn: stake.mul(odds) },
           })
         }
-        // Recalcular potentialReturn del BetRecord = mínimo de los retornos de las piernas
+        // Recalcular potentialReturn del BetRecord
+        // ARBITRAGE = min(returns) = guaranteed profit leg
+        // MIDDLE    = sum(returns) = best case (both legs win)
         const updatedLegs = await tx.betLeg.findMany({
           where:  { betRecordId: betId, deletedAt: null },
           select: { potentialReturn: true },
         })
         if (updatedLegs.length) {
-          const minReturn = updatedLegs.reduce(
-            (min, l) => D(l.potentialReturn).lt(min) ? D(l.potentialReturn) : min,
-            D(updatedLegs[0]!.potentialReturn),
-          )
-          base.potentialReturn = minReturn
+          const returns = updatedLegs.map((l) => D(l.potentialReturn))
+          base.potentialReturn = bet.type === 'MIDDLE'
+            ? returns.reduce((sum, r) => sum.plus(r), D(0)).toDecimalPlaces(2)
+            : returns.reduce((min, r) => r.lt(min) ? r : min, returns[0]!).toDecimalPlaces(2)
         }
         await tx.betRecord.update({ where: { id: betId }, data: base })
       })

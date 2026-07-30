@@ -202,7 +202,7 @@ export async function getDashboardMetrics(
     prisma.betRecord.findMany({
       where: {
         userId,
-        status: { in: ['WON', 'LOST', 'CASHOUT'] },
+        status: { in: ['WON', 'LOST', 'CASHOUT', 'PARTIAL_WIN'] },
         deletedAt: null,
         ...betBmExtra,
       },
@@ -347,7 +347,7 @@ export async function getDashboardMetrics(
   const countByStatus = (status: string): number =>
     statusCounts.find((g) => g.status === status)?._count.id ?? 0
 
-  const settledCount = countByStatus('WON') + countByStatus('LOST') + countByStatus('CASHOUT')
+  const settledCount = countByStatus('WON') + countByStatus('LOST') + countByStatus('CASHOUT') + countByStatus('PARTIAL_WIN')
   const placedCount  = inPlayAgg._count.id
   const totalCount   = statusCounts.reduce((sum, g) => sum + g._count.id, 0)
 
@@ -489,7 +489,7 @@ export async function getAdvancedStats(userId: string, dateFrom?: Date): Promise
 
   const [settledRecords, inPlayAgg, statusCounts] = await Promise.all([
     prisma.betRecord.findMany({
-      where:   { userId, status: { in: ['WON', 'LOST', 'CASHOUT'] }, deletedAt: null, ...dateFilter },
+      where:   { userId, status: { in: ['WON', 'LOST', 'CASHOUT', 'PARTIAL_WIN'] }, deletedAt: null, ...dateFilter },
       select:  { grossProfit: true, totalStake: true, totalReturn: true, dateSettled: true, sport: true },
       orderBy: { dateSettled: 'asc' },
     }),
@@ -509,7 +509,7 @@ export async function getAdvancedStats(userId: string, dateFrom?: Date): Promise
   const countByStatus = (s: string) =>
     statusCounts.find((g) => g.status === s)?._count.id ?? 0
 
-  const settledCount = countByStatus('WON') + countByStatus('LOST') + countByStatus('CASHOUT')
+  const settledCount = countByStatus('WON') + countByStatus('LOST') + countByStatus('CASHOUT') + countByStatus('PARTIAL_WIN')
   const placedCount  = inPlayAgg._count.id
   const totalCount   = statusCounts.reduce((sum, g) => sum + g._count.id, 0)
 
@@ -860,7 +860,7 @@ export async function getBankrollEvolution(
       userId,
       deletedAt: null,
       datePlaced: { gte: since },
-      status:      { in: ['WON', 'LOST', 'CASHOUT'] },
+      status:      { in: ['WON', 'LOST', 'CASHOUT', 'PARTIAL_WIN'] },
       grossProfit: { not: null },
     },
     select: { datePlaced: true, grossProfit: true },

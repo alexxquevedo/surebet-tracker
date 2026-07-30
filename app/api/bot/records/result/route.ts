@@ -98,6 +98,12 @@ export async function POST(request: NextRequest) {
   if (betRecord.userId !== user.id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  if (betRecord.status === 'DRAFT') {
+    return NextResponse.json(
+      { error: 'DRAFT_NOT_SETTLED', message: 'Esta apuesta está en borrador — confirma el capital en DualStats primero.' },
+      { status: 422 },
+    )
+  }
   if (betRecord.status !== 'PLACED') {
     // Ya liquidada — idempotente, no es error
     return NextResponse.json({ success: true, id: betRecord.id, alreadySettled: true })

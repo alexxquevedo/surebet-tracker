@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
         }
       } else {
         potentialReturn = allReturns.reduce((a, r) => a.plus(r), D(0)).toDecimalPlaces(2)
-        const worstCase = Decimal.max.apply(Decimal, allReturns).minus(totalStake).toDecimalPlaces(2)
+        const worstCase = Decimal.min.apply(Decimal, allReturns).minus(totalStake).toDecimalPlaces(2)
         const bestCase  = potentialReturn.minus(totalStake).toDecimalPlaces(2)
         typeDetail = {
           middleDetail: {

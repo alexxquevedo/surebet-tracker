@@ -225,7 +225,7 @@ export async function adjustBookmakerBalanceAction(formData: FormData): Promise<
         data: {
           userId,
           bookmakerId:   id,
-          type:          'MANUAL_ADJUSTMENT',
+          type:          direction === 'deposit' ? 'DEPOSIT' : 'WITHDRAWAL',
           amount:        signedAmount.abs(),
           balanceBefore: balBefore,
           balanceAfter:  balAfter,

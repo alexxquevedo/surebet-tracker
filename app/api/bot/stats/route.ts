@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     }),
     // Racha actual siempre sobre el historial completo (sin filtro de período)
     prisma.betRecord.findMany({
-      where:   { userId, deletedAt: null, status: { in: ['WON', 'LOST', 'CASHOUT'] } },
+      where:   { userId, deletedAt: null, status: { in: ['WON', 'PARTIAL_WIN', 'LOST', 'CASHOUT'] } },
       select:  { status: true },
       orderBy: { datePlaced: 'desc' },
       take: 30,
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
   // Racha actual
   let currentStreak: { type: 'WON' | 'LOST'; count: number } | null = null
   if (recentSettled.length > 0) {
-    const isWin    = (r: { status: string }) => r.status === 'WON'
+    const isWin    = (r: { status: string }) => r.status === 'WON' || r.status === 'PARTIAL_WIN'
     const firstWin = isWin(recentSettled[0]!)
     let count      = 0
     for (const r of recentSettled) {

@@ -279,8 +279,8 @@ export async function GET(request: NextRequest) {
     const cuota2v = isSingle ? null : (leg2?.odds ? parseFloat(leg2.odds.toString()) : null)
     const stake1v = leg1?.stake ? parseFloat(leg1.stake.toString()) : (isSingle ? parseFloat(r.totalStake.toString()) : null)
     const stake2v = isSingle ? null : (leg2?.stake ? parseFloat(leg2.stake.toString()) : null)
-    const pnlv    = r.grossProfit     ? parseFloat(r.grossProfit.toString())     : null
-    const retv    = r.potentialReturn ? parseFloat(r.potentialReturn.toString()) : null
+    const pnlv    = r.grossProfit !== null     ? parseFloat(r.grossProfit.toString())     : null
+    const retv    = r.potentialReturn !== null ? parseFloat(r.potentialReturn.toString()) : null
     const title   = r.title ?? r.singleBetDetail?.selection ?? ''
     const bgMain  = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF5F7FA'
 

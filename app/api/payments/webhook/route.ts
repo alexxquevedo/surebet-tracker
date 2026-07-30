@@ -58,29 +58,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid days' }, { status: 400 })
     }
 
-    const planExpires = new Date()
-    planExpires.setDate(planExpires.getDate() + daysNum)
+    const now = new Date()
 
     // ── PAGO DESDE LA WEB (tiene userId) ─────────────────────────────────
     if (source !== 'bot' && userId) {
+      // Fetch current state before updating — needed for expiry extension + telegramId
+      const currentUser = await prisma.user.findUnique({
+        where:  { id: userId },
+        select: { planExpiresAt: true, telegramId: true },
+      })
+      // Extend from current expiry if still active (avoids losing remaining days on renewal)
+      const base       = currentUser?.planExpiresAt && currentUser.planExpiresAt > now ? currentUser.planExpiresAt : now
+      const planExpires = new Date(base.getTime() + daysNum * 24 * 60 * 60 * 1000)
+
       await prisma.user.update({
         where: { id: userId },
         data:  { plan: plan as 'PRO' | 'PRO_TRACKER', planExpiresAt: planExpires, hasEverPaid: true },
       })
 
-      // Si tiene Telegram vinculado y plan = PRO_TRACKER → activar también BotSubscription
-      const user = await prisma.user.findUnique({
-        where:  { id: userId },
-        select: { telegramId: true },
-      })
-      if (user?.telegramId && plan === 'PRO_TRACKER') {
+      if (currentUser?.telegramId && plan === 'PRO_TRACKER') {
         await prisma.botSubscription.upsert({
-          where:  { telegramId: user.telegramId },
-          create: { telegramId: user.telegramId, plan: 'PRO_TRACKER', expiresAt: planExpires },
+          where:  { telegramId: currentUser.telegramId },
+          create: { telegramId: currentUser.telegramId, plan: 'PRO_TRACKER', expiresAt: planExpires },
           update: { plan: 'PRO_TRACKER', expiresAt: planExpires },
         })
         await notificarTelegram(
-          user.telegramId,
+          currentUser.telegramId,
           `✅ *¡Tu plan PRO+Tracker está activo!*\n\nTu pago desde la web se ha procesado correctamente.\nTienes acceso por *${daysNum} días* 🚀\n\nUsa /start para ver tus opciones.`,
         )
       }
@@ -89,25 +92,38 @@ export async function POST(req: NextRequest) {
 
     // ── PAGO DESDE EL BOT (tiene telegram_id) ────────────────────────────
     if (source === 'bot' && telegram_id) {
-      // Activar BotSubscription
+      // Fetch current BotSubscription to extend expiry rather than reset it
+      const [currentSub, webUser] = await Promise.all([
+        prisma.botSubscription.findUnique({
+          where:  { telegramId: telegram_id },
+          select: { expiresAt: true },
+        }),
+        prisma.user.findUnique({
+          where:  { telegramId: telegram_id },
+          select: { id: true, planExpiresAt: true },
+        }),
+      ])
+
+      const subBase    = currentSub?.expiresAt && currentSub.expiresAt > now ? currentSub.expiresAt : now
+      const planExpires = new Date(subBase.getTime() + daysNum * 24 * 60 * 60 * 1000)
+
       await prisma.botSubscription.upsert({
         where:  { telegramId: telegram_id },
         create: { telegramId: telegram_id, plan, expiresAt: planExpires },
         update: { plan, expiresAt: planExpires },
       })
 
-      // Si tiene cuenta web vinculada → marcar hasEverPaid siempre (evita reusar el cupón)
-      // y si es PRO_TRACKER también sincronizar plan y fecha en la web
-      const webUser = await prisma.user.findUnique({
-        where:  { telegramId: telegram_id },
-        select: { id: true },
-      })
       if (webUser) {
+        // For PRO_TRACKER also extend the web plan from its own current expiry
+        let webExpires = planExpires
+        if (plan === 'PRO_TRACKER' && webUser.planExpiresAt && webUser.planExpiresAt > now) {
+          webExpires = new Date(webUser.planExpiresAt.getTime() + daysNum * 24 * 60 * 60 * 1000)
+        }
         await prisma.user.update({
           where: { id: webUser.id },
           data: {
             hasEverPaid: true,
-            ...(plan === 'PRO_TRACKER' ? { plan: 'PRO_TRACKER', planExpiresAt: planExpires } : {}),
+            ...(plan === 'PRO_TRACKER' ? { plan: 'PRO_TRACKER', planExpiresAt: webExpires } : {}),
           },
         })
       }

@@ -133,6 +133,6 @@ export async function GET(req: NextRequest) {
     else errors++
   }
 
-  console.log(`[cron/auto-register-approximate] converted=${ids.length} notified=${notified} errors=${errors}`)
-  return NextResponse.json({ ok: true, converted: ids.length, notified, errors })
+  console.log(`[cron/auto-register-approximate] converted=${staleDrafts.length} notified=${notified} errors=${errors}`)
+  return NextResponse.json({ ok: true, converted: staleDrafts.length, notified, errors })
 }
