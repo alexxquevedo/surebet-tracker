@@ -50,11 +50,17 @@ export async function addPresetBookmakerAction(
     // Same [name + etiqueta] combination must be unique per user
     const existing = await prisma.bookmaker.findFirst({
       where: { userId, name: preset.name, etiqueta: etiquetaVal },
-      select: { id: true },
+      select: { id: true, status: true },
     })
     if (existing) {
+      if (existing.status === 'SUSPENDED') {
+        // Reactivate the suspended bookmaker instead of blocking
+        await prisma.bookmaker.update({ where: { id: existing.id }, data: { status: 'ACTIVE' } })
+        revalidatePath('/bookmakers')
+        return { success: true, id: existing.id }
+      }
       const label = etiquetaVal ? `${preset.name} · ${etiquetaVal}` : preset.name
-      return { success: false, error: `${label} ya existe en tu cuenta` }
+      return { success: false, error: `${label} ya existe y está activa en tu cuenta` }
     }
 
     const saldoFinal = (saldoActual !== undefined && !isNaN(saldoActual) && saldoActual >= 0)

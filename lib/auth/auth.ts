@@ -50,6 +50,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               passwordHash: true,
               plan: true,
               isAdmin: true,
+              settings: { select: { emailLoginAlert: true } },
             },
           })
 
@@ -71,6 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             image: user.image,
             plan: user.plan,
             isAdmin: user.isAdmin,
+            emailLoginAlert: user.settings?.emailLoginAlert ?? true,
           }
         } catch (error) {
           console.error('[Auth] authorize error:', error)
@@ -112,13 +114,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             create: { userId: user.id },
           })
         }
-        // Send login security notification only if the user has it enabled (default: true)
+        // Send login security notification only if the user has it enabled (default: true).
+        // emailLoginAlert is fetched in authorize alongside the user — no extra DB round-trip here.
         if (user.email && !isNewUser && user.id) {
-          const prefs = await prisma.userSettings.findUnique({
-            where:  { userId: user.id },
-            select: { emailLoginAlert: true },
-          })
-          if (prefs?.emailLoginAlert !== false) {
+          const emailLoginAlert = (user as { emailLoginAlert?: boolean }).emailLoginAlert ?? true
+          if (emailLoginAlert !== false) {
             void sendLoginNotificationEmail(user.email, user.name ?? null).catch(console.error)
           }
         }
