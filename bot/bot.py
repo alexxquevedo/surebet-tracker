@@ -57,6 +57,7 @@ DEFAULT_USER_CONFIG = {
     "surebets_live_on": True, "min_profit_surebet": 3.0,
     "min_profit_middle": 2.0, "min_prob_middle": 5.0, "min_profit_value": 5.0,
     "max_days": 2,
+    "block_draw_risk_surebets": True,
     "sports": {
         "soccer": True, "basketball": True,
         "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
@@ -819,8 +820,8 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
             if not son_casas_clon(b1["bookmaker_key"], b2["bookmaker_key"]):
                 result = calcular_surebet(b1["price"], b2["price"])
                 if result:
-                    # Aviso de empate: fútbol y otros deportes con posible draw
-                    SPORTS_WITH_DRAW = {"soccer"}
+                    # Aviso de empate: fútbol y fútbol americano tienen posible empate
+                    SPORTS_WITH_DRAW = {"soccer", "americanfootball"}
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
@@ -926,7 +927,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     ])
     cabecera   = f"📢 Alerta Surebets!{' 🎥 LIVE' if live else ''}\n💵 Beneficio garantizado: {profit:.2f}%"
     sospechoso = "\n⚠️ *Beneficio >15% — verifica cuotas antes de apostar*" if profit > 15 else ""
-    draw_warn  = "\n⚠️ *Fútbol: el empate no está cubierto — puede haber pérdida total*" if ap.get("draw_risk") else ""
+    draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
     return (f"{cabecera}{sospechoso}{draw_warn}\n\n"
             f"{emoji} {nombre_deporte} — {liga}\n"
@@ -980,8 +981,8 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
             except: commence = None
             # Pre-match: skip event when commence is unparseable
             if not live and commence is None: continue
-            # Live: skip future events (API occasionally includes them in live feed)
-            if live and commence and (commence - now).total_seconds() > 300: continue
+            # Live: skip events con hora desconocida o que aún no han empezado (>5 min en el futuro)
+            if live and (not commence or (commence - now).total_seconds() > 300): continue
             for uid in targets:
                 if not tiene_suscripcion(uid): continue
                 # ── Comprobar pausa de alertas ──────────────────
@@ -1002,6 +1003,8 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                         if not cfg.get("surebets_on", True): continue
                         if live and not cfg.get("surebets_live_on", True): continue
                         if ap["profit"] < cfg.get("min_profit_surebet", 3.0): continue
+                        # Bloquear surebets de 2 patas sin empate cubierto (configurable)
+                        if ap.get("draw_risk") and cfg.get("block_draw_risk_surebets", True): continue
                         mensaje = construir_mensaje_surebet(event, ap, sport_key, live, stake=stake)
                         total_surebets += 1
                     elif tipo == "middlebet":
@@ -1603,6 +1606,7 @@ async def menu_config(update, context):
         f"🍀 Prob. mín. Middle: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit mín. Value: *{cfg.get('min_profit_value',5.0)}%*\n"
         f"📆 Filtro Pre-partido: *{cfg['max_days']} días*\n"
+        f"🛡 Bloquear empate sin cubrir: *{'Sí ✅' if cfg.get('block_draw_risk_surebets', True) else 'No ❌'}*\n"
         f"🏅 Deportes: *{sum(cfg['sports'].values())}/{len(cfg['sports'])}*\n"
         f"🏦 Casas: *{sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])}*\n"
         "━━━━━━━━━━━━━━━━━━",
@@ -1612,6 +1616,9 @@ async def menu_config(update, context):
             [InlineKeyboardButton(f"🍀 Prob. Middle mín: {cfg.get('min_prob_middle',5.0)}%", callback_data="cfg_prob_middle")],
             [InlineKeyboardButton(f"📊 Profit Value: {cfg.get('min_profit_value',5.0)}%",    callback_data="cfg_profit_value")],
             [InlineKeyboardButton(f"📆 Filtro Pre-partido: {cfg['max_days']} días",           callback_data="cfg_days")],
+            [InlineKeyboardButton(
+                f"🛡 Empate sin cubrir: {'Bloqueado ✅' if cfg.get('block_draw_risk_surebets', True) else 'Permitido ❌'}",
+                callback_data="cfg_draw_risk")],
             [InlineKeyboardButton("🏅 Deportes",         callback_data="cfg_deportes")],
             [InlineKeyboardButton("🏦 Casas de apuestas", callback_data="cfg_casas")],
             [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
@@ -1753,6 +1760,8 @@ async def handle_numerico(update, context, tipo, accion):
             num = float(valor)
             cfg[campo] = int(num) if campo == "max_days" else round(num, 2)
             guardar_db()
+            # Flush inmediato para no depender del ciclo de 30s
+            asyncio.create_task(flush_to_api())
             await update.callback_query.answer(f"✅ Guardado: {cfg[campo]}{unidad}")
             context.user_data[key] = ""
             if volver == "menu_config": await menu_config(update, context)
@@ -3803,6 +3812,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "casas_ninguna":
         for k in cfg["bookmakers"]: cfg["bookmakers"][k] = False
         guardar_db(); await menu_cfg_casas(update, context)
+    elif data == "cfg_draw_risk":
+        cfg["block_draw_risk_surebets"] = not cfg.get("block_draw_risk_surebets", True)
+        guardar_db()
+        asyncio.create_task(flush_to_api())
+        await menu_config(update, context)
     elif data.startswith("sport_"):
         k = data.replace("sport_","")
         if k in cfg["sports"]: cfg["sports"][k] = not cfg["sports"][k]; guardar_db()
