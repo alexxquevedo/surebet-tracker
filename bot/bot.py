@@ -4445,6 +4445,100 @@ async def cmd_resetstats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("ℹ️ No hay historial local que borrar.")
 
+async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /diagnostico — muestra exactamente cuántas apuestas encuentra el bot y por qué las filtra.
+    Útil para entender por qué el bot está en silencio.
+    """
+    if not tiene_suscripcion(update.effective_user.id):
+        await update.message.reply_text("❌ Necesitas suscripción activa."); return
+
+    uid = update.effective_user.id
+    cfg = get_config(uid)
+    msg = await update.message.reply_text("🔍 Analizando... puede tardar 15-30 segundos.")
+
+    now = datetime.utcnow()
+    active_sports = [s for s, v in cfg["sports"].items() if v]
+    active_bks = [k for k, v in cfg["bookmakers"].items() if v]
+
+    total_events = 0
+    total_surebets_raw = 0
+    blocked_draw = 0
+    blocked_profit = 0
+    blocked_days = 0
+    blocked_bookmakers = 0
+    passed = 0
+
+    sport_detail: list[str] = []
+
+    for sport_key in active_sports:
+        if sport_key == "basketball":
+            events: list = []
+            for _bk in BASKETBALL_API_KEYS:
+                events.extend(await fetch_odds(_bk, live=False))
+                events.extend(await fetch_odds(_bk, live=True))
+        else:
+            events = await fetch_odds(sport_key, live=False)
+            events += await fetch_odds(sport_key, live=True)
+
+        total_events += len(events)
+        sport_surebets = 0
+
+        for event in events:
+            try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
+            except: commence = None
+            apuestas = encontrar_apuestas(event, active_bks, False, sport_key=sport_key)
+            surebets = [ap for ap in apuestas if ap["tipo"] == "surebet"]
+            sport_surebets += len(surebets)
+            total_surebets_raw += len(surebets)
+
+            for ap in surebets:
+                # Simulate each filter
+                if ap.get("draw_risk") and cfg.get("block_draw_risk_surebets", True):
+                    blocked_draw += 1
+                elif ap["profit"] < cfg.get("min_profit_surebet", 3.0):
+                    blocked_profit += 1
+                elif commence and not ((commence - now).total_seconds() < 0 or (commence - now).total_seconds() / 86400 <= cfg["max_days"]):
+                    blocked_days += 1
+                else:
+                    passed += 1
+
+        if sport_surebets > 0:
+            sport_display = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
+            sport_detail.append(f"  {sport_display[0]} {sport_display[1]}: {sport_surebets}")
+
+    block_draw_txt = "Sí ✅" if cfg.get("block_draw_risk_surebets", True) else "No ❌"
+    detail_str = "\n".join(sport_detail) if sport_detail else "  (ningún deporte activo tiene surebets ahora)"
+
+    texto = (
+        f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"*Tu configuración:*\n"
+        f"• Profit mín: {cfg.get('min_profit_surebet', 3.0)}%\n"
+        f"• Bloquear empate sin cubrir: {block_draw_txt}\n"
+        f"• Filtro días: {cfg['max_days']} días\n"
+        f"• Casas activas: {len(active_bks)}/{len(cfg['bookmakers'])}\n"
+        f"• Deportes activos: {len(active_sports)}\n\n"
+        f"*Resultado del escaneo:*\n"
+        f"• Eventos obtenidos de la API: {total_events}\n"
+        f"• Surebets detectadas en bruto: {total_surebets_raw}\n\n"
+        f"*Motivos por los que se filtran:*\n"
+        f"• 🛡 Bloqueadas por riesgo de empate: {blocked_draw}\n"
+        f"• 📉 Profit insuficiente (<{cfg.get('min_profit_surebet',3.0)}%): {blocked_profit}\n"
+        f"• 📆 Fuera del filtro de días: {blocked_days}\n"
+        f"• ✅ *Pasarían todos los filtros: {passed}*\n\n"
+        f"*Surebets por deporte:*\n{detail_str}\n\n"
+        f"{'✅ El bot debería estar mandando alertas.' if passed > 0 else '❌ Ninguna surebet pasa todos los filtros con tu config actual.'}"
+    )
+
+    if passed == 0 and blocked_draw > 0 and blocked_profit == 0:
+        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets bloqueadas por riesgo de empate (fútbol/americano/baloncesto). Si quieres verlas, desactiva esa opción en ⚙️ Configuración."
+    elif passed == 0 and blocked_profit > 0:
+        texto += f"\n\n💡 *Sugerencia:* Baja el profit mínimo. La mayoría de surebets reales están entre 0.5% y 2%."
+    elif total_events == 0:
+        texto += "\n\n⚠️ *La API no devolvió datos.* Puede que la cuota de The Odds API esté agotada. Revisa en theoddsapi.com."
+
+    await msg.edit_text(texto, parse_mode="Markdown")
+
 async def cmd_pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
@@ -4718,6 +4812,7 @@ async def main():
     app.add_handler(CommandHandler("testalerta",    cmd_testalerta))
     app.add_handler(CommandHandler("resetstats",    cmd_resetstats))
     app.add_handler(CommandHandler("resumen",       cmd_resumen))
+    app.add_handler(CommandHandler("diagnostico",   cmd_diagnostico))
 
     # Comandos scanner (admin)
     app.add_handler(CommandHandler("scanner_on",     cmd_scanner_on))
