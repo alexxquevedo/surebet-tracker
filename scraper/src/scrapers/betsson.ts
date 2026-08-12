@@ -59,6 +59,55 @@ interface BetssonState {
   marketGroupEvents: Map<string, string[]>; // mgId → eventIds
 }
 
+/** Parse Kambi offering API format — { events: [{ event:{...}, betOffers:[...] }] } */
+function parseKambiEvents(data: any, sport: Sport, isLive: boolean): ScrapedEvent[] {
+  const kambiItems: any[] = data?.events ?? [];
+  if (!Array.isArray(kambiItems) || kambiItems.length === 0) return [];
+  const first = kambiItems[0];
+  if (!first?.event?.id || !Array.isArray(first?.betOffers)) return [];
+
+  const KAMBI_SPORT: Record<string, Sport> = {
+    FOOTBALL: "FOOTBALL", SOCCER: "FOOTBALL",
+    TENNIS: "TENNIS",
+    BASKETBALL: "BASKETBALL", BASKET: "BASKETBALL",
+  };
+
+  const events: ScrapedEvent[] = [];
+  for (const item of kambiItems) {
+    const ev = item.event;
+    if (!ev) continue;
+    const evSport = String(ev.sport ?? "").toUpperCase();
+    if (KAMBI_SPORT[evSport] !== sport) continue;
+    const state: string = String(ev.state ?? "").toUpperCase();
+    if (isLive && state !== "STARTED") continue;
+    if (!isLive && state !== "NOT_STARTED") continue;
+
+    const parts: any[] = ev.participants ?? [];
+    const home = parts.find((p: any) => p.type === "home")?.name ?? parts[0]?.name ?? "";
+    const away = parts.find((p: any) => p.type === "away")?.name ?? parts[1]?.name ?? "";
+    const eventName: string = ev.englishName ?? (home && away ? `${home} - ${away}` : "");
+    if (!eventName) continue;
+
+    const offers: any[] = item.betOffers ?? [];
+    const main = offers.find((o: any) => o.main === true)
+      ?? offers.find((o: any) => (o.outcomes?.length ?? 0) >= 2 && (o.outcomes?.length ?? 0) <= 3);
+    if (!main) continue;
+
+    const h2h: H2HOutcome[] = (main.outcomes ?? []).map((o: any) => {
+      // Kambi odds are in thousandths (17000 = 1.70)
+      const odds = typeof o.odds === "number" ? o.odds / 1000 : parseFloat(String(o.odds ?? "0")) / 1000;
+      const name: string = o.englishLabel ?? o.label ?? String(o.type ?? "");
+      return odds >= 1.01 && name ? { name, odds } : null;
+    }).filter(Boolean) as H2HOutcome[];
+
+    if (h2h.length >= 2) {
+      const eventKey = buildEventKey(sport, eventName, ev.start ? new Date(ev.start) : undefined);
+      events.push({ bookmaker: "betsson", sport, eventKey, eventName, isLive, market: "h2h", outcomes: h2h });
+    }
+  }
+  return events;
+}
+
 function parseXhrEvents(xhrCaptures: Array<{ url: string; data: any }>): XhrEvent[] {
   const events: XhrEvent[] = [];
   const seen = new Set<string>();
@@ -379,7 +428,7 @@ export class BetssonScraper extends BaseScraper {
 
     page.on("websocket", (ws: any) => {
       const wsUrl: string = ws.url();
-      if (!wsUrl.includes("betsson") && !wsUrl.includes("velnt")) return;
+      if (!wsUrl.includes("betsson") && !wsUrl.includes("velnt") && !wsUrl.includes("kambi")) return;
       ws.on("framereceived", (frame: any) => {
         const raw = frame.payload;
         const payloadStr = typeof raw === "string" ? raw :
@@ -433,11 +482,11 @@ export class BetssonScraper extends BaseScraper {
 
       // Log ALL captured XHR URLs (to discover price endpoints)
       const betssonXhr = xhrCaptures.filter(c =>
-        c.url.includes("betsson") || c.url.includes("bson") || c.url.includes("velnt")
+        c.url.includes("betsson") || c.url.includes("bson") || c.url.includes("velnt") || c.url.includes("kambi")
       );
-      this.log(`XHR: ${xhrCaptures.length} total, ${betssonXhr.length} betsson, ${allXhrEvents.length} events parsed (${sportXhrEvents.length} ${sport})`);
-      if (betssonXhr.length > 0) {
-        this.log(`XHR URLs: ${betssonXhr.slice(0, 8).map(c => c.url.replace(/https?:\/\/[^/]+/, "").slice(0, 70)).join(" | ")}`);
+      this.log(`XHR: ${xhrCaptures.length} total, ${betssonXhr.length} betsson/kambi, ${allXhrEvents.length} events parsed (${sportXhrEvents.length} ${sport})`);
+      if (xhrCaptures.length > 0) {
+        this.log(`XHR URLs: ${xhrCaptures.slice(0, 10).map(c => c.url.replace(/https?:\/\/[^/]+/, "").slice(0, 65)).join(" | ")}`);
       }
 
       // ── 3. Try WS events + markets ────────────────────────────────────────
@@ -477,7 +526,18 @@ export class BetssonScraper extends BaseScraper {
         this.log(`WS: 0 events with odds for ${sport}`);
       }
 
-      // ── 4. DOM fallback — always run to supplement WS ─────────────────────
+      // ── 4. Kambi format XHR — try any captured Kambi offering API response ──
+      for (const { data } of xhrCaptures) {
+        const kambiEvts = parseKambiEvents(data, sport, isLive);
+        if (kambiEvts.length > 0) {
+          const wsKeys = new Set(events.map(e => e.eventKey));
+          const kambiNew = kambiEvts.filter(e => !wsKeys.has(e.eventKey));
+          this.log(`Kambi XHR: ${kambiEvts.length} total, ${kambiNew.length} new ${sport} events`);
+          events.push(...kambiNew);
+        }
+      }
+
+      // ── 5. DOM fallback — always run to supplement WS ─────────────────────
       // WS only delivers prices for events currently featured on the page.
       // DOM captures ALL rendered events (with correct prices from the page).
       // Combine: WS events take precedence; DOM fills the rest.

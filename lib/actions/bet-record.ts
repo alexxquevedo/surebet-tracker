@@ -166,7 +166,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
 
       await tx.bookmaker.update({
         where: { id: bookmakerId },
-        data:  { currentBalance: balSingle.minus(stake), totalStaked: { increment: stake.toNumber() } },
+        data:  { currentBalance: balSingle.minus(stake), totalStaked: { increment: stake.toNumber() }, operationCount: { increment: 1 } },
       })
 
       return created
@@ -331,8 +331,8 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
         bal2 = bal2.plus(deficit2)
       }
 
-      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: bal1.minus(stake1), totalStaked: { increment: stake1.toNumber() } } })
-      await tx.bookmaker.update({ where: { id: bm2Id }, data: { currentBalance: bal2.minus(stake2), totalStaked: { increment: stake2.toNumber() } } })
+      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: bal1.minus(stake1), totalStaked: { increment: stake1.toNumber() }, operationCount: { increment: 1 } } })
+      await tx.bookmaker.update({ where: { id: bm2Id }, data: { currentBalance: bal2.minus(stake2), totalStaked: { increment: stake2.toNumber() }, operationCount: { increment: 1 } } })
 
       return created
     })
@@ -646,6 +646,14 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         },
       })
 
+      // Update per-leg status for multi-leg bets
+      if (bet.legs.length > 1 && returnBookmakerId) {
+        for (const leg of bet.legs) {
+          const legStatus: 'WON' | 'LOST' = leg.bookmakerId === returnBookmakerId ? 'WON' : 'LOST'
+          await tx.betLeg.update({ where: { id: leg.id }, data: { status: legStatus } })
+        }
+      }
+
       if (returnBookmakerId && returnAmount && returnAmount.gt(0)) {
         const bm = await tx.bookmaker.findUnique({
           where: { id: returnBookmakerId },
@@ -923,14 +931,25 @@ export async function deleteOperationAction(
         if (returnTxs.length === 1) {
           const rtx    = returnTxs[0]!
           const retAmt = D(rtx.amount)
+          // Use per-leg profit (retAmt - winning leg stake), not grossProfit across both legs
+          const winningLeg = bet.legs.find(l => l.bookmakerId === rtx.bookmakerId)
+          const winningLegProfit = winningLeg ? retAmt.minus(D(winningLeg.stake)) : grossProfit
           await tx.bookmaker.update({
             where: { id: rtx.bookmakerId },
             data: {
               currentBalance: { decrement: retAmt.toNumber() },
-              totalProfit:    { decrement: grossProfit.toNumber() },
+              totalProfit:    { decrement: winningLegProfit.toNumber() },
               totalReturn:    { decrement: retAmt.toNumber() },
             },
           })
+          // Reverse the totalProfit decrement applied to losing legs at settlement time
+          for (const leg of bet.legs) {
+            if (leg.bookmakerId === rtx.bookmakerId) continue
+            await tx.bookmaker.update({
+              where: { id: leg.bookmakerId },
+              data:  { totalProfit: { increment: D(leg.stake).toNumber() } },
+            })
+          }
         } else if (returnTxs.length > 1) {
           for (const rtx of returnTxs) {
             const retAmt = D(rtx.amount)
@@ -987,8 +1006,8 @@ export async function deleteOperationAction(
         })
       }
 
-      // ── 5. Decrement operationCount for bot-created bets ──────────────────
-      if (bet.createdVia === 'TELEGRAM_BOT') {
+      // ── 5. Decrement operationCount ────────────────────────────────────────
+      {
         if (bet.legs.length > 0) {
           for (const leg of bet.legs) {
             await tx.bookmaker.updateMany({

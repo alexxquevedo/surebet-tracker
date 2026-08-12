@@ -70,11 +70,16 @@ export async function GET(req: NextRequest) {
       datePlaced: { lte: cutoff },
     },
     select: {
-      id:         true,
-      type:       true,
-      title:      true,
-      totalStake: true,
-      user:       { select: { id: true, telegramId: true } },
+      id:                 true,
+      type:               true,
+      title:              true,
+      totalStake:         true,
+      primaryBookmakerId: true,
+      user:               { select: { id: true, telegramId: true } },
+      legs: {
+        where: { deletedAt: null },
+        select: { bookmakerId: true, stake: true },
+      },
     },
   })
 
@@ -99,14 +104,35 @@ export async function GET(req: NextRequest) {
     const userIds    = bets.map((b) => b.id)
     const telegramId = bets[0]!.user.telegramId
 
-    // Mark this user's bets PLACED first (independent of notification success)
+    // Mark this user's bets PLACED and update bookmaker balances
     try {
-      await prisma.betRecord.updateMany({
-        where: { id: { in: userIds } },
-        data:  { status: 'PLACED', isApproximate: true },
+      await prisma.$transaction(async (tx) => {
+        await tx.betRecord.updateMany({
+          where: { id: { in: userIds } },
+          data:  { status: 'PLACED', isApproximate: true },
+        })
+        // Deduct stake from each leg's bookmaker (was skipped at DRAFT creation)
+        for (const bet of bets) {
+          const legs = bet.legs.length > 0 ? bet.legs : []
+          if (legs.length > 0) {
+            for (const leg of legs) {
+              const stakeNum = parseFloat(leg.stake.toString())
+              await tx.bookmaker.update({
+                where: { id: leg.bookmakerId },
+                data:  { currentBalance: { decrement: stakeNum }, totalStaked: { increment: stakeNum }, operationCount: { increment: 1 } },
+              })
+            }
+          } else if (bet.primaryBookmakerId) {
+            const stakeNum = parseFloat(bet.totalStake.toString())
+            await tx.bookmaker.update({
+              where: { id: bet.primaryBookmakerId },
+              data:  { currentBalance: { decrement: stakeNum }, totalStaked: { increment: stakeNum }, operationCount: { increment: 1 } },
+            })
+          }
+        }
       })
     } catch (e) {
-      console.error(`[cron/auto-register-approximate] updateMany failed for user ${bets[0]!.user.id}:`, e)
+      console.error(`[cron/auto-register-approximate] transaction failed for user ${bets[0]!.user.id}:`, e)
       errors++
       continue
     }

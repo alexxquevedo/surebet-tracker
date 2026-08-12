@@ -101,8 +101,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       where: {
         userId,
         deletedAt: null,
-        status:    { in: ['WON', 'LOST', 'CASHOUT', 'VOID'] },
-        datePlaced: { gte: monthStart },
+        status:      { in: ['WON', 'LOST', 'CASHOUT', 'VOID', 'PARTIAL_WIN'] },
+        dateSettled: { gte: monthStart },
       },
       _sum: { grossProfit: true },
     }),
