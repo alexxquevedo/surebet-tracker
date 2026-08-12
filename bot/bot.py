@@ -820,8 +820,8 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
             if not son_casas_clon(b1["bookmaker_key"], b2["bookmaker_key"]):
                 result = calcular_surebet(b1["price"], b2["price"])
                 if result:
-                    # Aviso de empate: fútbol y fútbol americano tienen posible empate
-                    SPORTS_WITH_DRAW = {"soccer", "americanfootball"}
+                    # Fútbol/americano: empate posible. Basket: sin empate pero usuario lo bloquea
+                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "basketball"}
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
@@ -912,6 +912,13 @@ async def fetch_odds(sport_key, live=False):
 
 MARKET_LABELS = {"h2h": "1X2", "totals": "Totales"}
 
+SPORTS_H2H_LABEL = {"soccer"}  # solo fútbol usa "1X2"; el resto "Ganador"
+
+def get_market_label(market: str, sport_key: str) -> str:
+    if market == "h2h":
+        return "1X2" if any(sport_key.startswith(s) for s in SPORTS_H2H_LABEL) else "Ganador"
+    return MARKET_LABELS.get(market, "?")
+
 def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     profit = ap["profit"]
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
@@ -921,7 +928,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
     except: fecha_str = "??/??"
     lineas = "".join([
-        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{MARKET_LABELS.get(l.get('market',''), '?')}] "
+        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
         f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
         for l in ap["legs"]
     ])
@@ -943,7 +950,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
     except: fecha_str = "??/??"
     lineas = "".join([
-        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{MARKET_LABELS.get(l.get('market',''), '?')}] "
+        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
         f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
         for l in ap["legs"]
     ])
