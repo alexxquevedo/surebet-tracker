@@ -54,7 +54,7 @@ MAX_SPORTS_FREEBET       = 2    # máximo de deportes que se escanean en una bú
 
 DEFAULT_USER_CONFIG = {
     "surebets_on": True, "middlebets_on": False, "valuebets_on": False,
-    "surebets_live_on": True, "min_profit_surebet": 3.0,
+    "surebets_live_on": True, "min_profit_surebet": 1.0,
     "min_profit_middle": 2.0, "min_prob_middle": 5.0, "min_profit_value": 5.0,
     "max_days": 2,
     "block_draw_risk_surebets": True,
@@ -80,9 +80,10 @@ BOT_CONFIG = {"scan_interval": 600}
 subscriptions    = {}
 referrals        = {}
 creditos         = {}
-sent_surebets    = {}
-SUREBET_TTL_HOURS = 2
-last_surebet     = {}
+sent_surebets      = {}
+SUREBET_TTL_HOURS  = 2
+live_sent_surebets = {}   # {base_key: {"ts": datetime, "profit": float}}
+last_surebet       = {}
 ultimo_escaneo   = {}
 stats = {
     "surebets_encontradas": 0, "middlebets_encontradas": 0,
@@ -746,10 +747,13 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
 # ANTI-DUPLICADOS
 # ============================================================
 def clave_apuesta(event, apuesta, live, tipo="surebet"):
-    # Sin sufijo live/pre: la misma oportunidad no se envía dos veces aunque
-    # aparezca en ambas llamadas a la API (live=False y live=True) del mismo ciclo
     legs_str = "_".join([f"{l['bookmaker']}{l['outcome']}{l['odd']}" for l in apuesta["legs"]])
     return f"{tipo}_{event['home_team']}_{event['away_team']}_{legs_str}"
+
+def clave_apuesta_base(event, apuesta, tipo="surebet"):
+    """Stable key without odds — for live 180s/0.5pp dedup window."""
+    bks = "_".join(sorted(l["bookmaker"] for l in apuesta["legs"]))
+    return f"{tipo}_{event['home_team']}_{event['away_team']}_{bks}"
 
 def ya_enviada(clave):
     if clave not in sent_surebets: return False
@@ -759,6 +763,16 @@ def ya_enviada(clave):
 
 def marcar_enviada(clave):
     sent_surebets[clave] = datetime.now()
+
+def ya_enviada_live(base_clave, profit):
+    """Suppress live re-alert unless 180s elapsed or profit improved >=0.5pp."""
+    rec = live_sent_surebets.get(base_clave)
+    if not rec: return False
+    elapsed = (datetime.now() - rec["ts"]).total_seconds()
+    return elapsed < 180 and (profit - rec["profit"]) < 0.5
+
+def marcar_enviada_live(base_clave, profit):
+    live_sent_surebets[base_clave] = {"ts": datetime.now(), "profit": profit}
 
 # ============================================================
 # CÁLCULO
@@ -1021,9 +1035,15 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                         mensaje = construir_mensaje_middle(event, ap, sport_key, live, stake=stake)
                         total_middles += 1
                     else: continue
-                    clave = f"{uid}_{clave_apuesta(event, ap, live, tipo)}"
-                    if ya_enviada(clave): continue
-                    marcar_enviada(clave)
+                    if live:
+                        # Live: deduplicate by stable key (no odds) — 180s cooldown or ≥0.5pp profit improvement
+                        base_clave = f"{uid}_{clave_apuesta_base(event, ap, tipo)}"
+                        if ya_enviada_live(base_clave, ap["profit"]): continue
+                        marcar_enviada_live(base_clave, ap["profit"])
+                    else:
+                        clave = f"{uid}_{clave_apuesta(event, ap, live, tipo)}"
+                        if ya_enviada(clave): continue
+                        marcar_enviada(clave)
                     ultimo_escaneo[uid] = datetime.now()
                     # ── Keyboard para usuarios con DualStats PRO_TRACKER ─
                     kb = None

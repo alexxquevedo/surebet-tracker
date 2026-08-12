@@ -4,8 +4,9 @@
  * Sportium usa la plataforma Kambi. El widget en el frontend usa WebSocket/protobuf
  * para odds en tiempo real, inaccesible via intercepción XHR.
  * Estrategia: llamada directa a la Kambi Offering API (eu-offering.kambicdn.org).
- * Kambi customer ID para Sportium ES = "spses".
+ * Kambi customer ID para Sportium ES = "sisp" (v2 API).
  * Kambi odds format: milli-odds (1750 = 1.75 decimal).
+ * Nota: eu-offering.kambicdn.org bloquea IPs de datacenter — necesita proxy residencial ES.
  */
 
 import * as https from "https";
@@ -15,14 +16,15 @@ import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
 // ─── Kambi API directa ───────────────────────────────────────────────────────
-// Kambi customer ID para Sportium España: "spses"
+// Kambi customer ID para Sportium España: "sisp" (v2 API, código confirmado por Gemini)
 // eu-offering.kambicdn.org es el CDN estándar de Kambi para Europa
 
-const KAMBI_CUSTOMER = "spses";
-const KAMBI_BASE = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
+const KAMBI_CUSTOMER = "sisp";
+const KAMBI_BASE_V2   = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_CUSTOMER}`;
+const KAMBI_BASE_V2018 = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
+const KAMBI_BASE = KAMBI_BASE_V2; // primary; v2018 kept as fallback reference
 const KAMBI_PUSH_WS = "wss://push.kambicdn.org/live-offering";
-// Subscribe channel for all live events — filter by sport after receiving
-const KAMBI_PUSH_CHANNEL = `/live/offering/v2018/${KAMBI_CUSTOMER}/es_ES/events`;
+const KAMBI_PUSH_CHANNEL = `/live/offering/v2/${KAMBI_CUSTOMER}/es_ES/events`;
 
 const KAMBI_SPORT_FILTER: Record<Sport, string> = {
   FOOTBALL:   "FOOTBALL",
@@ -33,7 +35,12 @@ const KAMBI_SPORT_FILTER: Record<Sport, string> = {
 function httpsGet(url: string): Promise<any> {
   return new Promise((resolve) => {
     const req = https.get(url, {
-      headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://sports.sportium.es/",
+        "Origin": "https://sports.sportium.es",
+      },
     }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c));
@@ -48,13 +55,23 @@ function httpsGet(url: string): Promise<any> {
 }
 
 async function fetchKambiDirect(sport: Sport, isLive: boolean): Promise<any | null> {
-  const filter = KAMBI_SPORT_FILTER[sport];
+  const filter = KAMBI_SPORT_FILTER[sport].toLowerCase();
   if (isLive) {
-    const url = `${KAMBI_BASE}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filter}&includeParticipants=true`;
-    return httpsGet(url);
+    // v2 listView format (Gemini-validated for sisp customer)
+    const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`;
+    const v2result = await httpsGet(urlV2);
+    if (v2result?.liveEvents?.length || v2result?.events?.length) return v2result;
+    // Fallback: v2018 all-sports live endpoint
+    const urlFallback = `${KAMBI_BASE_V2018}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filter.toUpperCase()}&includeParticipants=true`;
+    return httpsGet(urlFallback);
   } else {
-    const url = `${KAMBI_BASE}/betoffer/group.json?lang=es&market=ES&category=${filter}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
-    return httpsGet(url);
+    // v2 listView prematch
+    const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all.json?lang=es&market=ES&numberOfEvents=200`;
+    const v2result = await httpsGet(urlV2);
+    if (v2result?.events?.length) return v2result;
+    // Fallback: v2018 group endpoint
+    const urlFallback = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${filter.toUpperCase()}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
+    return httpsGet(urlFallback);
   }
 }
 

@@ -55,31 +55,43 @@ class BrowserManager {
   // proxyHint truthy → route through residential proxy browser.
   // Pass result of getProxyForScraper(name) — returns undefined for direct scrapers.
   async newPage(proxyHint?: { server: string; username?: string; password?: string }): Promise<{ page: Page; ctx: BrowserContext }> {
-    await pageSemaphore.acquire(); // max 3 concurrent pages
-    const browser = proxyHint
-      ? await this.getResidentialBrowser(proxyHint)
-      : await this.getBrowser();
-    const ctx = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      locale: "es-ES",
-      timezoneId: "Europe/Madrid",
-      viewport: { width: 1920, height: 1080 },
-      extraHTTPHeaders: { "Accept-Language": "es-ES,es;q=0.9,en;q=0.8" },
-    });
-    // Remove automation fingerprints
-    await ctx.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => false });
-      // @ts-ignore
-      delete navigator.__proto__.webdriver;
-    });
-    const page = await ctx.newPage();
-    // Wrap ctx.close() to release the semaphore automatically
-    const originalClose = ctx.close.bind(ctx);
-    ctx.close = async () => {
-      try { await originalClose(); } finally { pageSemaphore.release(); }
-    };
-    return { page, ctx };
+    await pageSemaphore.acquire();
+    try {
+      const browser = proxyHint
+        ? await this.getResidentialBrowser(proxyHint)
+        : await this.getBrowser();
+      const ctx = await browser.newContext({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        locale: "es-ES",
+        timezoneId: "Europe/Madrid",
+        viewport: { width: 1920, height: 1080 },
+        extraHTTPHeaders: { "Accept-Language": "es-ES,es;q=0.9,en;q=0.8" },
+      });
+      await ctx.addInitScript(() => {
+        Object.defineProperty(navigator, "webdriver", { get: () => false });
+        // @ts-ignore
+        delete navigator.__proto__.webdriver;
+      });
+      const page = await ctx.newPage();
+      // Block media that wastes RAM (images, fonts, video) — speeds up load, reduces OOM risk
+      await page.route("**/*", (route: any) => {
+        const t: string = route.request().resourceType();
+        if (["image", "stylesheet", "font", "media", "other"].includes(t)) return route.abort();
+        return route.continue();
+      });
+      const originalClose = ctx.close.bind(ctx);
+      ctx.close = async () => {
+        try { await originalClose(); } catch { /* browser may already be gone */ } finally { pageSemaphore.release(); }
+      };
+      return { page, ctx };
+    } catch (err) {
+      // Release semaphore if we fail before ctx.close() wraps it
+      pageSemaphore.release();
+      // Reset crashed browser so next call spawns a fresh one
+      if (!proxyHint) { try { await this.directBrowser?.close(); } catch { /* ignore */ } this.directBrowser = null; }
+      throw err;
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -110,7 +122,7 @@ class Semaphore {
   }
 }
 
-export const pageSemaphore = new Semaphore(3); // max 3 concurrent browser pages
+export const pageSemaphore = new Semaphore(1); // 1 page at a time — VPS has limited RAM
 
 /** Log current page URL + title — call when a scraper finds 0 events to diagnose wrong URL / redirect */
 export async function logPageState(page: Page, scraperName: string, apiCalls?: string[]): Promise<void> {

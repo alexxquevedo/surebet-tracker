@@ -17,7 +17,8 @@ import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 import { saveFailedPayload } from "./playwright-base";
 import { config } from "../config";
 
-const BASE_ES = "https://sports.bwin.es/cds/api/v1";
+const BASE_ES    = "https://sports.bwin.es/cds/api/v1";
+const BASE_ES_V2 = "https://sports.bwin.es/cds-api/mfe/sportsbook/v2";
 
 const APP_CONTEXT = JSON.stringify({ application: { id: 2, type: 1 }, channel: { id: 1, type: 1 } });
 
@@ -208,28 +209,66 @@ export class BwinScraper extends BaseScraper {
     }
   }
 
+  private async fetchV2(sport: Sport, isLive: boolean): Promise<any | null> {
+    const sportId = SPORT_IDS[sport];
+    const proxyUrl = config.scraperProxies.bwin;
+    const path = `sports/${sportId}/events?lang=es&facility=composite${isLive ? "&state=InPlay" : "&sort=StartDate&maxItems=100"}`;
+    const tryFetch = async (proxyUrl?: string): Promise<any | null> => {
+      try {
+        const instance = axios.create({
+          baseURL: BASE_ES_V2,
+          timeout: 15_000,
+          headers: { ...DEFAULT_HEADERS, "x-app-context": undefined },
+          ...(proxyUrl ? { proxy: (() => { const u = new URL(proxyUrl); return { protocol: u.protocol.replace(":", "") as "http", host: u.hostname, port: parseInt(u.port, 10) }; })() } : {}),
+        });
+        const res = await instance.get(path);
+        return res.data ?? null;
+      } catch { return null; }
+    };
+    const direct = await tryFetch();
+    if (direct) return direct;
+    if (proxyUrl) return tryFetch(proxyUrl);
+    return null;
+  }
+
   private async scrape(isLive: boolean): Promise<ScrapedEvent[]> {
     const result = await this.fetchFixtures(isLive ? "Live" : "Latest");
-    if (!result) return [];
-
-    const { data, usedProxy } = result;
-    if (usedProxy) this.log("Usando proxy para bwin.es");
-
-    // Log estructura para diagnóstico si 0 eventos
-    const topKeys = typeof data === "object" ? Object.keys(data ?? {}).slice(0, 8).join(", ") : String(data).slice(0, 80);
-    this.log(`bwin.es fixture-view (${isLive ? "Live" : "Prematch"}): keys=[${topKeys}]`);
 
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) {
-      const events = parseCdsFixtures(data, sport, isLive);
-      if (events.length > 0) {
-        this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events`);
-        all.push(...events);
-      } else {
-        this.warn(`${isLive ? "Live" : "Prematch"} ${sport}: 0 eventos`);
-        if (all.length === 0) saveFailedPayload("bwin", sport, "0_events", data);
+
+    if (result) {
+      const { data, usedProxy } = result;
+      if (usedProxy) this.log("Usando proxy para bwin.es");
+      const topKeys = typeof data === "object" ? Object.keys(data ?? {}).slice(0, 8).join(", ") : String(data).slice(0, 80);
+      this.log(`bwin.es fixture-view (${isLive ? "Live" : "Prematch"}) v1: keys=[${topKeys}]`);
+
+      for (const sport of this.sports) {
+        const events = parseCdsFixtures(data, sport, isLive);
+        if (events.length > 0) {
+          this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events (v1)`);
+          all.push(...events);
+        } else {
+          this.warn(`${isLive ? "Live" : "Prematch"} ${sport}: 0 eventos v1, probando v2`);
+        }
       }
     }
+
+    // v2 fallback for any sport that returned 0 events
+    const missingSports = this.sports.filter(sp => !all.some(e => e.sport === sp));
+    for (const sport of missingSports) {
+      const v2data = await this.fetchV2(sport, isLive);
+      if (!v2data) { saveFailedPayload("bwin", sport, "0_events_v2_null", null); continue; }
+      const topKeys = typeof v2data === "object" ? Object.keys(v2data ?? {}).slice(0, 8).join(", ") : String(v2data).slice(0, 60);
+      this.log(`bwin v2 ${sport}: keys=[${topKeys}]`);
+      const events = parseCdsFixtures(v2data, sport, isLive);
+      if (events.length > 0) {
+        this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events (v2)`);
+        all.push(...events);
+      } else {
+        saveFailedPayload("bwin", sport, "0_events_v2", v2data);
+      }
+    }
+
     return all;
   }
 
