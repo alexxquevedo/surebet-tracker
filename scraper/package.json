@@ -1,0 +1,26 @@
+{
+  "name": "fidesbot-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Odds scraper + arbitrage detector for FidesBot. Runs on VPS, writes to shared PostgreSQL.",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "db:generate": "npx prisma generate --schema=../prisma/schema.prisma",
+    "install:browser": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^5.22.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.2"
+  }
+}
