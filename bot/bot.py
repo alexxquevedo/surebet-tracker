@@ -72,7 +72,11 @@ DEFAULT_USER_CONFIG = {
     "stake": 100.0,
 }
 
-BOT_CONFIG = {"scan_interval": 600}
+BOT_CONFIG = {
+    "scan_prematch_interval": 300,  # 5 min — prematch opportunities last hours
+    "scan_live_interval":     120,  # 2 min — default when live games active
+    "scan_live_backoff":      600,  # 10 min — when 3+ consecutive live scans return 0 events
+}
 
 # ============================================================
 # ESTADO GLOBAL
@@ -85,11 +89,16 @@ SUREBET_TTL_HOURS  = 2
 live_sent_surebets = {}   # {base_key: {"ts": datetime, "profit": float}}
 last_surebet       = {}
 ultimo_escaneo   = {}
+ultimo_scan_manual = {}   # {uid: datetime} — cooldown para "Escanear"
 stats = {
     "surebets_encontradas": 0, "middlebets_encontradas": 0,
     "valuebets_encontradas": 0, "ultima_actualizacion": None,
     "proxima_actualizacion": None,
 }
+# API credits (The Odds API — actualizado en cada llamada)
+api_credits_remaining: int | None = None
+api_credits_used:      int | None = None
+live_empty_streak: int = 0   # nº de escaneos live consecutivos con 0 eventos
 
 # ── DualStats — nuevos estados ─────────────────────────────
 pendientes           = {}   # {user_id: [lista de dicts]}
@@ -411,6 +420,9 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
         cfg.get("bookmakers", {}).pop("marathonbet", None)  # eliminada del mercado español
+        # Migrar min_profit_surebet de 3.0 (default antiguo) a 1.5 (más útil en la práctica)
+        if cfg.get("min_profit_surebet") == 3.0:
+            cfg["min_profit_surebet"] = 1.5
         # Migrar basketball_nba/euroleague -> basketball
         bk_nba = cfg.get("sports", {}).pop("basketball_nba", None)
         bk_eu  = cfg.get("sports", {}).pop("basketball_euroleague", None)
@@ -513,6 +525,8 @@ async def cargar_db():
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
                         cfg.get("bookmakers", {}).pop("marathonbet", None)
+                        if cfg.get("min_profit_surebet") == 3.0:
+                            cfg["min_profit_surebet"] = 1.5
                         # Migrar basketball_nba/euroleague -> basketball
                         bk_nba = cfg.get("sports", {}).pop("basketball_nba", None)
                         bk_eu  = cfg.get("sports", {}).pop("basketball_euroleague", None)
@@ -924,13 +938,31 @@ def calcular_stakes(total, legs):
 # FETCH Y ESCANEO
 # ============================================================
 async def fetch_odds(sport_key, live=False):
+    global api_credits_remaining, api_credits_used
     url = (f"{ODDS_API_BASE}/sports/{sport_key}/odds"
            f"?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals"
            f"&oddsFormat=decimal&inPlay={'true' if live else 'false'}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                return await resp.json() if resp.status == 200 else []
+                # Capture credit headers from The Odds API
+                remaining = resp.headers.get("x-requests-remaining")
+                used      = resp.headers.get("x-requests-used")
+                if remaining is not None:
+                    api_credits_remaining = int(remaining)
+                if used is not None:
+                    api_credits_used = int(used)
+
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status in (401, 422, 429):
+                    body = await resp.text()
+                    logger.error(f"[API] {sport_key} HTTP {resp.status} — cuota agotada o clave inválida: {body[:200]}")
+                    if api_credits_remaining == 0:
+                        logger.error("[API] ⚠️  0 créditos restantes — desactivando escaneo hasta recarga mensual.")
+                else:
+                    logger.warning(f"[API] {sport_key} HTTP {resp.status}")
+                return []
     except Exception as e:
         logger.error(f"Error {sport_key}: {e}"); return []
 
@@ -1094,13 +1126,31 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         stats["surebets_encontradas"]  = total_surebets
         stats["middlebets_encontradas"] = total_middles
         stats["ultima_actualizacion"]   = datetime.now()
-        stats["proxima_actualizacion"]  = datetime.now() + timedelta(seconds=BOT_CONFIG["scan_interval"])
+        interval = BOT_CONFIG["scan_live_interval"] if live else BOT_CONFIG["scan_prematch_interval"]
+        stats["proxima_actualizacion"]  = datetime.now() + timedelta(seconds=interval)
     logger.info(f"Escaneo {'LIVE' if live else 'PRE'}: {total_surebets} surebets, {total_middles} middles")
     return total_surebets + total_middles
 
-async def tarea_escaneo(context: ContextTypes.DEFAULT_TYPE):
+async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[prematch] Sin créditos API — escaneo omitido.")
+        return
     await escanear_y_alertar(context.application, live=False)
-    await escanear_y_alertar(context.application, live=True)
+
+async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
+    global live_empty_streak
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[live] Sin créditos API — escaneo omitido.")
+        return
+    found = await escanear_y_alertar(context.application, live=True)
+    if found == 0:
+        live_empty_streak += 1
+    else:
+        live_empty_streak = 0
+    # Log créditos tras cada ciclo live
+    if api_credits_remaining is not None:
+        logger.info(f"[API] Créditos restantes: {api_credits_remaining} | Usados: {api_credits_used}"
+                    + (" ⚠️ BAJOS" if api_credits_remaining < 500 else ""))
 
 # ============================================================
 # MENÚ NO SUSCRITO
@@ -1249,6 +1299,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     casas_str   = "\n".join([f" • 🟢 {n}: Activa" for n in BOOKMAKER_NAMES.values()])
     total_subs  = len([u for u in subscriptions if tiene_suscripcion(u)])
+    creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
+                      if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
+    creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
     await update.message.reply_text(
         f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
@@ -1262,8 +1315,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 Valuebets: *{stats['valuebets_encontradas']}* ⏳ {ultima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🆕 {ahora.strftime('%d/%m/%Y %H:%M')}\n"
-        f"⏱️ Próx. informe: {proxima}\n"
-        f"⚠️ Actualizado cada ~{BOT_CONFIG['scan_interval']//60} min",
+        f"⏱️ Pre-partido: cada {BOT_CONFIG['scan_prematch_interval']//60} min | "
+        f"Live: cada {BOT_CONFIG['scan_live_interval']//60} min\n"
+        f"{creditos_linea}{creditos_alerta}",
         parse_mode="Markdown")
 
 # ============================================================
@@ -1356,7 +1410,7 @@ async def panel_surebets(update, context):
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
         f"💎 *Panel Surebets*\n━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ Actualizado cada ~{BOT_CONFIG['scan_interval']//60} min\n\n"
+        f"⚠️ Pre: ~{BOT_CONFIG['scan_prematch_interval']//60} min | Live: ~{BOT_CONFIG['scan_live_interval']//60} min\n\n"
         f"💎 Nº Surebets: *{stats['surebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -1377,7 +1431,7 @@ async def panel_middles(update, context):
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
         f"🎯 *Panel Middlebets*\n━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ Actualizado cada ~{BOT_CONFIG['scan_interval']//60} min\n\n"
+        f"⚠️ Pre: ~{BOT_CONFIG['scan_prematch_interval']//60} min | Live: ~{BOT_CONFIG['scan_live_interval']//60} min\n\n"
         f"🎯 Nº Middlebets: *{stats['middlebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -3856,18 +3910,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("|")
         await handle_numerico(update, context, parts[1], parts[2])
     elif data == "escanear_ahora":
+        # Cooldown: un escaneo manual cada 2 minutos por usuario
+        SCAN_COOLDOWN_S = 120
+        last_manual = ultimo_scan_manual.get(user_id)
+        if last_manual:
+            elapsed = (datetime.now() - last_manual).total_seconds()
+            if elapsed < SCAN_COOLDOWN_S:
+                secs_left = int(SCAN_COOLDOWN_S - elapsed)
+                await query.answer(f"⏳ Espera {secs_left}s antes del siguiente escaneo.", show_alert=True)
+                return
+        ultimo_scan_manual[user_id] = datetime.now()
+        creditos_aviso = f"\n\n💳 API: {api_credits_remaining} créditos restantes." if api_credits_remaining is not None and api_credits_remaining < 500 else ""
         await query.edit_message_text("🔍 Escaneando apuestas... espera un momento.")
         total_pre  = await escanear_y_alertar(context.application, live=False, user_ids=[user_id])
         total_live = await escanear_y_alertar(context.application, live=True,  user_ids=[user_id])
         total = total_pre + total_live
         ultimo_escaneo[user_id] = datetime.now()
         if total == 0:
+            sin_creditos = api_credits_remaining is not None and api_credits_remaining <= 0
+            motivo = ("⚠️ *Sin créditos de API.* El bot no puede obtener datos hasta la recarga mensual."
+                      if sin_creditos else
+                      "❌ No se han encontrado apuestas con tu configuración.\n\n"
+                      "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.")
             await query.edit_message_text(
-                "🔍 *Escaneo completado*\n\n❌ No se han encontrado apuestas con tu configuración.\n\n"
-                "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.",
+                f"🔍 *Escaneo completado*\n\n{motivo}{creditos_aviso}",
                 parse_mode="Markdown")
         else:
-            await query.edit_message_text(f"✅ *{total} apuesta(s) encontradas y enviadas.*", parse_mode="Markdown")
+            await query.edit_message_text(
+                f"✅ *{total} apuesta(s) encontradas y enviadas.*{creditos_aviso}",
+                parse_mode="Markdown")
         await asyncio.sleep(3)
         await menu_principal(update, context)
     elif data in ("buscar_surebets", "buscar_middles"):
@@ -4844,13 +4915,14 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_texto))
 
     # Tareas periódicas
-    app.job_queue.run_repeating(tarea_flush_db,                    interval=30,    first=30)   # sync DB → API cada 30s
-    app.job_queue.run_repeating(tarea_escaneo,                    interval=BOT_CONFIG["scan_interval"], first=15)
-    app.job_queue.run_repeating(tarea_verificar_suscripciones,    interval=3600,  first=60)
-    app.job_queue.run_repeating(tarea_recordatorios_pendientes,   interval=3600,  first=120)  # cada 1h
-    app.job_queue.run_repeating(tarea_digest_semanal,             interval=24*3600, first=_segundos_hasta_lunes_9am())  # digest semanal lunes 9h
+    app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
+    app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
+    app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
+    app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
+    app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
+    app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
 
-    logger.info("🚀 FidesBot v22 iniciado — DualStats Tracker integration active.")
+    logger.info("🚀 FidesBot v23 iniciado — live 2min / prematch 5min / API credit tracking.")
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
