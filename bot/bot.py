@@ -132,7 +132,7 @@ BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
 BOOKMAKER_NAMES = {
     "bet365": "Bet365", "winamax": "Winamax", "pokerstars": "PokerStars",
     "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
-    "marathonbet": "Marathonbet", "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
+    "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
     "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
 }
 
@@ -279,7 +279,7 @@ Envía /start para reiniciar la sesión. Si el problema persiste, escribe al adm
 NOVEDADES_HUB = (
     "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
     "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
-    "🕒 Última actualización: *12/06/2026*\n\n"
+    "🕒 Última actualización: *15/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
@@ -290,34 +290,44 @@ NOVEDADES_HUB = (
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕒 *Última actualización — Junio 2026*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "✅ Hub de soporte con FAQ, TyC, ID y estado del bot\n"
-    "✅ Botón de búsqueda en cada panel de apuestas\n"
-    "✅ Contador de alertas recibidas hoy en el panel\n"
-    "✅ Modo pausa de alertas (2h / 4h / 8h)\n"
-    "✅ Avisos automáticos de vencimiento (7 días y 1 día antes)\n"
-    "✅ Combinadas expandibles con lista de selecciones\n"
-    "✅ Cálculo de P&L corregido para combinadas\n"
-    "✅ Teclado numérico en móvil + soporte para comas\n"
-    "✅ Exportación Excel mejorada\n"
-    "✅ Borrado automático de comandos del usuario\n"
+    "🕒 *Última actualización — Agosto 2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
+    "web y registra apuestas directamente desde las alertas del bot\n"
+    "✅ Sistema de créditos y freebets — búsquedas gratuitas por invitar "
+    "amigos o renovar suscripción\n"
+    "✅ Alertas live mejoradas — cooldown inteligente (180s o +0.5pp "
+    "de profit) para evitar spam de cuotas fluctuantes\n"
+    "✅ Auto-registro aproximado — las apuestas pendientes de confirmar "
+    "se registran solas a las 48h con aviso por Telegram\n"
+    "✅ Flujo de Apuestas Pendientes — acepta o rechaza cada alerta "
+    "antes de registrarla en DualStats\n"
+    "✅ 14 correcciones de bugs (julio 2026): PARTIAL_WIN en dashboard, "
+    "P&L por pierna, renovación de suscripción, depósito/retiro, etc.\n"
+    "✅ Diagnóstico mejorado — explica exactamente por qué no llegan alertas\n"
+    "✅ Mercado de labels corregido: fútbol muestra [1X2], resto [Ganador]\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
     "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "🔜 Freebets — convertidor de freebets en dinero real\n"
     "🔜 Valuebets — alertas de apuestas con valor esperado positivo\n"
-    "🔜 Calculadora de stake avanzada\n"
-    "🔜 Estadísticas personales de surebets aprovechadas\n"
-    "🔜 Más casas de apuestas integradas\n\n"
+    "🔜 Más casas de apuestas — Codere, Sportium y Bwin con datos propios\n"
+    "🔜 Alertas WebSocket — latencia <100ms en vez del escaneo cada 10 min\n"
+    "🔜 Calculadora de stake avanzada (Kelly, plana, proporcional)\n"
+    "🔜 Estadísticas personales de surebets aprovechadas vs perdidas\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_AVISOS = (
     "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "ℹ️ No hay avisos activos en este momento.\n\n"
-    "_Esta sección se actualizará cuando haya comunicados importantes "
-    "sobre el servicio, mantenimientos o cambios de precios._\n"
+    "⚠️ *Cobertura de casas españolas limitada*\n"
+    "Las casas como Codere, Sportium, Bwin y William Hill España "
+    "requieren proxies residenciales para acceder a sus odds. "
+    "Estamos trabajando en activarlas próximamente.\n\n"
+    "ℹ️ *Fuente de datos*\n"
+    "Las surebets se detectan vía The Odds API (mercados internacionales). "
+    "Cuantas más casas tengas activadas, más oportunidades verás.\n\n"
+    "_Esta sección se actualiza con comunicados importantes "
+    "sobre el servicio o cambios de precios._\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 
@@ -1024,8 +1034,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                         if not cfg.get("surebets_on", True): continue
                         if live and not cfg.get("surebets_live_on", True): continue
                         if ap["profit"] < cfg.get("min_profit_surebet", 3.0): continue
-                        # Bloquear surebets de 2 patas sin empate cubierto (configurable)
-                        if ap.get("draw_risk") and cfg.get("block_draw_risk_surebets", True): continue
+                        if ap.get("draw_risk"): continue  # empate sin cubrir siempre bloqueado
                         mensaje = construir_mensaje_surebet(event, ap, sport_key, live, stake=stake)
                         total_surebets += 1
                     elif tipo == "middlebet":
@@ -1633,7 +1642,6 @@ async def menu_config(update, context):
         f"🍀 Prob. mín. Middle: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit mín. Value: *{cfg.get('min_profit_value',5.0)}%*\n"
         f"📆 Filtro Pre-partido: *{cfg['max_days']} días*\n"
-        f"🛡 Bloquear empate sin cubrir: *{'Sí ✅' if cfg.get('block_draw_risk_surebets', True) else 'No ❌'}*\n"
         f"🏅 Deportes: *{sum(cfg['sports'].values())}/{len(cfg['sports'])}*\n"
         f"🏦 Casas: *{sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])}*\n"
         "━━━━━━━━━━━━━━━━━━",
@@ -1643,9 +1651,6 @@ async def menu_config(update, context):
             [InlineKeyboardButton(f"🍀 Prob. Middle mín: {cfg.get('min_prob_middle',5.0)}%", callback_data="cfg_prob_middle")],
             [InlineKeyboardButton(f"📊 Profit Value: {cfg.get('min_profit_value',5.0)}%",    callback_data="cfg_profit_value")],
             [InlineKeyboardButton(f"📆 Filtro Pre-partido: {cfg['max_days']} días",           callback_data="cfg_days")],
-            [InlineKeyboardButton(
-                f"🛡 Empate sin cubrir: {'Bloqueado ✅' if cfg.get('block_draw_risk_surebets', True) else 'Permitido ❌'}",
-                callback_data="cfg_draw_risk")],
             [InlineKeyboardButton("🏅 Deportes",         callback_data="cfg_deportes")],
             [InlineKeyboardButton("🏦 Casas de apuestas", callback_data="cfg_casas")],
             [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
@@ -3839,11 +3844,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "casas_ninguna":
         for k in cfg["bookmakers"]: cfg["bookmakers"][k] = False
         guardar_db(); await menu_cfg_casas(update, context)
-    elif data == "cfg_draw_risk":
-        cfg["block_draw_risk_surebets"] = not cfg.get("block_draw_risk_surebets", True)
-        guardar_db()
-        asyncio.create_task(flush_to_api())
-        await menu_config(update, context)
     elif data.startswith("sport_"):
         k = data.replace("sport_","")
         if k in cfg["sports"]: cfg["sports"][k] = not cfg["sports"][k]; guardar_db()
@@ -4513,8 +4513,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
             total_surebets_raw += len(surebets)
 
             for ap in surebets:
-                # Simulate each filter
-                if ap.get("draw_risk") and cfg.get("block_draw_risk_surebets", True):
+                if ap.get("draw_risk"):
                     blocked_draw += 1
                 elif ap["profit"] < cfg.get("min_profit_surebet", 3.0):
                     blocked_profit += 1
@@ -4527,14 +4526,12 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sport_display = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
             sport_detail.append(f"  {sport_display[0]} {sport_display[1]}: {sport_surebets}")
 
-    block_draw_txt = "Sí ✅" if cfg.get("block_draw_risk_surebets", True) else "No ❌"
     detail_str = "\n".join(sport_detail) if sport_detail else "  (ningún deporte activo tiene surebets ahora)"
 
     texto = (
         f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"*Tu configuración:*\n"
         f"• Profit mín: {cfg.get('min_profit_surebet', 3.0)}%\n"
-        f"• Bloquear empate sin cubrir: {block_draw_txt}\n"
         f"• Filtro días: {cfg['max_days']} días\n"
         f"• Casas activas: {len(active_bks)}/{len(cfg['bookmakers'])}\n"
         f"• Deportes activos: {len(active_sports)}\n\n"
@@ -4551,7 +4548,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if passed == 0 and blocked_draw > 0 and blocked_profit == 0:
-        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets bloqueadas por riesgo de empate (fútbol/americano/baloncesto). Si quieres verlas, desactiva esa opción en ⚙️ Configuración."
+        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets detectadas pero bloqueadas porque el empate no está cubierto (fútbol/americano/baloncesto sin 3ª pata). Prueba a buscar en otros deportes o esperar a que aparezcan más eventos."
     elif passed == 0 and blocked_profit > 0:
         texto += f"\n\n💡 *Sugerencia:* Baja el profit mínimo. La mayoría de surebets reales están entre 0.5% y 2%."
     elif total_events == 0:
