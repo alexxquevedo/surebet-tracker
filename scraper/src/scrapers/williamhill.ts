@@ -10,6 +10,7 @@
 
 import { BaseScraper } from "./base";
 import { browserManager, dismissCookies, parseOdds, logPageState, getProxyForScraper, saveFailedPayload } from "./playwright-base";
+import type { BrowserContext } from "playwright";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
@@ -178,35 +179,54 @@ function tryAllParsers(data: any, bookmaker: string, sport: Sport, isLive: boole
 
 // ─── Scraper ─────────────────────────────────────────────────────────────────
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isBrowserCrash(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err ?? "").toLowerCase();
+  return (
+    msg.includes("browser has been closed") ||
+    msg.includes("target closed") ||
+    msg.includes("context or browser has been closed")
+  );
+}
+
 export class WilliamHillScraper extends BaseScraper {
   readonly name = "williamhill";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
-  private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage(getProxyForScraper('williamhill'));
-
+  private async scrapePage(url: string, sport: Sport, isLive: boolean, retried = false): Promise<ScrapedEvent[]> {
+    let ctx: BrowserContext | null = null;
     const captures: Array<{ url: string; data: any }> = [];
-    // Track ALL request URLs (regardless of status) for geo-block diagnosis
     const allRequestUrls: Array<{ url: string; status: number }> = [];
-
-    page.on("response", async (res: any) => {
-      const u: string = res.url();
-      const status: number = res.status();
-      if (!u.includes("google-analytics") && !u.includes("hotjar") && !u.startsWith("data:")) {
-        allRequestUrls.push({ url: u, status });
-      }
-      if (status !== 200) return;
-      const ct: string = res.headers()?.["content-type"] ?? "";
-      if (!ct.includes("json") && !ct.includes("javascript")) return;
-      if (u.includes("google-analytics") || u.includes("hotjar") || u.includes("optimizely")) return;
-      try {
-        const data = await res.json().catch(() => null);
-        if (data && JSON.stringify(data).length > 300) captures.push({ url: u, data });
-      } catch { /* non-JSON */ }
-    });
-
     const events: ScrapedEvent[] = [];
+    let browserCrashed = false;
+
     try {
+      ctx = await browserManager.createContext(getProxyForScraper('williamhill'));
+      const page = await ctx.newPage();
+      // Block media that wastes RAM
+      await page.route("**/*", (route: any) => {
+        const t: string = route.request().resourceType();
+        if (["image", "stylesheet", "font", "media", "other"].includes(t)) return route.abort();
+        return route.continue();
+      });
+
+      page.on("response", async (res: any) => {
+        const u: string = res.url();
+        const status: number = res.status();
+        if (!u.includes("google-analytics") && !u.includes("hotjar") && !u.startsWith("data:")) {
+          allRequestUrls.push({ url: u, status });
+        }
+        if (status !== 200) return;
+        const ct: string = res.headers()?.["content-type"] ?? "";
+        if (!ct.includes("json") && !ct.includes("javascript")) return;
+        if (u.includes("google-analytics") || u.includes("hotjar") || u.includes("optimizely")) return;
+        try {
+          const data = await res.json().catch(() => null);
+          if (data && JSON.stringify(data).length > 300) captures.push({ url: u, data });
+        } catch { /* non-JSON */ }
+      });
+
       // Load homepage first so WH establishes a guest session (cookies, CAS token) before betting API calls
       await page.goto("https://www.williamhill.es/", { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {});
       await dismissCookies(page);
@@ -299,10 +319,32 @@ export class WilliamHillScraper extends BaseScraper {
         this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events`);
       }
     } catch (err) {
-      this.warn(`${sport} failed`, err);
+      if (isBrowserCrash(err) && !retried) {
+        this.warn(`Browser crash (${sport}) — reiniciando Chromium (backoff 1500ms)`);
+        browserCrashed = true;
+      } else {
+        this.warn(`${sport} failed`, err);
+      }
     } finally {
-      await ctx.close();
+      if (ctx) {
+        await ctx.close().catch(() => {});
+      } else {
+        browserManager.releaseSemaphore();
+      }
     }
+
+    if (browserCrashed) {
+      browserManager.recordCrash();
+      await browserManager.shutdown();
+      await sleep(1500);
+      if (browserManager.isCoolingDown()) {
+        this.warn(`Browser en cool-down — cancelando reintento para ${sport}`);
+        return events;
+      }
+      return this.scrapePage(url, sport, isLive, true);
+    }
+
+    browserManager.recordSuccess();
     return events;
   }
 

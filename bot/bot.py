@@ -3,6 +3,8 @@ import aiohttp
 import logging
 import json
 import os
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from copy import deepcopy
@@ -57,7 +59,7 @@ DEFAULT_USER_CONFIG = {
     "surebets_live_on": True, "min_profit_surebet": 1.0,
     "min_profit_middle": 2.0, "min_prob_middle": 5.0, "min_profit_value": 5.0,
     "max_days": 2,
-    "block_draw_risk_surebets": True,
+    "block_draw_risk_surebets": False,
     "sports": {
         "soccer": True, "basketball": True,
         "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
@@ -144,6 +146,17 @@ BOOKMAKER_NAMES = {
     "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
     "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
 }
+
+# Región regulatoria: ES = DGOJ (España), INT = plataforma internacional
+BOOKMAKER_REGION = {
+    "betsson": "ES", "winamax": "ES", "codere": "ES", "sportium": "ES",
+    "williamhill": "ES", "bwin": "ES", "daznbet": "ES", "retabet": "ES",
+    "bet365": "INT", "betfair": "INT", "pokerstars": "INT",
+    "leovegas": "INT", "888sport": "INT",
+}
+
+# DualStats odds endpoint (VPS scraper data via Supabase)
+DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
     {"kambi", "888sport", "leovegas", "betsson", "nordicbet", "unibet"},
@@ -863,11 +876,13 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
-                        {"bookmaker":b1["bookmaker_title"],"outcome":h2h_names[0],
-                         "odd":b1["price"],"stake_pct":result["stake1_pct"],
+                        {"bookmaker":b1["bookmaker_title"],"bookmaker_key":b1["bookmaker_key"],
+                         "region": BOOKMAKER_REGION.get(b1["bookmaker_key"], ""),
+                         "outcome":h2h_names[0],"odd":b1["price"],"stake_pct":result["stake1_pct"],
                          "market":"h2h","point":b1["point"],"description":b1["description"]},
-                        {"bookmaker":b2["bookmaker_title"],"outcome":h2h_names[1],
-                         "odd":b2["price"],"stake_pct":result["stake2_pct"],
+                        {"bookmaker":b2["bookmaker_title"],"bookmaker_key":b2["bookmaker_key"],
+                         "region": BOOKMAKER_REGION.get(b2["bookmaker_key"], ""),
+                         "outcome":h2h_names[1],"odd":b2["price"],"stake_pct":result["stake2_pct"],
                          "market":"h2h","point":b2["point"],"description":b2["description"]},
                     ]})
     if buscar_middles:
@@ -966,6 +981,288 @@ async def fetch_odds(sport_key, live=False):
     except Exception as e:
         logger.error(f"Error {sport_key}: {e}"); return []
 
+# ── Odds API sport_key → VPS SportType (for filtering DualStats events) ────────
+_VPS_SPORT_MAP = {
+    "soccer": "FOOTBALL", "basketball": "BASKETBALL", "tennis": "TENNIS",
+    "baseball_mlb": "BASEBALL", "icehockey_nhl": "HOCKEY",
+    "rugbyleague": "RUGBY", "cricket": "CRICKET", "golf": "GOLF",
+}
+
+def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
+    """Convert one DualStats /api/bot/odds event to The Odds API event format."""
+    bk_map: dict[str, dict] = {}  # bookmaker_key → {key, title, markets:[...]}
+    for item in ev.get("bookmakerOdds", []):
+        bk  = item["bookmaker"]
+        mkt = item["market"]
+        raw = item.get("outcomes", [])
+        outcomes_api: list[dict] = []
+        if mkt == "h2h":
+            for o in (raw if isinstance(raw, list) else []):
+                outcomes_api.append({"name": o.get("name", ""), "price": float(o.get("odds", 0))})
+        elif mkt == "totals":
+            for o in (raw if isinstance(raw, list) else []):
+                line = o.get("line")
+                if o.get("over"):
+                    outcomes_api.append({"name": "Over",  "price": float(o["over"]),  "point": line})
+                if o.get("under"):
+                    outcomes_api.append({"name": "Under", "price": float(o["under"]), "point": line})
+        if not outcomes_api:
+            continue
+        if bk not in bk_map:
+            bk_map[bk] = {"key": bk, "title": BOOKMAKER_NAMES.get(bk, bk.title()), "markets": []}
+        bk_map[bk]["markets"].append({"key": mkt, "outcomes": outcomes_api})
+    if not bk_map:
+        return None
+    parts = ev.get("eventName", "").split(" vs ", 1)
+    if len(parts) == 2:
+        home, away = parts[0].strip(), parts[1].strip()
+    else:
+        parts2 = ev.get("eventName", "").split(" - ", 1)
+        home = parts2[0].strip() if parts2 else ev.get("eventName", "")
+        away = parts2[1].strip() if len(parts2) > 1 else ""
+    return {
+        "id":            ev.get("eventKey", ""),
+        "sport_key":     sport_key,
+        "sport_title":   ev.get("league") or LEAGUE_MAP.get(sport_key, sport_key),
+        "commence_time": ev.get("startTime") or "2099-01-01T00:00:00Z",
+        "home_team":     home,
+        "away_team":     away,
+        "_source":       "dualstats",      # internal tag — not sent to Telegram
+        "bookmakers":    list(bk_map.values()),
+    }
+
+async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
+    """Fetch VPS scraper odds from DualStats /api/bot/odds endpoint."""
+    if not DUALSTATS_API_KEY:
+        return []
+    vps_sport = _VPS_SPORT_MAP.get(sport_key)
+    if not vps_sport:
+        return []
+    max_age = 60 if live else 300
+    params = f"?live={'true' if live else 'false'}&maxAge={max_age}"
+    url    = f"{DUALSTATS_ODDS_URL}{params}"
+    headers = {"x-bot-secret": DUALSTATS_API_KEY}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"[DualStats odds] {sport_key} HTTP {resp.status}")
+                    return []
+                data = await resp.json()
+                events_raw = [e for e in data.get("events", []) if e.get("sport") == vps_sport]
+                result = []
+                for ev in events_raw:
+                    converted = _convert_vps_event_to_odds_api(ev, sport_key)
+                    if converted:
+                        result.append(converted)
+                logger.info(f"[DualStats] {sport_key} {'live' if live else 'pre'}: {len(result)} events")
+                return result
+    except Exception as e:
+        logger.error(f"[DualStats odds] {sport_key}: {e}")
+        return []
+
+# ── Cross-source matching engine (Odds API UUID ↔ DualStats eventKey) ─────────
+
+_TEAM_STOP_WORDS = frozenset({"fc", "cf", "cd", "sd", "real", "club", "de", "del", "la", "el", "ac", "as", "sk"})
+
+def _normalize_team(name: str) -> str:
+    """Lowercase, remove accents, strip common club suffixes."""
+    nfkd = unicodedata.normalize("NFKD", name.lower())
+    ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
+    tokens = re.sub(r"[^a-z0-9 ]", " ", ascii_str).split()
+    return " ".join(t for t in tokens if t not in _TEAM_STOP_WORDS)
+
+def _jaro(s1: str, s2: str) -> float:
+    if s1 == s2:
+        return 1.0
+    if not s1 or not s2:
+        return 0.0
+    match_dist = max(len(s1), len(s2)) // 2 - 1
+    s1_match = [False] * len(s1)
+    s2_match = [False] * len(s2)
+    matches = 0
+    for i, c1 in enumerate(s1):
+        lo = max(0, i - match_dist)
+        hi = min(len(s2) - 1, i + match_dist)
+        for j in range(lo, hi + 1):
+            if s2_match[j] or c1 != s2[j]:
+                continue
+            s1_match[i] = s2_match[j] = True
+            matches += 1
+            break
+    if not matches:
+        return 0.0
+    trans = 0
+    k = 0
+    for i, flag in enumerate(s1_match):
+        if not flag:
+            continue
+        while not s2_match[k]:
+            k += 1
+        if s1[i] != s2[k]:
+            trans += 1
+        k += 1
+    return (matches / len(s1) + matches / len(s2) + (matches - trans / 2) / matches) / 3
+
+def _jaro_winkler(s1: str, s2: str, p: float = 0.1) -> float:
+    jaro = _jaro(s1, s2)
+    if jaro < 0.7:
+        return jaro
+    prefix = 0
+    for c1, c2 in zip(s1[:4], s2[:4]):
+        if c1 == c2:
+            prefix += 1
+        else:
+            break
+    return jaro + prefix * p * (1 - jaro)
+
+def _event_team_similarity(ev_a: dict, ev_b: dict) -> float:
+    ha = _normalize_team(ev_a.get("home_team", ""))
+    aa = _normalize_team(ev_a.get("away_team", ""))
+    hb = _normalize_team(ev_b.get("home_team", ""))
+    ab = _normalize_team(ev_b.get("away_team", ""))
+    if not (ha and aa and hb and ab):
+        return 0.0
+    direct  = (_jaro_winkler(ha, hb) + _jaro_winkler(aa, ab)) / 2
+    reverse = (_jaro_winkler(ha, ab) + _jaro_winkler(aa, hb)) / 2
+    return max(direct, reverse)
+
+def _merge_cross_source_events(events: list, live: bool) -> list:
+    """
+    Merge DualStats events into matching Odds API events by team-name similarity.
+    Threshold: Jaro-Winkler ≥ 0.82. Unmatched DualStats events are appended.
+    """
+    THRESHOLD = 0.82
+    TIME_WINDOW_SECS = 60 * 60  # ±60 min for prematch
+
+    odds_api = [e for e in events if e.get("_source") != "dualstats"]
+    dualstats = [e for e in events if e.get("_source") == "dualstats"]
+
+    if not odds_api or not dualstats:
+        return events
+
+    merged = list(odds_api)
+    unmatched = []
+
+    for ds in dualstats:
+        try:
+            ds_time = datetime.fromisoformat(ds.get("commence_time", "").replace("Z", ""))
+        except Exception:
+            ds_time = None
+
+        best_score, best_match = 0.0, None
+        for oa in merged:
+            if ds.get("sport_key") != oa.get("sport_key"):
+                continue  # strict sport_key equality — evita falsos matches entre deportes
+            if not live and ds_time:
+                try:
+                    oa_time = datetime.fromisoformat(oa.get("commence_time", "").replace("Z", ""))
+                    if abs((ds_time - oa_time).total_seconds()) > TIME_WINDOW_SECS:
+                        continue
+                except Exception:
+                    pass
+            score = _event_team_similarity(ds, oa)
+            if score > best_score:
+                best_score, best_match = score, oa
+
+        if best_score >= THRESHOLD and best_match is not None:
+            existing_keys = {bk["key"] for bk in best_match.get("bookmakers", [])}
+            for bk in ds.get("bookmakers", []):
+                if bk["key"] not in existing_keys:
+                    best_match.setdefault("bookmakers", []).append(bk)
+            logger.debug(
+                f"[cross-match] {ds.get('home_team')} vs {ds.get('away_team')} "
+                f"↔ {best_match.get('home_team')} vs {best_match.get('away_team')} "
+                f"score={best_score:.3f}"
+            )
+        else:
+            unmatched.append(ds)
+
+    merged.extend(unmatched)
+    return merged
+
+# ── Telegram rate-limiting queue (30 msg/s global, 1 msg/s per chat) ──────────
+
+class TelegramMessageTask:
+    """Message envelope for asyncio rate-limit queue. Exposes a Future for callers
+    that need to await the sent Message object (e.g. to capture message_id)."""
+    __slots__ = ("chat_id", "text", "kwargs", "future", "profit")
+
+    def __init__(self, chat_id: int, text: str, profit: float = 0.0, **kwargs):
+        self.chat_id = chat_id
+        self.text    = text
+        self.profit  = profit
+        self.kwargs  = kwargs
+        self.future: asyncio.Future = asyncio.get_running_loop().create_future()
+
+_tg_queue: asyncio.Queue | None = None
+_tg_last_per_chat: dict[int, float] = {}
+
+async def _telegram_sender_task(app_bot):
+    """Background sender — drains _tg_queue respecting Telegram rate limits."""
+    global _tg_queue
+    last_global: float = 0.0
+    min_global_gap = 1 / 30   # 30 msg/s ≈ 33 ms
+    min_chat_gap   = 1.0      # 1 msg/s per chat
+    while True:
+        try:
+            task: TelegramMessageTask = await asyncio.wait_for(_tg_queue.get(), timeout=5.0)
+        except asyncio.TimeoutError:
+            continue
+        loop = asyncio.get_event_loop()
+        now = loop.time()
+        gap_global = min_global_gap - (now - last_global)
+        if gap_global > 0:
+            await asyncio.sleep(gap_global)
+        last_chat = _tg_last_per_chat.get(task.chat_id, 0.0)
+        gap_chat  = min_chat_gap - (loop.time() - last_chat)
+        if gap_chat > 0:
+            await asyncio.sleep(gap_chat)
+        try:
+            msg = await app_bot.send_message(chat_id=task.chat_id, text=task.text, **task.kwargs)
+            if not task.future.done():
+                task.future.set_result(msg)
+        except Exception as e:
+            logger.error(f"[TG sender] chat {task.chat_id}: {e}")
+            if not task.future.done():
+                task.future.set_exception(e)
+        t = loop.time()
+        last_global                    = t
+        _tg_last_per_chat[task.chat_id] = t
+        _tg_queue.task_done()
+
+async def tg_send(app_bot, chat_id: int, text: str, _profit: float = 0.0, **kwargs):
+    """
+    Enqueue a Telegram message for rate-limited delivery.
+    Returns an asyncio.Future that resolves to the sent Message (for message_id capture).
+    Falls back to direct send if queue not initialized.
+    On QueueFull: displaces the lowest-profit queued task if new task has higher profit;
+    otherwise drops the new task (backpressure).
+    """
+    global _tg_queue
+    if _tg_queue is None:
+        return await app_bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    task = TelegramMessageTask(chat_id, text, profit=_profit, **kwargs)
+    if not _tg_queue.full():
+        _tg_queue.put_nowait(task)
+        return task.future
+    # Priority backpressure: displace the lowest-profit queued task
+    q_deque = getattr(_tg_queue, "_queue", None)
+    if q_deque is not None and len(q_deque) > 0:
+        min_idx = min(range(len(q_deque)), key=lambda i: getattr(q_deque[i], "profit", 0.0))
+        evicted = q_deque[min_idx]
+        if _profit > getattr(evicted, "profit", 0.0):
+            q_deque[min_idx] = task
+            evicted.future.cancel()
+            logger.warning(
+                f"[TG queue] priority swap: evicted profit={getattr(evicted, 'profit', 0.0):.2f}% "
+                f"→ new profit={_profit:.2f}% to {chat_id}"
+            )
+            return task.future
+    task.future.cancel()
+    logger.warning(f"[TG queue] full ({_tg_queue.maxsize}) — dropped alert to {chat_id} (profit={_profit:.2f}%)")
+    return None
+
 MARKET_LABELS = {"h2h": "1X2", "totals": "Totales"}
 
 SPORTS_H2H_LABEL = {"soccer"}  # solo fútbol usa "1X2"; el resto "Ganador"
@@ -983,12 +1280,13 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
     except: fecha_str = "??/??"
-    lineas = "".join([
-        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
-        f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
-        for l in ap["legs"]
-    ])
-    cabecera   = f"📢 Alerta Surebets!{' 🎥 LIVE' if live else ''}\n💵 Beneficio garantizado: {profit:.2f}%"
+    def _leg_line(l):
+        region_tag = f" [{l['region']}]" if l.get("region") else ""
+        return (f"📕 {l['bookmaker']}{region_tag} 📍 {formatear_outcome(l)} "
+                f"[{get_market_label(l.get('market',''), sport_key)}] "
+                f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n")
+    lineas   = "".join(_leg_line(l) for l in ap["legs"])
+    cabecera = f"📢 Alerta Surebets!{' 🎥 LIVE' if live else ''}\n💵 Beneficio garantizado: {profit:.2f}%"
     sospechoso = "\n⚠️ *Beneficio >15% — verifica cuotas antes de apostar*" if profit > 15 else ""
     draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
@@ -1033,12 +1331,22 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
     for sport_key in all_sports:
+        # Concurrent fetch: The Odds API (international) + DualStats (VPS, ES casas)
         if sport_key == "basketball":
-            events = []
-            for _bk in BASKETBALL_API_KEYS:
-                events.extend(await fetch_odds(_bk, live=live))
+            odds_tasks = [fetch_odds(_bk, live=live) for _bk in BASKETBALL_API_KEYS]
         else:
-            events = await fetch_odds(sport_key, live=live)
+            odds_tasks = [fetch_odds(sport_key, live=live)]
+        odds_tasks.append(fetch_dualstats_odds(sport_key, live=live))
+        results_list = await asyncio.gather(*odds_tasks, return_exceptions=True)
+
+        # Collect events from both sources, then merge cross-source by Jaro-Winkler team-name matching
+        events: list[dict] = []
+        for result in results_list:
+            if isinstance(result, Exception):
+                logger.error(f"fetch error {sport_key}: {result}")
+                continue
+            events.extend(result)
+        events = _merge_cross_source_events(events, live)
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
             except: commence = None
@@ -1065,8 +1373,8 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                     if tipo == "surebet":
                         if not cfg.get("surebets_on", True): continue
                         if live and not cfg.get("surebets_live_on", True): continue
-                        if ap["profit"] < cfg.get("min_profit_surebet", 3.0): continue
-                        if ap.get("draw_risk"): continue  # empate sin cubrir siempre bloqueado
+                        if ap["profit"] < cfg.get("min_profit_surebet", 1.0): continue
+                        if ap.get("draw_risk") and cfg.get("block_draw_risk_surebets", False): continue
                         mensaje = construir_mensaje_surebet(event, ap, sport_key, live, stake=stake)
                         total_surebets += 1
                     elif tipo == "middlebet":
@@ -1109,19 +1417,32 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                             InlineKeyboardButton("❌ No hecha", callback_data=f"ANH_{uid}_{alert_id}"),
                         ]])
                     try:
-                        sent = await app.bot.send_message(chat_id=uid, text=mensaje, reply_markup=kb)
-                        if kb and cache_key in alerta_cache:
-                            alerta_cache[cache_key]["msg_id"] = sent.message_id
-                            _save_alerts_cache()
+                        if kb:
+                            # tg_send + asyncio.shield para capturar message_id para edición DualStats
+                            fut = await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], reply_markup=kb)
+                            if asyncio.isfuture(fut):
+                                try:
+                                    sent = await asyncio.wait_for(asyncio.shield(fut), timeout=10.0)
+                                    if sent and cache_key in alerta_cache:
+                                        alerta_cache[cache_key]["msg_id"] = sent.message_id
+                                        _save_alerts_cache()
+                                except Exception:
+                                    logger.warning(f"[DualStats] No se pudo capturar message_id uid={uid}")
+                            elif fut is not None:
+                                # Direct send (queue None) — fut ES el Message
+                                if cache_key in alerta_cache:
+                                    alerta_cache[cache_key]["msg_id"] = fut.message_id
+                                    _save_alerts_cache()
+                        else:
+                            await tg_send(app.bot, uid, mensaje, _profit=ap["profit"])
                         last_surebet[uid] = ap
                         # ── Contador diario ─────────────────────
                         hoy = datetime.now().date()
                         if uid not in alertas_hoy or alertas_hoy[uid]["date"] != hoy:
                             alertas_hoy[uid] = {"date": hoy, "count": 0}
                         alertas_hoy[uid]["count"] += 1
-                        await asyncio.sleep(0.1)
                     except Exception as e:
-                        logger.error(f"Error enviando a {uid}: {e}")
+                        logger.error(f"Error enviando alerta a {uid}: {e}")
     if not user_ids:
         stats["surebets_encontradas"]  = total_surebets
         stats["middlebets_encontradas"] = total_middles
@@ -4922,7 +5243,12 @@ async def main():
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
     app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
 
-    logger.info("🚀 FidesBot v23 iniciado — live 2min / prematch 5min / API credit tracking.")
+    # ── Telegram rate-limiting queue ──────────────────────────
+    global _tg_queue
+    _tg_queue = asyncio.Queue(maxsize=500)
+    asyncio.create_task(_telegram_sender_task(app.bot))
+
+    logger.info("🚀 FidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)

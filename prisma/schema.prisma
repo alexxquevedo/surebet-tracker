@@ -906,6 +906,7 @@ model ScannedOdds {
 
   @@unique([bookmaker, eventKey, market])
   @@index([sport, isLive, scrapedAt])
+  @@index([isLive, scrapedAt])
   @@index([eventKey])
   @@map("scanned_odds")
 }

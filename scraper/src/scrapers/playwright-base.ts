@@ -8,9 +8,21 @@ import * as path from "path";
 import { chromium, Browser, BrowserContext, Page } from "playwright";
 import { config } from "../config";
 
+const CTX_OPTIONS = {
+  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  locale: "es-ES",
+  timezoneId: "Europe/Madrid",
+  viewport: { width: 1920, height: 1080 },
+  extraHTTPHeaders: { "Accept-Language": "es-ES,es;q=0.9,en;q=0.8" },
+};
+
 class BrowserManager {
   private directBrowser: Browser | null = null;
   private proxyBrowser: Browser | null = null;
+  private consecutiveCrashCount = 0;
+  private coolDownUntil = 0;
+  private lastPingMs = 0;
+  private readonly PING_INTERVAL_MS = 30_000;
 
   private async launchChromium(proxy?: { server: string; username?: string; password?: string }): Promise<Browser> {
     const executablePath = process.env.CHROMIUM_PATH || undefined;
@@ -29,7 +41,24 @@ class BrowserManager {
 
   // Direct browser (no proxy) — used by Betsson, Winamax, etc.
   async getBrowser(): Promise<Browser> {
-    if (!this.directBrowser?.isConnected()) {
+    if (this.coolDownUntil > Date.now()) {
+      const remaining = Math.ceil((this.coolDownUntil - Date.now()) / 1000);
+      throw new Error(`BrowserManager en cool-down — espera ${remaining}s antes del próximo intento`);
+    }
+    if (this.directBrowser) {
+      if (!this.directBrowser.isConnected()) {
+        // WebSocket to browser process closed — tear down and relaunch
+        await this.shutdown();
+      } else {
+        // Async zombie ping: creates a throwaway context with 500ms timeout
+        const alive = await this.pingBrowser(this.directBrowser);
+        if (!alive) {
+          console.warn("[BrowserManager] Zombie detectado (ping timeout 500ms) — shutdown forzado");
+          await this.shutdown();
+        }
+      }
+    }
+    if (!this.directBrowser) {
       this.directBrowser = await this.launchChromium(
         config.proxy.enabled
           ? {
@@ -52,27 +81,44 @@ class BrowserManager {
     return this.proxyBrowser;
   }
 
-  // proxyHint truthy → route through residential proxy browser.
-  // Pass result of getProxyForScraper(name) — returns undefined for direct scrapers.
-  async newPage(proxyHint?: { server: string; username?: string; password?: string }): Promise<{ page: Page; ctx: BrowserContext }> {
+  // Creates a browser context with the semaphore already acquired.
+  // The ctx.close() wrapper releases the semaphore — always call it (or releaseSemaphore()).
+  async createContext(proxyHint?: { server: string; username?: string; password?: string }): Promise<BrowserContext> {
     await pageSemaphore.acquire();
     try {
       const browser = proxyHint
         ? await this.getResidentialBrowser(proxyHint)
         : await this.getBrowser();
-      const ctx = await browser.newContext({
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        locale: "es-ES",
-        timezoneId: "Europe/Madrid",
-        viewport: { width: 1920, height: 1080 },
-        extraHTTPHeaders: { "Accept-Language": "es-ES,es;q=0.9,en;q=0.8" },
-      });
+      const ctx = await browser.newContext(CTX_OPTIONS);
       await ctx.addInitScript(() => {
         Object.defineProperty(navigator, "webdriver", { get: () => false });
         // @ts-ignore
         delete navigator.__proto__.webdriver;
       });
+      const originalClose = ctx.close.bind(ctx);
+      ctx.close = async () => {
+        try { await originalClose(); } catch { /* browser may already be gone */ } finally { pageSemaphore.release(); }
+      };
+      return ctx;
+    } catch (err) {
+      // Context never created — release semaphore manually
+      pageSemaphore.release();
+      if (!proxyHint) { try { await this.directBrowser?.close(); } catch { /* ignore */ } this.directBrowser = null; }
+      throw err;
+    }
+  }
+
+  // Explicit semaphore release for callers that acquired via createContext() but
+  // never got a context object (catch branch where ctx === null).
+  releaseSemaphore(): void {
+    pageSemaphore.release();
+  }
+
+  // proxyHint truthy → route through residential proxy browser.
+  // Pass result of getProxyForScraper(name) — returns undefined for direct scrapers.
+  async newPage(proxyHint?: { server: string; username?: string; password?: string }): Promise<{ page: Page; ctx: BrowserContext }> {
+    const ctx = await this.createContext(proxyHint);
+    try {
       const page = await ctx.newPage();
       // Block media that wastes RAM (images, fonts, video) — speeds up load, reduces OOM risk
       await page.route("**/*", (route: any) => {
@@ -80,16 +126,9 @@ class BrowserManager {
         if (["image", "stylesheet", "font", "media", "other"].includes(t)) return route.abort();
         return route.continue();
       });
-      const originalClose = ctx.close.bind(ctx);
-      ctx.close = async () => {
-        try { await originalClose(); } catch { /* browser may already be gone */ } finally { pageSemaphore.release(); }
-      };
       return { page, ctx };
     } catch (err) {
-      // Release semaphore if we fail before ctx.close() wraps it
-      pageSemaphore.release();
-      // Reset crashed browser so next call spawns a fresh one
-      if (!proxyHint) { try { await this.directBrowser?.close(); } catch { /* ignore */ } this.directBrowser = null; }
+      await ctx.close().catch(() => {});
       throw err;
     }
   }
@@ -97,6 +136,44 @@ class BrowserManager {
   async shutdown(): Promise<void> {
     if (this.directBrowser) { await this.directBrowser.close(); this.directBrowser = null; }
     if (this.proxyBrowser) { await this.proxyBrowser.close(); this.proxyBrowser = null; }
+  }
+
+  recordCrash(): void {
+    this.consecutiveCrashCount++;
+    if (this.consecutiveCrashCount >= 3) {
+      this.coolDownUntil = Date.now() + 60_000;
+      console.warn(
+        `[BrowserManager] ${this.consecutiveCrashCount} crashes consecutivos — cool-down 60s ` +
+        `hasta ${new Date(this.coolDownUntil).toISOString()}`
+      );
+      this.consecutiveCrashCount = 0;
+    }
+  }
+
+  recordSuccess(): void {
+    this.consecutiveCrashCount = 0;
+  }
+
+  isCoolingDown(): boolean {
+    return Date.now() < this.coolDownUntil;
+  }
+
+  private async pingBrowser(browser: Browser): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.lastPingMs < this.PING_INTERVAL_MS) return true;
+    let ctx: BrowserContext | null = null;
+    try {
+      const pingTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("zombie ping timeout")), 500)
+      );
+      ctx = await Promise.race([browser.newContext(CTX_OPTIONS), pingTimeout]);
+      this.lastPingMs = Date.now();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (ctx) await ctx.close().catch(() => {});
+    }
   }
 }
 

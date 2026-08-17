@@ -12,6 +12,7 @@
 
 import { BaseScraper } from "./base";
 import { browserManager, dismissCookies, parseOdds } from "./playwright-base";
+import type { BrowserContext } from "playwright";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
@@ -418,43 +419,64 @@ async function domExtract(
   return domEvents;
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isBrowserCrash(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err ?? "").toLowerCase();
+  return (
+    msg.includes("browser has been closed") ||
+    msg.includes("target closed") ||
+    msg.includes("context or browser has been closed")
+  );
+}
+
 export class BetssonScraper extends BaseScraper {
   readonly name = "betsson";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
-  private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage();
+  private async scrapePage(url: string, sport: Sport, isLive: boolean, retried = false): Promise<ScrapedEvent[]> {
+    let ctx: BrowserContext | null = null;
     const wsMessages: Array<{ payload: any }> = [];
-
-    page.on("websocket", (ws: any) => {
-      const wsUrl: string = ws.url();
-      if (!wsUrl.includes("betsson") && !wsUrl.includes("velnt") && !wsUrl.includes("kambi")) return;
-      ws.on("framereceived", (frame: any) => {
-        const raw = frame.payload;
-        const payloadStr = typeof raw === "string" ? raw :
-          (Buffer.isBuffer(raw) ? raw.toString("utf8") : "");
-        if (payloadStr.length < 10) return;
-        try {
-          const parsed = JSON.parse(payloadStr);
-          if (parsed?.data) wsMessages.push({ payload: parsed });
-        } catch { /* binary or non-JSON */ }
-      });
-    });
-
     const xhrCaptures: Array<{ url: string; data: any }> = [];
-    page.on("response", async (res: any) => {
-      if (res.status() !== 200) return;
-      const ct: string = res.headers()?.["content-type"] ?? "";
-      if (!ct.includes("json")) return;
-      try {
-        const data = await res.json();
-        const str = JSON.stringify(data);
-        if (str.length > 100) xhrCaptures.push({ url: res.url(), data });
-      } catch { /* ok */ }
-    });
-
     const events: ScrapedEvent[] = [];
+    let browserCrashed = false;
+
     try {
+      ctx = await browserManager.createContext();
+      const page = await ctx.newPage();
+      // Block media that wastes RAM
+      await page.route("**/*", (route: any) => {
+        const t: string = route.request().resourceType();
+        if (["image", "stylesheet", "font", "media", "other"].includes(t)) return route.abort();
+        return route.continue();
+      });
+
+      page.on("websocket", (ws: any) => {
+        const wsUrl: string = ws.url();
+        if (!wsUrl.includes("betsson") && !wsUrl.includes("velnt") && !wsUrl.includes("kambi")) return;
+        ws.on("framereceived", (frame: any) => {
+          const raw = frame.payload;
+          const payloadStr = typeof raw === "string" ? raw :
+            (Buffer.isBuffer(raw) ? raw.toString("utf8") : "");
+          if (payloadStr.length < 10) return;
+          try {
+            const parsed = JSON.parse(payloadStr);
+            if (parsed?.data) wsMessages.push({ payload: parsed });
+          } catch { /* binary or non-JSON */ }
+        });
+      });
+
+      page.on("response", async (res: any) => {
+        if (res.status() !== 200) return;
+        const ct: string = res.headers()?.["content-type"] ?? "";
+        if (!ct.includes("json")) return;
+        try {
+          const data = await res.json();
+          const str = JSON.stringify(data);
+          if (str.length > 100) xhrCaptures.push({ url: res.url(), data });
+        } catch { /* ok */ }
+      });
+
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
       await dismissCookies(page);
       await page.waitForTimeout(15_000); // wait for WS state + XHR
@@ -569,10 +591,33 @@ export class BetssonScraper extends BaseScraper {
 
       this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events`);
     } catch (err) {
-      this.warn(`${sport} ${isLive ? "live" : "prematch"} failed`, err);
+      if (isBrowserCrash(err) && !retried) {
+        this.warn(`Browser crash (${sport}) — reiniciando Chromium (backoff 1500ms)`);
+        browserCrashed = true;
+      } else {
+        this.warn(`${sport} ${isLive ? "live" : "prematch"} failed`, err);
+      }
     } finally {
-      await ctx.close();
+      if (ctx) {
+        await ctx.close().catch(() => {});
+      } else {
+        // createContext() failed — semaphore was never wrapped into ctx.close()
+        browserManager.releaseSemaphore();
+      }
     }
+
+    if (browserCrashed) {
+      browserManager.recordCrash();
+      await browserManager.shutdown();
+      await sleep(1500);
+      if (browserManager.isCoolingDown()) {
+        this.warn(`Browser en cool-down — cancelando reintento para ${sport}`);
+        return events;
+      }
+      return this.scrapePage(url, sport, isLive, true);
+    }
+
+    browserManager.recordSuccess();
     return events;
   }
 

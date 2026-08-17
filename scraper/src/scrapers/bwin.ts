@@ -26,10 +26,13 @@ const DEFAULT_HEADERS = {
   Accept: "application/json",
   "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "X-Requested-With": "XMLHttpRequest",
   "x-app-context": APP_CONTEXT,
   Origin: "https://sports.bwin.es",
-  Referer: "https://sports.bwin.es/es/apuestas",
+  Referer: "https://sports.bwin.es/es/apuestas-deportivas",
 };
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // Sport IDs confirmed from bwin CDS (Football=4, Tennis=5, Basketball=7)
 const SPORT_IDS: Record<Sport, number> = {
@@ -171,7 +174,7 @@ export class BwinScraper extends BaseScraper {
   readonly name = "bwin";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
-  private async fetchFixtures(state: "Live" | "Latest"): Promise<{ data: any; usedProxy: boolean } | null> {
+  private async fetchFixtures(state: "Live" | "Latest", retried = false): Promise<{ data: any; usedProxy: boolean } | null> {
     const proxyUrl = config.scraperProxies.bwin;
     const sportIds = Object.values(SPORT_IDS).join(",");
     const path = `fixture-view?lang=es&country=ES&marketGroupTypes=Standard&sportIds=${sportIds}&state=${state}&offerMapping=WithPredefinedAndAdditional&sortBy=StartDate&fixture-limit=100`;
@@ -182,7 +185,13 @@ export class BwinScraper extends BaseScraper {
       const hc = await directClient.get("counts?lang=es&country=ES");
       if (hc.status === 200) {
         const res = await directClient.get(path);
-        return { data: res.data, usedProxy: false };
+        const data = res.data;
+        if (data?.error) {
+          this.warn(`bwin.es direct: responseData.error = ${JSON.stringify(data.error).slice(0, 120)}`);
+          if (!retried) { await sleep(2000); return this.fetchFixtures(state, true); }
+          return null;
+        }
+        return { data, usedProxy: false };
       }
     } catch (err: any) {
       const status: number = err?.response?.status ?? 0;
@@ -202,7 +211,13 @@ export class BwinScraper extends BaseScraper {
     try {
       const proxyClient = makeClient(proxyUrl);
       const res = await proxyClient.get(path);
-      return { data: res.data, usedProxy: true };
+      const data = res.data;
+      if (data?.error) {
+        this.warn(`bwin.es proxy: responseData.error = ${JSON.stringify(data.error).slice(0, 120)}`);
+        if (!retried) { await sleep(2000); return this.fetchFixtures(state, true); }
+        return null;
+      }
+      return { data, usedProxy: true };
     } catch (err: any) {
       this.warn(`bwin.es proxy error: ${err?.response?.status ?? err?.message}`);
       return null;

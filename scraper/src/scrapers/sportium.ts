@@ -1,30 +1,20 @@
 /**
- * Sportium España (Cirsa) — Kambi API directo + Playwright fallback.
+ * Sportium España (Cirsa) — Kambi Offering API (HTTP directo, sin Playwright).
  *
- * Sportium usa la plataforma Kambi. El widget en el frontend usa WebSocket/protobuf
- * para odds en tiempo real, inaccesible via intercepción XHR.
- * Estrategia: llamada directa a la Kambi Offering API (eu-offering.kambicdn.org).
- * Kambi customer ID para Sportium ES = "sisp" (v2 API).
- * Kambi odds format: milli-odds (1750 = 1.75 decimal).
+ * Sportium usa la plataforma Kambi. Customer ID: "sisp".
  * Nota: eu-offering.kambicdn.org bloquea IPs de datacenter — necesita proxy residencial ES.
  */
 
 import * as https from "https";
+import axios from "axios";
 import { BaseScraper } from "./base";
-import { browserManager, dismissCookies, logPageState, getProxyForScraper, saveFailedPayload, pageSemaphore } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
+import { config } from "../config";
+import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-// ─── Kambi API directa ───────────────────────────────────────────────────────
-// Kambi customer ID para Sportium España: "sisp" (v2 API, código confirmado por Gemini)
-// eu-offering.kambicdn.org es el CDN estándar de Kambi para Europa
-
-const KAMBI_CUSTOMER = "sisp";
-const KAMBI_BASE_V2   = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_CUSTOMER}`;
+const KAMBI_CUSTOMER   = "sisp";
+const KAMBI_BASE_V2    = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_CUSTOMER}`;
 const KAMBI_BASE_V2018 = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
-const KAMBI_BASE = KAMBI_BASE_V2; // primary; v2018 kept as fallback reference
-const KAMBI_PUSH_WS = "wss://push.kambicdn.org/live-offering";
-const KAMBI_PUSH_CHANNEL = `/live/offering/v2/${KAMBI_CUSTOMER}/es_ES/events`;
 
 const KAMBI_SPORT_FILTER: Record<Sport, string> = {
   FOOTBALL:   "FOOTBALL",
@@ -32,85 +22,90 @@ const KAMBI_SPORT_FILTER: Record<Sport, string> = {
   BASKETBALL: "BASKETBALL",
 };
 
-function httpsGet(url: string): Promise<any> {
+const KAMBI_HEADERS = {
+  "Accept": "application/json",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Referer": "https://sports.sportium.es/",
+  "Origin": "https://sports.sportium.es",
+  "X-Requested-With": "XMLHttpRequest",
+};
+
+const BLOCKED_STATUSES = new Set([403, 429, 451]);
+
+function httpsGet(url: string): Promise<{ data: any; status: number }> {
   return new Promise((resolve) => {
-    const req = https.get(url, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": "https://sports.sportium.es/",
-        "Origin": "https://sports.sportium.es",
-      },
-    }, (res) => {
+    const req = https.get(url, { headers: KAMBI_HEADERS }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-        catch { resolve(null); }
+        try { resolve({ data: JSON.parse(Buffer.concat(chunks).toString()), status: res.statusCode ?? 0 }); }
+        catch { resolve({ data: null, status: res.statusCode ?? 0 }); }
       });
     });
-    req.on("error", () => resolve(null));
-    req.setTimeout(15_000, () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve({ data: null, status: 0 }));
+    req.setTimeout(15_000, () => { req.destroy(); resolve({ data: null, status: 0 }); });
   });
+}
+
+async function httpsGetWithProxy(url: string, proxyUrl: string): Promise<any | null> {
+  try {
+    const u = new URL(proxyUrl);
+    const instance = axios.create({
+      timeout: 15_000,
+      headers: KAMBI_HEADERS,
+      proxy: {
+        protocol: u.protocol.replace(":", "") as "http" | "https",
+        host: u.hostname,
+        port: parseInt(u.port, 10),
+        ...(u.username ? { auth: { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) } } : {}),
+      },
+    });
+    const res = await instance.get(url);
+    return res.data ?? null;
+  } catch (err: any) {
+    if ((err?.response?.status ?? 0) === 407) {
+      console.error("[sportium] CRITICAL_PROXY_AUTH_FAIL — proxy retornó 407. Verifica credenciales en SPORTIUM_PROXY_URL.");
+    }
+    return null;
+  }
 }
 
 async function fetchKambiDirect(sport: Sport, isLive: boolean): Promise<any | null> {
   const filter = KAMBI_SPORT_FILTER[sport].toLowerCase();
+  const proxyUrl = config.scraperProxies.sportium;
+
+  const withProxyFallback = async (url: string, directResult: { data: any; status: number }): Promise<any | null> => {
+    if (BLOCKED_STATUSES.has(directResult.status) && proxyUrl) {
+      return httpsGetWithProxy(url, proxyUrl);
+    }
+    return directResult.data;
+  };
+
   if (isLive) {
-    // v2 listView format (Gemini-validated for sisp customer)
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`;
-    const v2result = await httpsGet(urlV2);
+    const r2 = await httpsGet(urlV2);
+    const v2result = BLOCKED_STATUSES.has(r2.status) ? await withProxyFallback(urlV2, r2) : r2.data;
     if (v2result?.liveEvents?.length || v2result?.events?.length) return v2result;
-    // Fallback: v2018 all-sports live endpoint
+
     const urlFallback = `${KAMBI_BASE_V2018}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filter.toUpperCase()}&includeParticipants=true`;
-    return httpsGet(urlFallback);
+    const rf = await httpsGet(urlFallback);
+    return BLOCKED_STATUSES.has(rf.status) ? withProxyFallback(urlFallback, rf) : rf.data;
   } else {
-    // v2 listView prematch
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all.json?lang=es&market=ES&numberOfEvents=200`;
-    const v2result = await httpsGet(urlV2);
+    const r2 = await httpsGet(urlV2);
+    const v2result = BLOCKED_STATUSES.has(r2.status) ? await withProxyFallback(urlV2, r2) : r2.data;
     if (v2result?.events?.length) return v2result;
-    // Fallback: v2018 group endpoint
+
     const urlFallback = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${filter.toUpperCase()}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
-    return httpsGet(urlFallback);
+    const rf = await httpsGet(urlFallback);
+    return BLOCKED_STATUSES.has(rf.status) ? withProxyFallback(urlFallback, rf) : rf.data;
   }
 }
-
-// Sportium España (Cirsa) — plataforma Kambi.
-// Todos los paths directos dan 404 — probamos homepage + rutas hash Kambi + rutas alternativas.
-const URLS: Record<Sport, { live: string; prematch: string }[]> = {
-  FOOTBALL: [
-    // Homepage first — let JS router handle navigation
-    { live: "https://www.sportium.es/",                            prematch: "https://www.sportium.es/" },
-    // Hash-based Kambi routing (common for Kambi operators)
-    { live: "https://www.sportium.es/#/sports/football/live",      prematch: "https://www.sportium.es/#/sports/football" },
-    { live: "https://www.sportium.es/apostar#/sports/football/live", prematch: "https://www.sportium.es/apostar#/sports/football" },
-    // Alternative path structures
-    { live: "https://www.sportium.es/apuestas/en-directo/futbol",  prematch: "https://www.sportium.es/apuestas/futbol" },
-    { live: "https://www.sportium.es/apuestas-deportivas/futbol",  prematch: "https://www.sportium.es/apuestas-deportivas/futbol" },
-    // Legacy candidates
-    { live: "https://www.sportium.es/apostar/directo/futbol",      prematch: "https://www.sportium.es/apostar/futbol" },
-    { live: "https://www.sportium.es/en-directo/futbol",           prematch: "https://www.sportium.es/deportes/futbol" },
-  ],
-  TENNIS: [
-    { live: "https://www.sportium.es/",                            prematch: "https://www.sportium.es/" },
-    { live: "https://www.sportium.es/#/sports/tennis/live",        prematch: "https://www.sportium.es/#/sports/tennis" },
-    { live: "https://www.sportium.es/apuestas/en-directo/tenis",   prematch: "https://www.sportium.es/apuestas/tenis" },
-    { live: "https://www.sportium.es/apostar/directo/tenis",       prematch: "https://www.sportium.es/apostar/tenis" },
-  ],
-  BASKETBALL: [
-    { live: "https://www.sportium.es/",                              prematch: "https://www.sportium.es/" },
-    { live: "https://www.sportium.es/#/sports/basketball/live",      prematch: "https://www.sportium.es/#/sports/basketball" },
-    { live: "https://www.sportium.es/apuestas/en-directo/baloncesto", prematch: "https://www.sportium.es/apuestas/baloncesto" },
-    { live: "https://www.sportium.es/apostar/directo/baloncesto",    prematch: "https://www.sportium.es/apostar/baloncesto" },
-  ],
-};
 
 const toDecimal = (raw: any): number => {
   const n = typeof raw === "string" ? parseInt(raw, 10) : Number(raw);
   return n > 100 ? n / 1000 : n;
 };
-
-// ─── Kambi parsers ────────────────────────────────────────────────────────────
 
 function parseLive(data: any, sport: Sport): ScrapedEvent[] {
   const eventList: any[] = data?.liveEvents ?? data?.events ?? [];
@@ -172,268 +167,29 @@ function parsePrematch(data: any, sport: Sport): ScrapedEvent[] {
   return events;
 }
 
-// ─── Scraper ─────────────────────────────────────────────────────────────────
-
-// Static flag: if push.kambicdn.org is unreachable from this VPS, skip WS for 60 min
-let kambiPushBlockedUntil = 0;
-
 export class SportiumScraper extends BaseScraper {
   readonly name = "sportium";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
-  /**
-   * Kambi push WebSocket (direct, no proxy) via blank Playwright page.
-   * push.kambicdn.org is a different domain from eu-offering.kambicdn.org —
-   * may not be geo-blocked from OVH datacenter IP.
-   * Uses pageSemaphore ONLY once (for FOOTBALL) and caches the geo-block result.
-   */
-  private async fetchKambiPushWS(sport: Sport, isLive: boolean): Promise<ScrapedEvent[] | null> {
-    if (!isLive) return null;
-    if (Date.now() < kambiPushBlockedUntil) return null; // already known blocked
-    // Only probe on FOOTBALL — if it fails, mark blocked for all sports for 60 min
-    if (sport !== "FOOTBALL") return null;
-
-    await pageSemaphore.acquire();
-    const browser = await browserManager.getBrowser(); // direct, no proxy
-    const ctx = await browser.newContext({ locale: "es-ES" });
-    const page = await ctx.newPage();
-    const kambiFrames: any[] = [];
-
-    page.on("websocket", (ws: any) => {
-      if (!ws.url().includes("kambicdn")) return;
-      this.log(`Kambi WS connected: ${ws.url().slice(0, 80)}`);
-      ws.on("framereceived", (frame: any) => {
-        const raw = frame.payload;
-        const text = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString("utf8") : "";
-        if (text.length < 5) return;
-        try {
-          const msg = JSON.parse(text);
-          if (msg && typeof msg === "object") kambiFrames.push(msg);
-        } catch { /* binary or non-JSON frame */ }
-      });
-      ws.on("frameclosed", () => this.log(`Kambi WS closed`));
-    });
-
-    try {
-      await page.goto("about:blank", { waitUntil: "load", timeout: 10_000 });
-
-      const wsResult: string = await page.evaluate(({ wsUrl, channel }: { wsUrl: string; channel: string }) => {
-        return new Promise<string>((resolve) => {
-          try {
-            const ws = new WebSocket(wsUrl);
-            (window as any).__kambiWS = ws;
-            let opened = false;
-            ws.addEventListener("open", () => {
-              opened = true;
-              ws.send(JSON.stringify({ type: "SUBSCRIBE", channel }));
-              resolve("connected+subscribed");
-            });
-            ws.addEventListener("error", () => resolve("ws_error"));
-            // 4s timeout: fast fail if geo-blocked
-            setTimeout(() => resolve(opened ? "timeout_subscribed" : "timeout_no_connect"), 4_000);
-          } catch (e) {
-            resolve("exception:" + String(e));
-          }
-        });
-      }, { wsUrl: KAMBI_PUSH_WS, channel: KAMBI_PUSH_CHANNEL });
-
-      this.log(`Kambi push WS: ${wsResult}`);
-
-      if (wsResult === "ws_error" || wsResult === "timeout_no_connect" || wsResult.startsWith("exception")) {
-        kambiPushBlockedUntil = Date.now() + 60 * 60 * 1000; // skip for 60 min
-        this.warn(`Kambi push WS bloqueado desde este IP (${wsResult}) — omitiendo 60 min`);
-        return null;
-      }
-
-      // Wait for messages after subscribe (shorter window)
-      await page.waitForTimeout(5_000);
-
-      if (kambiFrames.length === 0) {
-        this.warn(`Kambi push WS: 0 frames received — domain may be geo-blocked`);
-        return null;
-      }
-
-      this.log(`Kambi push WS: ${kambiFrames.length} frames received`);
-
-      // Parse frames using existing Kambi parsers
-      const events: ScrapedEvent[] = [];
-      const filter = KAMBI_SPORT_FILTER[sport];
-      for (const frame of kambiFrames) {
-        // Kambi push may wrap data in { type, payload } or send directly
-        const data = frame?.payload ?? frame?.data ?? frame?.content ?? frame;
-        // Filter by sport if the frame has sport info
-        const frameSport: string = (frame?.sport ?? frame?.sportName ?? "").toUpperCase();
-        if (frameSport && !frameSport.includes(filter)) continue;
-        const parsed = isLive ? parseLive(data, sport) : parsePrematch(data, sport);
-        if (parsed.length > 0) {
-          this.log(`Kambi push parsed ${parsed.length} events from frame type=${frame?.type ?? "?"}`);
-          events.push(...parsed);
-        }
-      }
-
-      // If parsers got 0 events, log raw frame structure for analysis
-      if (events.length === 0 && kambiFrames.length > 0) {
-        const sample = kambiFrames[0];
-        const topKeys = typeof sample === "object" ? Object.keys(sample).slice(0, 8).join(",") : String(sample).slice(0, 100);
-        this.warn(`Kambi push: ${kambiFrames.length} frames but 0 events. keys: ${topKeys}`);
-        this.warn(`  sample: ${JSON.stringify(sample).slice(0, 500)}`);
-      }
-
-      return events;
-    } catch (err) {
-      this.warn(`Kambi push WS error`, err);
-      return null;
-    } finally {
-      try { await ctx.close(); } catch { /* ignore */ }
-      pageSemaphore.release();
-    }
-  }
-
-  private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage(getProxyForScraper('sportium'));
-    const kambiCaptures: any[] = [];
-    const allCaptures: Array<{ url: string; data: any }> = [];
-
-    // Diagnostic: log ALL sportswidget.sportium.es responses to discover the events API
-    page.on("response", async (res: any) => {
-      const u: string = res.url();
-      if (!u.includes("sportswidget.sportium.es")) return;
-      const status: number = res.status();
-      const ct: string = (res.headers()?.["content-type"] ?? "").split(";")[0].trim();
-      this.warn(`SW ${status} [${ct}] ${u.replace(/https?:\/\/[^/]+/, "").slice(0, 100)}`);
-      // Log /configuration/init body — may reveal Kambi CDN endpoint or alternative URLs
-      if (u.includes("/configuration/init") && status === 200 && ct.includes("json")) {
-        try {
-          const body = await res.json();
-          this.warn(`SW config/init: ${JSON.stringify(body).slice(0, 800)}`);
-        } catch { /* ignore */ }
-      }
-    });
-
-    page.on("response", async (res: any) => {
-      if (res.status() !== 200) return;
-      const ct: string = res.headers()?.["content-type"] ?? "";
-      if (!ct.includes("json")) return;
-      const u: string = res.url();
-      try {
-        const data = await res.json().catch(() => null);
-        if (!data || JSON.stringify(data).length < 200) return;
-        allCaptures.push({ url: u, data });
-        // Filtro Kambi: por dominio o por estructura de URL (sin exigir extensión .json)
-        // sportswidget.sportium.es es el proxy Kambi propio de Sportium (no usa kambicdn.org)
-        const isKambi =
-          u.includes("kambicdn") ||
-          u.includes("kambi") ||
-          u.includes("/offering/") ||
-          u.includes("/betoffer/") ||
-          u.includes("/event/") ||
-          u.includes("sportswidget.sportium.es");
-        if (isKambi) kambiCaptures.push(data);
-      } catch { /* non-JSON */ }
-    });
-
-    const events: ScrapedEvent[] = [];
-    try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
-      await dismissCookies(page);
-      // Sportium usa Kambi que puede tardar en cargarse — esperar más
-      await page.waitForTimeout(14_000);
-
-      const finalUrl = page.url();
-      const title = await page.title().catch(() => "");
-      const is404 = res404(finalUrl, title);
-      if (is404) {
-        this.warn(`URL 404: ${finalUrl} — Sportium puede haber cambiado paths`);
-        // Si es homepage cargada sin 404, log de capturas para detectar la URL correcta de Kambi
-      } else if (allCaptures.length > 0 && kambiCaptures.length === 0) {
-        const domains = [...new Set(allCaptures.map((c) => new URL(c.url).hostname))];
-        this.log(`Sportium homepage cargada, dominios: ${domains.join(", ")} — buscando Kambi CDN`);
-      }
-
-      if (kambiCaptures.length > 0) {
-        this.log(`Kambi XHR: ${kambiCaptures.length} responses`);
-        for (const data of kambiCaptures) {
-          events.push(...(isLive ? parseLive(data, sport) : parsePrematch(data, sport)));
-        }
-        // Debug: si Kambi capturado pero 0 eventos, mostrar estructura para diagnosticar
-        if (events.length === 0) {
-          const sample = kambiCaptures[0];
-          const topKeys = typeof sample === "object" ? Object.keys(sample ?? {}).slice(0, 12).join(",") : typeof sample;
-          this.warn(`Kambi ${kambiCaptures.length} capturas pero 0 eventos. keys: ${topKeys}`);
-          this.warn(`  sample: ${JSON.stringify(sample).slice(0, 600)}`);
-        }
-      } else if (allCaptures.length > 0) {
-        // Intentar parsear cualquier respuesta JSON por si Kambi está bajo otro dominio
-        for (const { data } of allCaptures) {
-          const parsed = isLive ? parseLive(data, sport) : parsePrematch(data, sport);
-          if (parsed.length > 0) { events.push(...parsed); break; }
-        }
-      }
-
-      if (events.length === 0) {
-        await logPageState(page, this.name);
-        if (allCaptures.length > 0) {
-          const domains = [...new Set(allCaptures.map((c) => new URL(c.url).hostname))];
-          this.warn(`Sin eventos Kambi. Dominios capturados: ${domains.join(", ")}`);
-        }
-      } else {
-        this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events`);
-      }
-    } catch (err) {
-      this.warn(`${sport} ${isLive ? "live" : "prematch"} failed`, err);
-    } finally {
-      await ctx.close();
-    }
-    return events;
-  }
-
-  /** Intenta múltiples URLs hasta encontrar una que cargue */
-  private async scrapePageWithFallback(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const urlCandidates = URLS[sport];
-    for (const candidate of urlCandidates) {
-      const url = isLive ? candidate.live : candidate.prematch;
-      const result = await this.scrapePage(url, sport, isLive);
-      if (result.length > 0) return result;
-    }
-    return [];
-  }
-
   private async scrapeOneSport(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    // 0. Kambi push WebSocket probe (live FOOTBALL only — caches geo-block for 60 min)
-    //    push.kambicdn.org may not be geo-blocked unlike eu-offering.kambicdn.org
-    if (isLive && sport === "FOOTBALL") {
-      try {
-        const wsEvents = await this.fetchKambiPushWS(sport, isLive);
-        if (wsEvents !== null && wsEvents.length > 0) {
-          this.log(`Kambi push WS live ${sport}: ${wsEvents.length} events`);
-          return wsEvents;
-        }
-      } catch (err) {
-        this.warn(`Kambi push WS ${sport} error`, err);
-      }
-    }
-
-    // 1. Try Kambi HTTP REST directly — faster and more reliable than browser scraping
     try {
       const data = await fetchKambiDirect(sport, isLive);
       if (data) {
         const events = isLive ? parseLive(data, sport) : parsePrematch(data, sport);
         if (events.length > 0) {
-          this.log(`Kambi API directo ${isLive ? "live" : "prematch"} ${sport}: ${events.length} events`);
+          this.log(`Kambi API ${isLive ? "live" : "prematch"} ${sport}: ${events.length} events`);
           return events;
         }
         const topKeys = typeof data === "object" ? Object.keys(data ?? {}).slice(0, 8).join(",") : typeof data;
-        this.warn(`Kambi API directo ${sport}: respuesta pero 0 eventos. keys=${topKeys}`);
+        this.warn(`Kambi API ${sport}: respuesta pero 0 eventos. keys=${topKeys}`);
         this.warn(`  sample: ${JSON.stringify(data).slice(0, 400)}`);
       } else {
-        this.warn(`Kambi API directo ${sport}: null (no response o error de red)`);
+        this.warn(`Kambi API ${sport}: null — posible geo-block (necesita proxy residencial ES)`);
       }
     } catch (err) {
-      this.warn(`Kambi API directo ${sport} failed`, err);
+      this.warn(`Kambi API ${sport} failed`, err);
     }
-
-    // 2. Browser fallback (for cases where Kambi API is blocked or customer ID wrong)
-    return this.scrapePageWithFallback(sport, isLive);
+    return [];
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
@@ -447,13 +203,4 @@ export class SportiumScraper extends BaseScraper {
     for (const sport of this.sports) all.push(...(await this.scrapeOneSport(sport, false)));
     return all;
   }
-}
-
-function res404(url: string, title: string): boolean {
-  return (
-    url.includes("/404") ||
-    title.toLowerCase().includes("not found") ||
-    title.toLowerCase().includes("404") ||
-    title.toLowerCase().includes("página no encontrada")
-  );
 }
