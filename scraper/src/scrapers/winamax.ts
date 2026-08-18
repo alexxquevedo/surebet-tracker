@@ -165,7 +165,9 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   for (const [, match] of Object.entries(matches)) {
     if (!match || typeof match !== "object") continue;
     if (match.sportId !== targetSportId) continue;
-    if (isLive && match.status !== "LIVE") continue;
+    // Q6: accept multiple live status variants used by different Winamax API versions
+    const matchIsLive = match.status === "LIVE" || match.is_live === true || match.match_status === 1;
+    if (isLive && !matchIsLive) continue;
     if (!isLive && match.status !== "PREMATCH") continue;
     if (match.available === false || match.available === 0) continue;
 

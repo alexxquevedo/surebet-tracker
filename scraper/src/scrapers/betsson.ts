@@ -11,7 +11,7 @@
  */
 
 import { BaseScraper } from "./base";
-import { browserManager, dismissCookies, parseOdds } from "./playwright-base";
+import { browserManager, dismissCookies, parseOdds, getProxyForScraper, setScraperCooldown, isScraperInCooldown } from "./playwright-base";
 import type { BrowserContext } from "playwright";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
@@ -442,7 +442,9 @@ export class BetssonScraper extends BaseScraper {
     let browserCrashed = false;
 
     try {
-      ctx = await browserManager.createContext();
+      // Q1: route through residential proxy if configured — betsson.fr now blocks OVH datacenter IPs
+      const proxyHint = getProxyForScraper("betsson");
+      ctx = await browserManager.createContext(proxyHint);
       const page = await ctx.newPage();
       // Block media that wastes RAM
       await page.route("**/*", (route: any) => {
@@ -453,16 +455,25 @@ export class BetssonScraper extends BaseScraper {
 
       page.on("websocket", (ws: any) => {
         const wsUrl: string = ws.url();
-        if (!wsUrl.includes("betsson") && !wsUrl.includes("velnt") && !wsUrl.includes("kambi")) return;
+        // Q1: capture both SSB and Kambi CDN WebSocket URLs
+        const isBetssonWs = wsUrl.includes("betsson") || wsUrl.includes("velnt") ||
+          wsUrl.includes("kambi") || wsUrl.includes("kambicdn") || wsUrl.includes("offering");
+        if (!isBetssonWs) return;
         ws.on("framereceived", (frame: any) => {
           const raw = frame.payload;
           const payloadStr = typeof raw === "string" ? raw :
-            (Buffer.isBuffer(raw) ? raw.toString("utf8") : "");
+            (Buffer.isBuffer(raw) ? raw.toString("utf8") :
+            (raw && typeof raw === "object" ? (() => { try { return Buffer.from(raw as any).toString("utf8"); } catch { return ""; } })() : ""));
           if (payloadStr.length < 10) return;
           try {
             const parsed = JSON.parse(payloadStr);
-            if (parsed?.data) wsMessages.push({ payload: parsed });
-          } catch { /* binary or non-JSON */ }
+            if (parsed?.data) {
+              wsMessages.push({ payload: parsed });
+            } else if (parsed?.events || parsed?.OFFERING) {
+              // Q1: Kambi CDN offering format
+              wsMessages.push({ payload: { data: [{ contentId: { type: "kambi_offering" }, change: parsed }] } });
+            }
+          } catch { /* binary or non-JSON ping frames */ }
         });
       });
 
@@ -630,14 +641,26 @@ export class BetssonScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].live, sport, true));
+    try {
+      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].live, sport, true));
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapeLive fallido — circuit breaker activado", err);
+    }
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].prematch, sport, false));
+    try {
+      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].prematch, sport, false));
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapePrematch fallido — circuit breaker activado", err);
+    }
     return all;
   }
 }

@@ -16,7 +16,10 @@ import { browserManager, getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-const KAMBI_CUSTOMER   = "sisp";
+// Q5: updated customer IDs — "sportiumes" is the 2026 customer key for Sportium ES.
+// Fallback: "sisp" (old) then "pafes" (alternative). Change here if Kambi returns 404.
+const KAMBI_CUSTOMER        = "sportiumes";
+const KAMBI_CUSTOMER_LEGACY = "sisp";
 const KAMBI_BASE_V2    = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_CUSTOMER}`;
 const KAMBI_BASE_V2018 = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
 
@@ -224,15 +227,32 @@ function httpsGet(url: string): Promise<{ data: any; status: number }> {
   return new Promise((resolve) => {
     const req = https.get(url, { headers: KAMBI_HEADERS }, (res) => {
       const chunks: Buffer[] = [];
+      // Q5: log non-200 status codes for diagnostics instead of silently returning null
+      if ((res.statusCode ?? 0) !== 200) {
+        console.error(`[sportium] Kambi HTTP ${res.statusCode} — ${url.slice(0, 80)}`);
+      }
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => {
         try { resolve({ data: JSON.parse(Buffer.concat(chunks).toString()), status: res.statusCode ?? 0 }); }
         catch { resolve({ data: null, status: res.statusCode ?? 0 }); }
       });
     });
-    req.on("error", () => resolve({ data: null, status: 0 }));
+    req.on("error", (err) => {
+      console.error(`[sportium] Kambi network error — ${err.message} — ${url.slice(0, 80)}`);
+      resolve({ data: null, status: 0 });
+    });
     req.setTimeout(15_000, () => { req.destroy(); resolve({ data: null, status: 0 }); });
   });
+}
+
+// Q5: try primary then legacy customer key
+async function httpsGetWithFallback(url: string): Promise<{ data: any; status: number }> {
+  const r = await httpsGet(url);
+  if (r.status !== 404) return r;
+  // 404 = customer ID not found → try legacy
+  const fallbackUrl = url.replace(`/${KAMBI_CUSTOMER}/`, `/${KAMBI_CUSTOMER_LEGACY}/`);
+  console.warn(`[sportium] 404 on "${KAMBI_CUSTOMER}" — retrying with "${KAMBI_CUSTOMER_LEGACY}"`);
+  return httpsGet(fallbackUrl);
 }
 
 async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
@@ -244,19 +264,19 @@ async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
   const filter = KAMBI_SPORT_FILTER[sport].toLowerCase();
   if (isLive) {
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`;
-    const r2 = await httpsGet(urlV2);
+    const r2 = await httpsGetWithFallback(urlV2);
     if (!BLOCKED_STATUSES.has(r2.status) && r2.data) return r2.data;
 
     const urlFallback = `${KAMBI_BASE_V2018}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filter.toUpperCase()}&includeParticipants=true`;
-    const rf = await httpsGet(urlFallback);
+    const rf = await httpsGetWithFallback(urlFallback);
     return BLOCKED_STATUSES.has(rf.status) ? null : rf.data;
   } else {
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all.json?lang=es&market=ES&numberOfEvents=200`;
-    const r2 = await httpsGet(urlV2);
+    const r2 = await httpsGetWithFallback(urlV2);
     if (!BLOCKED_STATUSES.has(r2.status) && r2.data?.events?.length) return r2.data;
 
     const urlFallback = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${filter.toUpperCase()}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
-    const rf = await httpsGet(urlFallback);
+    const rf = await httpsGetWithFallback(urlFallback);
     return BLOCKED_STATUSES.has(rf.status) ? null : rf.data;
   }
 }

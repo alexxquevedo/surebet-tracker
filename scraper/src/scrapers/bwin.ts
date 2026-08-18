@@ -15,7 +15,7 @@ import https from "https";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
-import { saveFailedPayload } from "./playwright-base";
+import { saveFailedPayload, browserManager, getProxyForScraper, setScraperCooldown, isScraperInCooldown } from "./playwright-base";
 import { config } from "../config";
 
 const BASE_ES    = "https://sports.bwin.es/cds/api/v1";
@@ -257,6 +257,44 @@ export class BwinScraper extends BaseScraper {
     return null;
   }
 
+  /**
+   * Q3: Playwright fallback — intercepts the cds-api XHR from the bwin.es SPA.
+   * Chromium (BoringSSL TLS) bypasses the JA3 fingerprinting that Axios triggers.
+   * Uses one page load for all sports combined, then parses per-sport.
+   */
+  private async fetchViaPlaywright(isLive: boolean): Promise<any[] | null> {
+    const proxyHint = getProxyForScraper("bwin");
+    if (!proxyHint) return null;
+
+    const { page, ctx } = await browserManager.newPage(proxyHint);
+    const captured: any[] = [];
+    try {
+      page.on("response", async (res: any) => {
+        if (res.status() !== 200) return;
+        const u: string = res.url();
+        if (!u.includes("cds-api") && !u.includes("cds/api")) return;
+        try {
+          const data = await res.json().catch(() => null);
+          if (data) captured.push(data);
+        } catch { /* ok */ }
+      });
+
+      const url = isLive
+        ? "https://www.bwin.es/es/sports/en-vivo"
+        : "https://www.bwin.es/es/apuestas-deportivas";
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25_000 }).catch(() => {});
+      // Wait for cds-api XHR calls triggered by page SPA routing
+      await page.waitForTimeout(7_000);
+      this.log(`Playwright bwin: ${captured.length} cds-api responses captured`);
+      return captured.length > 0 ? captured : null;
+    } catch (err) {
+      this.warn(`Playwright bwin error: ${(err as any)?.message}`);
+      return null;
+    } finally {
+      await ctx.close().catch(() => {});
+    }
+  }
+
   private async scrape(isLive: boolean): Promise<ScrapedEvent[]> {
     const result = await this.fetchFixtures(isLive ? "Live" : "Latest");
 
@@ -295,14 +333,44 @@ export class BwinScraper extends BaseScraper {
       }
     }
 
+    // Q3: Playwright fallback — Chromium BoringSSL bypasses JA3 TLS fingerprinting
+    // that causes Axios 502 when routing through proxy. Only invoked when Axios found 0 events.
+    if (all.length === 0) {
+      this.warn("Axios: 0 events — intentando Playwright + proxy (Q3)");
+      const pwData = await this.fetchViaPlaywright(isLive).catch(() => null);
+      if (pwData) {
+        for (const data of pwData) {
+          for (const sport of this.sports) {
+            const events = parseCdsFixtures(data, sport, isLive);
+            all.push(...events);
+          }
+        }
+        if (all.length > 0) this.log(`Playwright: ${all.length} eventos recuperados`);
+      }
+    }
+
     return all;
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    return this.scrape(true);
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
+    try {
+      return await this.scrape(true);
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapeLive fallido — circuit breaker activado", err);
+      return [];
+    }
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    return this.scrape(false);
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
+    try {
+      return await this.scrape(false);
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapePrematch fallido — circuit breaker activado", err);
+      return [];
+    }
   }
 }

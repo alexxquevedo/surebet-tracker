@@ -12,7 +12,7 @@
  */
 
 import { chromium, Browser } from "playwright";
-import { browserManager, pageSemaphore, dismissCookies, parseOdds, logPageState, saveFailedPayload } from "./playwright-base";
+import { browserManager, pageSemaphore, dismissCookies, parseOdds, logPageState, saveFailedPayload, parseProxyUrl, setScraperCooldown, isScraperInCooldown } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 import { BaseScraper } from "./base";
@@ -148,6 +148,8 @@ let bet365Browser: Browser | null = null;
 async function getBet365Browser(): Promise<Browser> {
   if (!bet365Browser?.isConnected()) {
     const executablePath = process.env.CHROMIUM_PATH || undefined;
+    // Q4: parse proxy URL properly — embedded credentials in server string cause ERR_INVALID_AUTH_CREDENTIALS
+    const proxyConfig = B365_PROXY_URL ? parseProxyUrl(B365_PROXY_URL) : undefined;
     bet365Browser = await chromium.launch({
       headless: true,
       executablePath,
@@ -155,7 +157,7 @@ async function getBet365Browser(): Promise<Browser> {
         "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
       ],
-      ...(B365_PROXY_URL ? { proxy: { server: B365_PROXY_URL } } : {}),
+      ...(proxyConfig ? { proxy: proxyConfig } : {}),
     });
   }
   return bet365Browser;
@@ -262,10 +264,18 @@ export class Bet365Scraper extends BaseScraper {
       const page = await ctx.newPage();
 
       page.on("websocket", (ws: any) => {
-        if (!ws.url().includes("bet365") && !ws.url().includes("push")) return;
+        const url = ws.url();
+        if (!url.includes("bet365") && !url.includes("premws") && !url.includes("pshudws") && !url.includes("zap")) return;
         ws.on("framereceived", (frame: any) => {
           const raw = frame.payload;
-          const payload = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString("utf8") : "";
+          let payload = "";
+          if (typeof raw === "string") {
+            payload = raw;
+          } else if (Buffer.isBuffer(raw)) {
+            payload = raw.toString("utf8");
+          } else if (raw && typeof raw === "object") {
+            try { payload = Buffer.from(raw as any).toString("utf8"); } catch { /* binary frame */ }
+          }
           if (payload.length > 20) wsFrames.push(payload);
         });
       });
@@ -319,6 +329,12 @@ export class Bet365Scraper extends BaseScraper {
       }
 
       await dismissCookies(page);
+
+      // Q4: mouse interactions to trigger WS topic subscriptions (bet365 ZAP protocol)
+      await page.mouse.move(960, 300, { steps: 5 }).catch(() => {});
+      await page.mouse.wheel(0, 200).catch(() => {});
+      await page.waitForTimeout(1_500);
+      await page.mouse.move(960, 500, { steps: 5 }).catch(() => {});
 
       await page
         .waitForSelector(
@@ -439,14 +455,26 @@ export class Bet365Scraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].live, sport, true)));
+    try {
+      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].live, sport, true)));
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapeLive fallido — circuit breaker activado", err);
+    }
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].prematch, sport, false)));
+    try {
+      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].prematch, sport, false)));
+    } catch (err) {
+      setScraperCooldown(this.name);
+      this.warn("scrapePrematch fallido — circuit breaker activado", err);
+    }
     return all;
   }
 }

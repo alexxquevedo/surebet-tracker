@@ -16,6 +16,38 @@ const CTX_OPTIONS = {
   extraHTTPHeaders: { "Accept-Language": "es-ES,es;q=0.9,en;q=0.8" },
 };
 
+// ─── Scraper Circuit Breaker ─────────────────────────────────────────────────
+// Prevents a failing scraper from repeatedly hammering the semaphore.
+// On failure → 3-min cooldown; caller checks isScraperInCooldown() before acquiring.
+
+const scraperCooldowns = new Map<string, number>();
+const SCRAPER_COOLDOWN_MS = 180_000;
+
+export function setScraperCooldown(scraperName: string): void {
+  scraperCooldowns.set(scraperName, Date.now());
+  console.warn(`[CircuitBreaker] ${scraperName} en cooldown 3 min`);
+}
+
+export function isScraperInCooldown(scraperName: string): boolean {
+  const last = scraperCooldowns.get(scraperName) ?? 0;
+  return (Date.now() - last) < SCRAPER_COOLDOWN_MS;
+}
+
+// ─── Proxy URL parser (shared by scrapers that launch their own browser) ─────
+
+export function parseProxyUrl(rawUrl: string): { server: string; username?: string; password?: string } | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    const u = new URL(rawUrl);
+    const server   = `${u.protocol}//${u.hostname}:${u.port}`;
+    const username = u.username ? decodeURIComponent(u.username) : undefined;
+    const password = u.password ? decodeURIComponent(u.password) : undefined;
+    return { server, ...(username ? { username, password } : {}) };
+  } catch {
+    return { server: rawUrl };
+  }
+}
+
 class BrowserManager {
   private directBrowser: Browser | null = null;
   private proxyBrowser: Browser | null = null;
@@ -89,7 +121,11 @@ class BrowserManager {
       const browser = proxyHint
         ? await this.getResidentialBrowser(proxyHint)
         : await this.getBrowser();
-      const ctx = await browser.newContext(CTX_OPTIONS);
+      const ctx = await browser.newContext({
+        ...CTX_OPTIONS,
+        // Q2: disabling strict cert checks for proxied contexts prevents MITM TLS errors
+        ...(proxyHint ? { ignoreHTTPSErrors: true } : {}),
+      });
       await ctx.addInitScript(() => {
         Object.defineProperty(navigator, "webdriver", { get: () => false });
         // @ts-ignore
@@ -293,16 +329,7 @@ export function getResidentialProxy(): { server: string; username?: string; pass
 export function getProxyForScraper(name: keyof typeof config.scraperProxies): { server: string; username?: string; password?: string } | undefined {
   const rawUrl = config.scraperProxies[name];
   if (!rawUrl) return undefined;
-  try {
-    const u = new URL(rawUrl);
-    const server   = `${u.protocol}//${u.hostname}:${u.port}`;
-    const username = u.username ? decodeURIComponent(u.username) : undefined;
-    const password = u.password ? decodeURIComponent(u.password) : undefined;
-    return { server, ...(username ? { username, password } : {}) };
-  } catch {
-    // Malformed URL — return as-is and let Playwright handle the error
-    return { server: rawUrl };
-  }
+  return parseProxyUrl(rawUrl);
 }
 
 // ─── Phase 4: Dead Letter Queue ───────────────────────────────────────────────
