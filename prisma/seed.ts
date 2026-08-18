@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { createHash } from 'crypto'
-import bcrypt from 'bcryptjs'
+import { hash as bcryptHash } from '@node-rs/bcrypt'
 
 const prisma = new PrismaClient()
 
@@ -43,7 +43,7 @@ async function main() {
   // ──────────────────────────────────────────
   // 1. USUARIO Y CONFIGURACIÓN
   // ──────────────────────────────────────────
-  const passwordHash = await bcrypt.hash('demo1234', 12)
+  const passwordHash = await bcryptHash('demo1234', 12)
 
   const user = await prisma.user.upsert({
     where: { id: ID.user },

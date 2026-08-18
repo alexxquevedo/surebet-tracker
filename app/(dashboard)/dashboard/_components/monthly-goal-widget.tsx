@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { saveMonthlyGoalAction } from '@/lib/actions/settings'
 
 interface Props {
@@ -11,6 +11,10 @@ interface Props {
 export function MonthlyGoalWidget({ target, current }: Props) {
   const [editing,  setEditing]  = useState(false)
   const [inputVal, setInputVal] = useState(String(target))
+
+  useEffect(() => {
+    if (!editing) setInputVal(String(target))
+  }, [target, editing])
   const [pending,  start]       = useTransition()
   const [error,    setError]    = useState<string | null>(null)
 

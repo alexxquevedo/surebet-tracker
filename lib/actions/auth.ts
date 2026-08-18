@@ -1,5 +1,5 @@
 'use server'
-import bcrypt from 'bcryptjs'
+import { hash as bcryptHash } from '@node-rs/bcrypt'
 import dns from 'dns/promises'
 import { AuthError } from 'next-auth'
 import { redirect } from 'next/navigation'
@@ -78,7 +78,7 @@ export async function registerAction(
     })
     if (existingName) return { error: 'Este nombre de usuario ya está en uso, elige otro' }
 
-    const passwordHash = await bcrypt.hash(parsed.data.password, 12)
+    const passwordHash = await bcryptHash(parsed.data.password, 12)
     await prisma.user.create({
       data: {
         name: parsed.data.name,

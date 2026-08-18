@@ -30,6 +30,24 @@ function distributeStakes(odds: number[]): number[] {
   return impliedProbs.map((p) => parseFloat(((p / total) * 100).toFixed(2)));
 }
 
+// ─── Outcome name normalization ───────────────────────────────────────────────
+
+/**
+ * Bookmakers use different names for the same outcome:
+ * - Draw: "X" (Winamax/FR), "Draw" (Betsson/EN), "Empate" (ES), "Nul" (FR), "Nula" (PT)
+ * - Home/Away: "1"/"2" or team names — team names are kept as-is for readability.
+ *
+ * Normalizing to a canonical name lets the calculator merge the draw selection
+ * even when bookmakers encode it differently, enabling cross-bookmaker arb detection.
+ */
+function normalizeOutcomeName(name: string): string {
+  const t = name.trim();
+  if (/^x$/i.test(t) || /^empate$/i.test(t) || /^nul[ae]?$/i.test(t) || /^draw$/i.test(t)) {
+    return "Draw";
+  }
+  return t;
+}
+
 // ─── Surebet detection (h2h) ─────────────────────────────────────────────────
 
 /**
@@ -39,10 +57,10 @@ function distributeStakes(odds: number[]): number[] {
 export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   if (market.market !== "h2h") return null;
 
-  // Collect all unique selection names across all bookmakers
+  // Collect all unique selection names across all bookmakers (normalized)
   const allNames = new Set<string>();
   for (const outcomes of market.byBook.values()) {
-    if (isH2H(outcomes)) outcomes.forEach((o) => allNames.add(o.name));
+    if (isH2H(outcomes)) outcomes.forEach((o) => allNames.add(normalizeOutcomeName(o.name)));
   }
 
   // For each selection, find best odds + which bookmaker offers them
@@ -57,7 +75,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     let bestBook = "";
     for (const [book, outcomes] of market.byBook) {
       if (!isH2H(outcomes)) continue;
-      const match = outcomes.find((o) => o.name === name);
+      const match = outcomes.find((o) => normalizeOutcomeName(o.name) === name);
       if (match && match.odds > bestOdds) {
         bestOdds = match.odds;
         bestBook = book;

@@ -615,41 +615,75 @@ export async function getAdvancedStats(userId: string, dateFrom?: Date): Promise
 // ════════════════════════════════════════════════════════════════════════════
 
 export interface OpenBetItem {
-  id:               string
-  type:             BetType
-  title:            string | null
-  eventName:        string | null
-  totalStake:       number
-  potentialReturn:  number | null
-  datePlaced:       Date
-  primaryBookmaker: { name: string } | null
-  legs:             { bookmaker: { name: string } }[]
+  id:                 string
+  type:               BetType
+  title:              string | null
+  eventName:          string | null
+  totalStake:         number
+  potentialReturn:    number | null
+  datePlaced:         Date
+  primaryBookmakerId: string | null
+  primaryBookmaker:   { name: string } | null
+  singleOdds:         number | null
+  legs: {
+    id:              string
+    bookmakerId:     string
+    bookmakerName:   string
+    stake:           number
+    odds:            number
+    potentialReturn: number
+  }[]
 }
 
 export async function getOpenBets(userId: string): Promise<OpenBetItem[]> {
   const records = await prisma.betRecord.findMany({
     where:   { userId, status: 'PLACED', deletedAt: null },
     select: {
-      id:              true,
-      type:            true,
-      title:           true,
-      eventName:       true,
-      totalStake:      true,
-      potentialReturn: true,
-      datePlaced:      true,
-      primaryBookmaker: { select: { name: true } },
+      id:                 true,
+      type:               true,
+      title:              true,
+      eventName:          true,
+      totalStake:         true,
+      potentialReturn:    true,
+      datePlaced:         true,
+      primaryBookmakerId: true,
+      primaryBookmaker:   { select: { name: true } },
+      singleBetDetail:    { select: { odds: true } },
       legs: {
         where:  { deletedAt: null },
-        select: { bookmaker: { select: { name: true } } },
+        orderBy: { id: 'asc' },
+        select: {
+          id:              true,
+          bookmakerId:     true,
+          stake:           true,
+          odds:            true,
+          potentialReturn: true,
+          bookmaker:       { select: { name: true } },
+        },
       },
     },
     orderBy: { datePlaced: 'desc' },
   })
 
   return records.map((r) => ({
-    ...r,
-    totalStake:      D(r.totalStake).toDecimalPlaces(2).toNumber(),
-    potentialReturn: r.potentialReturn ? D(r.potentialReturn).toDecimalPlaces(2).toNumber() : null,
+    id:                 r.id,
+    type:               r.type,
+    title:              r.title,
+    eventName:          r.eventName,
+    totalStake:         D(r.totalStake).toDecimalPlaces(2).toNumber(),
+    potentialReturn:    r.potentialReturn ? D(r.potentialReturn).toDecimalPlaces(2).toNumber() : null,
+    datePlaced:         r.datePlaced,
+    primaryBookmakerId: r.primaryBookmakerId,
+    primaryBookmaker:   r.primaryBookmaker,
+    singleOdds:         r.singleBetDetail?.odds ? D(r.singleBetDetail.odds).toDecimalPlaces(4).toNumber() : null,
+    legs: r.legs.map((l) => ({
+      id:              l.id,
+      bookmakerId:     l.bookmakerId,
+      bookmakerName:   l.bookmaker.name,
+      stake:           D(l.stake).toDecimalPlaces(2).toNumber(),
+      odds:            D(l.odds).toDecimalPlaces(4).toNumber(),
+      potentialReturn: D(l.potentialReturn).toDecimalPlaces(2).toNumber(),
+    })),
   }))
 }
 

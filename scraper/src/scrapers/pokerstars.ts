@@ -130,7 +130,14 @@ export class PokerStarsScraper extends BaseScraper {
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
       await dismissCookies(page);
-      await page.waitForTimeout(10_000);
+      // Event-driven: exit as soon as first JSON capture arrives (max 10s)
+      const captureDeadline = Date.now() + 10_000;
+      while (allCaptures.length === 0 && Date.now() < captureDeadline) {
+        await new Promise<void>((r) => setTimeout(r, 200));
+      }
+      if (allCaptures.length > 0) {
+        await new Promise<void>((r) => setTimeout(r, 1_500));
+      }
 
       const title = await page.title().catch(() => "");
       const pageUrl = page.url();

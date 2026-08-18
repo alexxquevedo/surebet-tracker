@@ -202,7 +202,8 @@ export class WilliamHillScraper extends BaseScraper {
     let browserCrashed = false;
 
     try {
-      ctx = await browserManager.createContext(getProxyForScraper('williamhill'));
+      const whProxy = getProxyForScraper('williamhill');
+      ctx = await browserManager.createContext(whProxy);
       const page = await ctx.newPage();
       // Block media that wastes RAM
       await page.route("**/*", (route: any) => {
@@ -230,11 +231,20 @@ export class WilliamHillScraper extends BaseScraper {
       // Load homepage first so WH establishes a guest session (cookies, CAS token) before betting API calls
       await page.goto("https://www.williamhill.es/", { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {});
       await dismissCookies(page);
-      await page.waitForTimeout(5_000);
+      // Short fixed wait for auth XHR calls and session cookie to settle
+      await new Promise<void>((r) => setTimeout(r, 1_500));
 
+      const capturesBefore = captures.length;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
-      // WH SPA necesita más tiempo para cargar apuestas
-      await page.waitForTimeout(15_000);
+      // Event-driven: exit as soon as first meaningful JSON arrives (max 15s)
+      const captureDeadline = Date.now() + 15_000;
+      while (captures.length === capturesBefore && Date.now() < captureDeadline) {
+        await new Promise<void>((r) => setTimeout(r, 200));
+      }
+      // Brief grace window to collect simultaneous responses
+      if (captures.length > capturesBefore) {
+        await new Promise<void>((r) => setTimeout(r, 1_500));
+      }
 
       const finalUrl = page.url();
       const title = await page.title().catch(() => "");

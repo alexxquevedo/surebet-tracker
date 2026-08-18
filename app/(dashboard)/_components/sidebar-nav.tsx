@@ -50,6 +50,7 @@ const BET_TYPES = [
   { value: 'COMBO',     label: '📋 Combinada',   multi: false, combo: true  },
   { value: 'ARBITRAGE', label: '⚡ Surebets',    multi: true,  combo: false },
   { value: 'MIDDLE',    label: '🎯 Middlebet',   multi: true,  combo: false },
+  { value: 'CUSTOM',    label: '📝 Custom',      multi: false, combo: false },
 ] as const
 
 type ModalBetType = (typeof BET_TYPES)[number]['value']
@@ -341,6 +342,7 @@ function NewOperationModal({
   const [notes, setNotes]             = useState('')
   const [middleRange, setMiddleRange] = useState('')
   const [bankrollId, setBankrollId]   = useState('')
+  const [isFreeBet, setIsFreeBet]     = useState(false)
 
   // ── Leg 1 (single + multi) ───────────────────────────────────────────────
   const [bm1Id, setBm1Id]     = useState(iv?.bm1Id ?? bookmakers[0]?.id ?? '')
@@ -368,16 +370,22 @@ function NewOperationModal({
   function handleOdds1Change(v: string) {
     setOdds1(v)
     const s = parseFloat(stake1), o = parseFloat(v)
-    if (!isNaN(s) && !isNaN(o) && s > 0 && o > 0) {
-      setRetorno1(new Decimal(s).mul(o).toDecimalPlaces(2).toString())
+    if (!isNaN(s) && !isNaN(o) && s > 0 && o > 1) {
+      const ret = isFreeBet
+        ? new Decimal(s).mul(new Decimal(o).minus(1))  // SNR: sólo ganancias
+        : new Decimal(s).mul(o)
+      setRetorno1(ret.toDecimalPlaces(2).toString())
     }
   }
 
   function handleStake1Change(v: string) {
     setStake1(v)
     const s = parseFloat(v), o = parseFloat(odds1)
-    if (!isNaN(s) && !isNaN(o) && s > 0 && o > 0) {
-      setRetorno1(new Decimal(s).mul(o).toDecimalPlaces(2).toString())
+    if (!isNaN(s) && !isNaN(o) && s > 0 && o > 1) {
+      const ret = isFreeBet
+        ? new Decimal(s).mul(new Decimal(o).minus(1))  // SNR
+        : new Decimal(s).mul(o)
+      setRetorno1(ret.toDecimalPlaces(2).toString())
     }
   }
 
@@ -385,7 +393,23 @@ function NewOperationModal({
     setRetorno1(v)
     const r = parseFloat(v), s = parseFloat(stake1)
     if (!isNaN(r) && !isNaN(s) && s > 0 && r > 0) {
-      setOdds1(new Decimal(r).div(s).toDecimalPlaces(4).toString())
+      // SNR reverse: odds = (return / faceValue) + 1
+      const odds = isFreeBet
+        ? new Decimal(r).div(s).plus(1).toDecimalPlaces(4)
+        : new Decimal(r).div(s).toDecimalPlaces(4)
+      setOdds1(odds.toString())
+    }
+  }
+
+  function toggleFreeBet() {
+    const next = !isFreeBet
+    setIsFreeBet(next)
+    const s = parseFloat(stake1), o = parseFloat(odds1)
+    if (!isNaN(s) && !isNaN(o) && s > 0 && o > 1) {
+      const ret = next
+        ? new Decimal(s).mul(new Decimal(o).minus(1))
+        : new Decimal(s).mul(o)
+      setRetorno1(ret.toDecimalPlaces(2).toString())
     }
   }
 
@@ -457,6 +481,13 @@ function NewOperationModal({
     if (!odds1 || isNaN(o1n)) return null
 
     if (!isMulti) {
+      if (isFreeBet) {
+        // Freebet SNR: el retorno ya es la ganancia neta (stake era gratis)
+        const snrReturn = (!isNaN(r1n) && r1n > 0)
+          ? r1n
+          : new Decimal(s1n).mul(new Decimal(o1n).minus(1)).toDecimalPlaces(2).toNumber()
+        return { label: 'Ganancia neta (crédito)', value: snrReturn, profit: snrReturn }
+      }
       const displayReturn = (!isNaN(r1n) && r1n > 0) ? r1n : new Decimal(s1n).mul(o1n).toDecimalPlaces(2).toNumber()
       const profit = new Decimal(displayReturn).minus(s1n).toDecimalPlaces(2).toNumber()
       return { label: 'Retorno bruto si gana', value: displayReturn, profit }
@@ -477,7 +508,7 @@ function NewOperationModal({
       const worst = Decimal.max(ret1, ret2).minus(totalStake).toDecimalPlaces(2).toNumber()
       return { label: 'Si middle entra', value: best, worstLabel: 'Si no entra', worst }
     }
-  }, [stake1, odds1, retorno1, stake2, odds2, comboOdds, comboRetorno, betType, isMulti, isCombo])
+  }, [stake1, odds1, retorno1, stake2, odds2, comboOdds, comboRetorno, betType, isMulti, isCombo, isFreeBet])
 
   // ── Calculadora de stake 2 (surebets/middles) ─────────────────────────
   const calculatorPreview = useMemo(() => {
@@ -501,6 +532,7 @@ function NewOperationModal({
     setBm1Id(bookmakers[0]?.id ?? ''); setBm2Id(bookmakers[1]?.id ?? bookmakers[0]?.id ?? '')
     setComboRows([{ description: '', eventName: '', sport: '', competition: '' }])
     setComboOdds(''); setComboRetorno('')
+    setIsFreeBet(false)
     setError(null)
   }
 
@@ -549,6 +581,10 @@ function NewOperationModal({
       fd.append('bookmakerId', bm1Id)
       fd.append('stake',       stake1)
       fd.append('odds',        odds1)
+      if (isFreeBet && betType === 'SINGLE') {
+        fd.append('isFreeBet', 'true')
+        if (retorno1) fd.append('potentialReturn', retorno1)
+      }
       result = await createQuickBetAction(fd)
     }
 
@@ -773,7 +809,9 @@ function NewOperationModal({
                 {/* Evento / Selección — para casino se convierte en "¿Qué has jugado?" */}
                 <div className="space-y-1.5">
                   <label className="block text-sm font-semibold">
-                    {betType === 'CASINO' ? '¿Qué has jugado?' : 'Evento / Selección'}
+                    {betType === 'CASINO'  ? '¿Qué has jugado?' :
+                     betType === 'CUSTOM'  ? 'Descripción' :
+                                            'Evento / Selección'}
                     {betType !== 'CASINO' && (
                       <span className="font-normal text-muted-foreground"> (opcional)</span>
                     )}
@@ -904,14 +942,40 @@ function NewOperationModal({
                       )}
                     </div>
 
+                    {betType === 'SINGLE' && (
+                      <button
+                        type="button"
+                        onClick={toggleFreeBet}
+                        className={`flex items-center gap-2 w-full text-xs px-3 py-2 rounded-lg border transition-colors ${
+                          isFreeBet
+                            ? 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400'
+                            : 'border-border text-muted-foreground hover:border-amber-300 hover:text-amber-700 dark:hover:text-amber-400'
+                        }`}
+                      >
+                        <span>🎁</span>
+                        <span className="font-medium">Crédito de apuesta</span>
+                        {isFreeBet && <span className="ml-auto text-[10px] font-bold uppercase tracking-wider opacity-80">Activo</span>}
+                      </button>
+                    )}
+
                     <div className="grid grid-cols-3 gap-2">
-                      <NumberField label="Stake (€)" value={stake1} onChange={handleStake1Change}
-                        placeholder="100.00" step="0.01" min="0.01" error={s1err} />
+                      <NumberField
+                        label={isFreeBet ? 'Valor del crédito (€)' : 'Stake (€)'}
+                        value={stake1} onChange={handleStake1Change}
+                        placeholder="3.00" step="0.01" min="0.01" error={s1err} />
                       <NumberField label="Cuota" value={odds1} onChange={handleOdds1Change}
                         placeholder="2.10" step="any" error={o1err} />
-                      <NumberField label="Retorno total" value={retorno1} onChange={handleRetorno1Change}
-                        placeholder="210.00" step="any" helpText="Bruto (con stake)" />
+                      <NumberField
+                        label={isFreeBet ? 'Retorno (sin stake)' : 'Retorno total'}
+                        value={retorno1} onChange={handleRetorno1Change}
+                        placeholder={isFreeBet ? '3.81' : '210.00'} step="any"
+                        helpText={isFreeBet ? 'Editable (boosters…)' : 'Bruto (con stake)'} />
                     </div>
+                    {isFreeBet && (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400 -mt-1">
+                        Auto-calculado: crédito × (cuota − 1). Edita el retorno si hubo booster.
+                      </p>
+                    )}
                   </>
                 )}
               </>

@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "build": "tsc",
     "db:generate": "npx prisma generate --schema=../prisma/schema.prisma",
-    "install:browser": "npx playwright install chromium"
+    "install:browser": "npx playwright install chromium",
+    "scrape:local": "node dist/scrape-local.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

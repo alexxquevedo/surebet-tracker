@@ -148,7 +148,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         title: true,
         primaryBookmakerId: true,
         primaryBookmaker: { select: { name: true, etiqueta: true, color: true } },
-        singleBetDetail:  { select: { selection: true, odds: true } },
+        singleBetDetail:  { select: { selection: true, odds: true, isFreeBet: true, freeBetValue: true } },
         arbitrageDetail:  { select: { winningLegId: true } },
         middleDetail:     { select: { winningLegId: true, middleHit: true } },
         legs: {
@@ -236,7 +236,12 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     primaryBookmakerId: r.primaryBookmakerId,
     primaryBookmaker:   r.primaryBookmaker ?? null,
     singleBetDetail:    r.singleBetDetail
-      ? { selection: r.singleBetDetail.selection, odds: r.singleBetDetail.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null }
+      ? {
+          selection:    r.singleBetDetail.selection,
+          odds:         r.singleBetDetail.odds ? parseFloat(r.singleBetDetail.odds.toString()) : null,
+          isFreeBet:    r.singleBetDetail.isFreeBet,
+          freeBetValue: r.singleBetDetail.freeBetValue ? parseFloat(r.singleBetDetail.freeBetValue.toString()) : null,
+        }
       : null,
     arbitrageDetail:    r.arbitrageDetail ?? null,
     middleDetail:       r.middleDetail ?? null,
@@ -456,7 +461,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           <p className="text-3xl mb-3">📋</p>
           <p className="font-semibold">Sin operaciones</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {(filterType ?? filterAprox ?? filterBankroll ?? filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo)
+            {(filterType ?? filterAprox ?? filterBankroll ?? filterSport ?? filterBm ?? filterStatus ?? filterLive ?? filterFrom ?? filterTo ?? filterQ ?? filterCompetition)
               ? 'No hay operaciones que coincidan con los filtros actuales.'
               : 'Usa el botón + para registrar tu primera apuesta.'}
           </p>

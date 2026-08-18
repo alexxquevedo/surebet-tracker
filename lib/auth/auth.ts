@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
 import Credentials from 'next-auth/providers/credentials'
-import bcrypt from 'bcryptjs'
+import { hash as bcryptHash, compare as bcryptCompare } from '@node-rs/bcrypt'
 import { z } from 'zod'
 import { prisma } from '@/lib/db/client'
 import { sendLoginNotificationEmail } from '@/lib/services/email'
@@ -56,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           if (!user?.passwordHash) return null
 
-          const isValid = await bcrypt.compare(parsed.data.password, user.passwordHash)
+          const isValid = await bcryptCompare(parsed.data.password, user.passwordHash)
           if (!isValid) return null
 
           // Fire-and-forget — no bloqueamos el login si falla esta actualización secundaria

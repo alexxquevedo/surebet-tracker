@@ -5,7 +5,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium, Browser, BrowserContext, CDPSession, Page } from "playwright";
 import { config } from "../config";
 
 const CTX_OPTIONS = {
@@ -161,18 +161,28 @@ class BrowserManager {
   private async pingBrowser(browser: Browser): Promise<boolean> {
     const now = Date.now();
     if (now - this.lastPingMs < this.PING_INTERVAL_MS) return true;
-    let ctx: BrowserContext | null = null;
+    // CDP-level ping: Browser.getVersion is a lightweight round-trip (~1–5ms).
+    // Avoids creating a full browser context (no renderer, no profile dir).
+    // 800ms timeout (vs 500ms): accounts for VPS jitter under memory pressure
+    // so a slow-but-live browser doesn't falsely appear as a zombie.
+    let session: CDPSession | null = null;
     try {
-      const pingTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("zombie ping timeout")), 500)
-      );
-      ctx = await Promise.race([browser.newContext(CTX_OPTIONS), pingTimeout]);
+      const CDP_PING_TIMEOUT = 800;
+      const withTimeout = <T>(p: Promise<T>): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("CDP ping timeout")), CDP_PING_TIMEOUT)
+          ),
+        ]);
+      session = await withTimeout(browser.newBrowserCDPSession());
+      await withTimeout(session.send("Browser.getVersion" as any));
       this.lastPingMs = Date.now();
       return true;
     } catch {
       return false;
     } finally {
-      if (ctx) await ctx.close().catch(() => {});
+      if (session) await session.detach().catch(() => {});
     }
   }
 }
@@ -187,8 +197,14 @@ class Semaphore {
   private count = 0;
   constructor(private readonly max: number) {}
 
-  async acquire(): Promise<void> {
+  async acquire(timeoutMs: number = 45_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
     while (this.count >= this.max) {
+      if (Date.now() >= deadline) {
+        // Holder likely died without releasing — force unblock to prevent deadlock.
+        this.count = Math.max(0, this.count - 1);
+        throw new Error(`Semaphore deadlock: acquire() blocked for ${timeoutMs}ms`);
+      }
       await new Promise<void>((r) => setTimeout(r, 300));
     }
     this.count++;
@@ -272,11 +288,21 @@ export function getResidentialProxy(): { server: string; username?: string; pass
 /**
  * Per-scraper proxy routing (Phase 3).
  * Reads XXXX_PROXY_URL from config.scraperProxies; returns undefined for direct scrapers.
- * With IPRoyal IP-whitelist auth, no username/password is needed.
+ * Q2 fix: parses credentials out of the URL (Chromium rejects embedded creds in the server field).
  */
-export function getProxyForScraper(name: keyof typeof config.scraperProxies): { server: string } | undefined {
-  const url = config.scraperProxies[name];
-  return url ? { server: url } : undefined;
+export function getProxyForScraper(name: keyof typeof config.scraperProxies): { server: string; username?: string; password?: string } | undefined {
+  const rawUrl = config.scraperProxies[name];
+  if (!rawUrl) return undefined;
+  try {
+    const u = new URL(rawUrl);
+    const server   = `${u.protocol}//${u.hostname}:${u.port}`;
+    const username = u.username ? decodeURIComponent(u.username) : undefined;
+    const password = u.password ? decodeURIComponent(u.password) : undefined;
+    return { server, ...(username ? { username, password } : {}) };
+  } catch {
+    // Malformed URL — return as-is and let Playwright handle the error
+    return { server: rawUrl };
+  }
 }
 
 // ─── Phase 4: Dead Letter Queue ───────────────────────────────────────────────

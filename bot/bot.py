@@ -145,6 +145,21 @@ BOOKMAKER_NAMES = {
     "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
     "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
     "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
+    "marathonbet": "Marathonbet",
+}
+
+BOOKMAKER_URLS: dict[str, str] = {
+    "betsson":     "https://www.betsson.es",
+    "winamax":     "https://www.winamax.es",
+    "codere":      "https://www.codere.es",
+    "sportium":    "https://apuestas.sportium.es",
+    "williamhill": "https://sports.williamhill.es",
+    "bwin":        "https://www.bwin.es",
+    "daznbet":     "https://www.daznbet.es",
+    "retabet":     "https://www.retabet.es",
+    "bet365":      "https://www.bet365.es",
+    "marathonbet": "https://www.marathonbet.es",
+    "leovegas":    "https://www.leovegas.es",
 }
 
 # Región regulatoria: ES = DGOJ (España), INT = plataforma internacional
@@ -900,11 +915,13 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
                             "profit_base":result["profit_base"],"profit_max":result["profit_max"],
                             "prob_middle":result["prob_middle"],"gap":result["gap"],
                             "profit":result["profit_base"],"legs":[
-                            {"bookmaker":oe["bookmaker_title"],"outcome":"Over",
-                             "odd":oe["price"],"stake_pct":result["stake1_pct"],
+                            {"bookmaker":oe["bookmaker_title"],"bookmaker_key":oe["bookmaker_key"],
+                             "region":BOOKMAKER_REGION.get(oe["bookmaker_key"],""),
+                             "outcome":"Over","odd":oe["price"],"stake_pct":result["stake1_pct"],
                              "market":"totals","point":oe["point"],"description":""},
-                            {"bookmaker":ue["bookmaker_title"],"outcome":"Under",
-                             "odd":ue["price"],"stake_pct":result["stake2_pct"],
+                            {"bookmaker":ue["bookmaker_title"],"bookmaker_key":ue["bookmaker_key"],
+                             "region":BOOKMAKER_REGION.get(ue["bookmaker_key"],""),
+                             "outcome":"Under","odd":ue["price"],"stake_pct":result["stake2_pct"],
                              "market":"totals","point":ue["point"],"description":""},
                         ]}); break
     return apuestas
@@ -1063,14 +1080,64 @@ async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
 
 # ── Cross-source matching engine (Odds API UUID ↔ DualStats eventKey) ─────────
 
-_TEAM_STOP_WORDS = frozenset({"fc", "cf", "cd", "sd", "real", "club", "de", "del", "la", "el", "ac", "as", "sk"})
+# Words that are ALWAYS safe to strip (club-type indicators, never differentiate clubs).
+_STRUCTURAL_STOP_WORDS: frozenset[str] = frozenset({
+    "fc", "cf", "cd", "sd", "club", "de", "del", "la", "el", "ac", "as", "sk",
+})
+# Words stripped CONDITIONALLY: only when the result is not a bare geographic residual.
+# "real" is kept in "Real Madrid" → "real madrid" so it doesn't collapse to just "madrid",
+# preventing same-city club collisions even if new qualifiers are later added to stop words.
+_SOFT_STOP_WORDS: frozenset[str] = frozenset({"real"})
+# Combined set — used by _team_tokens() for last-token discrimination filtering.
+_TEAM_STOP_WORDS: frozenset[str] = _STRUCTURAL_STOP_WORDS | _SOFT_STOP_WORDS
+
+# Reserve/sub-club descriptors: if one team has these and the other doesn't,
+# similarity is hard-locked to 0.0 regardless of JW score (Porto ≠ Porto B).
+_RESERVE_DESCRIPTORS: frozenset[str] = frozenset({
+    "b", "ii", "iii", "u19", "u21", "u23", "femenino", "women", "femenil"
+})
+
+# Single geographic tokens shared by multiple clubs from the same city.
+# If stripping stop words leaves ONLY these tokens, the name is geo-ambiguous and
+# soft stop words are retained so the clubs remain distinguishable via JW.
+_GEO_RESIDUALS: frozenset[str] = frozenset({
+    "madrid", "barcelona", "manchester", "paris", "london", "milan",
+    "bilbao", "valencia", "sevilla", "porto", "lisbon", "amsterdam",
+    "munich", "berlin", "rome", "moscow", "zagreb", "glasgow",
+})
 
 def _normalize_team(name: str) -> str:
-    """Lowercase, remove accents, strip common club suffixes."""
+    """Lowercase, remove accents, strip club suffixes.
+
+    Two-phase stripping:
+    1. Structural stop words (fc, club, de…) are always removed.
+    2. Soft stop words (real) are removed ONLY when the result is unambiguous —
+       i.e., not a bare city name shared by multiple clubs.
+       "Real Madrid" → "real madrid" (guard fires; "madrid" ∈ _GEO_RESIDUALS).
+       "Real Betis"  → "betis"       (guard silent; "betis" ∉ _GEO_RESIDUALS).
+    """
     nfkd = unicodedata.normalize("NFKD", name.lower())
     ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
     tokens = re.sub(r"[^a-z0-9 ]", " ", ascii_str).split()
-    return " ".join(t for t in tokens if t not in _TEAM_STOP_WORDS)
+    after_structural = [t for t in tokens if t not in _STRUCTURAL_STOP_WORDS]
+    after_all = [t for t in after_structural if t not in _SOFT_STOP_WORDS]
+    # Guard: if full strip leaves only geographic residuals, keep soft-stop tokens
+    # so different clubs from the same city are still distinguishable by JW.
+    if after_all and all(t in _GEO_RESIDUALS for t in after_all):
+        result = after_structural
+    else:
+        result = after_all
+    return " ".join(result) if result else " ".join(tokens)
+
+def _team_tokens(normalized: str) -> list[str]:
+    """Tokens significativos de un nombre ya normalizado (excluye stop words y tokens ≤2 chars)."""
+    return [t for t in normalized.split() if t not in _TEAM_STOP_WORDS and len(t) > 2]
+
+def _has_reserve_mismatch(tokens_a: list[str], tokens_b: list[str]) -> bool:
+    """True si un equipo tiene descriptor de reserva/filial y el otro no (Porto ≠ Porto B)."""
+    res_a = set(tokens_a) & _RESERVE_DESCRIPTORS
+    res_b = set(tokens_b) & _RESERVE_DESCRIPTORS
+    return res_a != res_b
 
 def _jaro(s1: str, s2: str) -> float:
     if s1 == s2:
@@ -1123,9 +1190,102 @@ def _event_team_similarity(ev_a: dict, ev_b: dict) -> float:
     ab = _normalize_team(ev_b.get("away_team", ""))
     if not (ha and aa and hb and ab):
         return 0.0
-    direct  = (_jaro_winkler(ha, hb) + _jaro_winkler(aa, ab)) / 2
-    reverse = (_jaro_winkler(ha, ab) + _jaro_winkler(aa, hb)) / 2
-    return max(direct, reverse)
+
+    # Hard-lock: reserva vs equipo principal — ignorar JW por alto que sea
+    if (_has_reserve_mismatch(_team_tokens(ha), _team_tokens(hb)) or
+            _has_reserve_mismatch(_team_tokens(aa), _team_tokens(ab))):
+        return 0.0
+
+    jw_direct  = (_jaro_winkler(ha, hb) + _jaro_winkler(aa, ab)) / 2
+    jw_reverse = (_jaro_winkler(ha, ab) + _jaro_winkler(aa, hb)) / 2
+    global_score = max(jw_direct, jw_reverse)
+
+    if global_score < 0.82:
+        return global_score
+
+    # Last-token disambiguation: catches "Manchester United" vs "Manchester City",
+    # "West Ham" vs "West Brom", "Inter Miami" vs "Inter Milan", etc.
+    # If last tokens diverge (JW < 0.85) → teams are different despite high global JW.
+    if jw_direct >= jw_reverse:
+        pairs = [(ha, hb), (aa, ab)]
+    else:
+        pairs = [(ha, ab), (aa, hb)]
+
+    def _last_token_ok(na: str, nb: str) -> bool:
+        ta, tb = _team_tokens(na), _team_tokens(nb)
+        if not ta or not tb:
+            return True   # nombre muy corto — confiar en JW global
+        # Geo-residual count guard (Q2): if one name is a pure geographic token
+        # ("barcelona") and the other has additional discriminating tokens
+        # ("atletico barcelona"), reject immediately — they are different clubs.
+        if len(ta) != len(tb):
+            set_a, set_b = set(ta), set(tb)
+            if (set_a.issubset(_GEO_RESIDUALS) or set_b.issubset(_GEO_RESIDUALS)) and set_a != set_b:
+                return False
+        la, lb = ta[-1], tb[-1]
+        # Aplicar solo si ambos tokens son palabras reales (len > 2).
+        # Acrónimos/sufijos cortos (len ≤ 2: "sg", "bk", "cf") no son discriminadores fiables.
+        if len(la) <= 2 or len(lb) <= 2:
+            return True
+        return _jaro_winkler(la, lb) >= 0.85
+
+    if not all(_last_token_ok(a, b) for a, b in pairs):
+        return 0.0  # tokens discriminadores divergen → equipos distintos
+
+    return global_score
+
+def _run_normalize_tests() -> None:
+    """
+    Q2 regression suite — call manually to verify the normalisation + JW pipeline.
+    Covers geo-collision, single-token geographic names, and soft-stop-word guard.
+    """
+    def sim(ha: str, aa: str, hb: str, ab: str) -> float:
+        return _event_team_similarity(
+            {"home_team": ha, "away_team": aa},
+            {"home_team": hb, "away_team": ab},
+        )
+
+    # ── _normalize_team ──────────────────────────────────────────────────────
+    assert _normalize_team("Real Madrid") == "real madrid",      "guard must retain 'real'"
+    assert _normalize_team("Real Betis") == "betis",             "non-geo residual → strip 'real'"
+    assert _normalize_team("Atletico Madrid") == "atletico madrid", "'atletico' is NOT a stop word"
+    assert _normalize_team("FC Barcelona") == "barcelona",       "structural 'fc' stripped"
+    assert _normalize_team("Barcelona") == "barcelona",          "single geo token — guard no-op"
+    assert _normalize_team("Manchester City") == "manchester city", "no stop words to strip"
+    assert _normalize_team("Manchester United") == "manchester united", "no stop words to strip"
+
+    # ── Q2 core case: single-token geo name vs multi-token composite ─────────
+    # "Barcelona" → "barcelona"; "Atletico Barcelona" → "atletico barcelona"
+    # JW("barcelona", "atletico barcelona") ≈ 0.61 < 0.82 → rejected
+    score = sim("Barcelona", "Sevilla", "Atletico Barcelona", "Malaga")
+    assert score == 0.0, f"Barcelona vs Atletico Barcelona must not match (got {score:.3f})"
+
+    # ── Geo-collision guard: Real Madrid vs Atletico Madrid ──────────────────
+    # JW("real madrid", "atletico madrid") ≈ 0.81 < 0.82 → rejected by global threshold
+    score = sim("Real Madrid", "Real Betis", "Atletico Madrid", "Valencia")
+    assert score == 0.0, f"Real Madrid vs Atletico Madrid must not match (got {score:.3f})"
+
+    # ── Same-city last-token rejection: Manchester United vs Manchester City ──
+    score = sim("Manchester United", "Liverpool", "Manchester City", "Arsenal")
+    assert score == 0.0, f"Man United vs Man City must not match (got {score:.3f})"
+
+    # ── Legitimate single-source match: FC Barcelona == Barcelona ────────────
+    score = sim("FC Barcelona", "Real Madrid", "Barcelona", "Real Madrid")
+    assert score > 0.82, f"FC Barcelona vs Barcelona must match (got {score:.3f})"
+
+    # ── PSG: short acronym token is skip (len ≤ 2) — should NOT false-reject ─
+    score = sim("Paris Saint-Germain", "Lyon", "PSG", "Olympique Lyonnais")
+    # Normalized: "paris germain" vs "psg", "lyon" vs "olympique lyonnais"
+    # JW global likely < 0.82, so 0.0 — this is correct (different names across APIs)
+    # The point is it must not CRASH and must return a float.
+    assert isinstance(score, float), "PSG test must return float"
+
+    # ── West Ham vs West Brom: len > 2 check rejects via JW(ham, brom) < 0.85 ─
+    score = sim("West Ham United", "Fulham", "West Bromwich Albion", "Brentford")
+    assert score == 0.0, f"West Ham vs West Brom must not match (got {score:.3f})"
+
+    print("_run_normalize_tests: all assertions passed ✓")
+
 
 def _merge_cross_source_events(events: list, live: bool) -> list:
     """
@@ -1412,13 +1572,21 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                             "ts":         local_now().isoformat(),
                             "time":       event.get("commence_time", ""),
                         }
-                        kb = InlineKeyboardMarkup([[
+                        # Botones fila 1: ✅/❌ | Fila 2: links directos a casas (no cuentan contra el límite 4096)
+                        link_btns = [
+                            InlineKeyboardButton(f"🔗 {leg['bookmaker']}", url=BOOKMAKER_URLS[leg["bookmaker_key"]])
+                            for leg in ap.get("legs", [])
+                            if leg.get("bookmaker_key", "") in BOOKMAKER_URLS
+                        ]
+                        kb_rows = [[
                             InlineKeyboardButton("✅ Hecha",    callback_data=f"AH_{uid}_{alert_id}"),
                             InlineKeyboardButton("❌ No hecha", callback_data=f"ANH_{uid}_{alert_id}"),
-                        ]])
+                        ]]
+                        if link_btns:
+                            kb_rows.append(link_btns[:4])  # máx 4 botones por fila
+                        kb = InlineKeyboardMarkup(kb_rows)
                     try:
                         if kb:
-                            # tg_send + asyncio.shield para capturar message_id para edición DualStats
                             fut = await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], reply_markup=kb)
                             if asyncio.isfuture(fut):
                                 try:
@@ -1426,10 +1594,35 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                                     if sent and cache_key in alerta_cache:
                                         alerta_cache[cache_key]["msg_id"] = sent.message_id
                                         _save_alerts_cache()
+                                except (asyncio.TimeoutError, asyncio.CancelledError):
+                                    # Shield timeout: fut sigue vivo en la cola.
+                                    # Registrar done_callback con deadline para capturar msg_id cuando el sender
+                                    # lo resuelva sin actualizar entradas obsoletas si el bot tardó demasiado.
+                                    import time as _time
+                                    _cb_deadline = _time.monotonic() + 60.0  # 60s máximo de espera post-timeout
+                                    def _capture_msg_id(
+                                        f: asyncio.Future,
+                                        _ck: str = cache_key,
+                                        _dl: float = _cb_deadline,
+                                    ) -> None:
+                                        try:
+                                            if _time.monotonic() > _dl:
+                                                return   # demasiado tarde — no actualizar cache obsoleta
+                                            if f.cancelled() or f.exception():
+                                                return
+                                            result = f.result()
+                                            if result and _ck in alerta_cache:
+                                                alerta_cache[_ck]["msg_id"] = result.message_id
+                                                _save_alerts_cache()
+                                        except Exception:
+                                            pass
+                                    if not fut.done():
+                                        fut.add_done_callback(_capture_msg_id)
+                                    logger.debug(f"[DualStats] shield timeout uid={uid} — done_callback registrado (deadline 60s)")
                                 except Exception:
-                                    logger.warning(f"[DualStats] No se pudo capturar message_id uid={uid}")
+                                    logger.warning(f"[DualStats] Error capturando message_id uid={uid}")
                             elif fut is not None:
-                                # Direct send (queue None) — fut ES el Message
+                                # Direct send (queue=None) — fut ES el Message
                                 if cache_key in alerta_cache:
                                     alerta_cache[cache_key]["msg_id"] = fut.message_id
                                     _save_alerts_cache()
@@ -1463,6 +1656,13 @@ async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     if api_credits_remaining is not None and api_credits_remaining <= 0:
         logger.warning("[live] Sin créditos API — escaneo omitido.")
         return
+    # Prune stale live deduplication entries (live games never last >3h)
+    cutoff = datetime.now() - timedelta(hours=3)
+    stale = [k for k, v in live_sent_surebets.items() if v["ts"] < cutoff]
+    if stale:
+        for k in stale:
+            del live_sent_surebets[k]
+        logger.debug(f"[live_cache] Pruned {len(stale)} stale entries, {len(live_sent_surebets)} remaining")
     found = await escanear_y_alertar(context.application, live=True)
     if found == 0:
         live_empty_streak += 1

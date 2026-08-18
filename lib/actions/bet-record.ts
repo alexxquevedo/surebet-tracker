@@ -87,16 +87,26 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
   if (!bookmakerId) return { success: false, error: 'Casa de apuestas requerida' }
 
   const rawBankrollId = (formData.get('bankrollId') as string | null) || null
+  const isFreebet     = formData.get('isFreeBet') === 'true'
+  const rawPotReturn  = (formData.get('potentialReturn') as string | null)?.trim() || null
 
   const stakeNum = parseFloat(rawStake ?? '')
   const oddsNum  = parseFloat(rawOdds  ?? '')
   if (isNaN(stakeNum) || stakeNum <= 0) return { success: false, error: 'Stake inválido' }
   if (isNaN(oddsNum)  || oddsNum <= 1)  return { success: false, error: 'Cuota inválida (debe ser > 1)' }
 
-  const betType   = rawType as BetType
-  const stake     = D(stakeNum).toDecimalPlaces(2)
-  const odds      = D(oddsNum).toDecimalPlaces(6)
-  const potReturn = stake.mul(odds).toDecimalPlaces(2)
+  const betType        = rawType as BetType
+  const freeBetValue   = isFreebet ? D(stakeNum).toDecimalPlaces(2) : null
+  const stake          = isFreebet ? D(0) : D(stakeNum).toDecimalPlaces(2)
+  const odds           = D(oddsNum).toDecimalPlaces(6)
+
+  // SNR (Stake Not Returned): only winnings, no stake back
+  const snrReturn   = D(stakeNum).mul(odds.minus(1)).toDecimalPlaces(2)
+  const rawPrNum    = parseFloat(rawPotReturn ?? '')
+  const potReturn   = isFreebet
+    ? (rawPotReturn && !isNaN(rawPrNum) && rawPrNum > 0 ? D(rawPrNum).toDecimalPlaces(2) : snrReturn)
+    : stake.mul(odds).toDecimalPlaces(2)
+
   const finalTitle = selection || autoTitle(betType, rawSport, datePlaced)
 
   try {
@@ -123,7 +133,13 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
             bankrollId: rawBankrollId ?? undefined,
             title: finalTitle,
             singleBetDetail: {
-              create: { selection: selection || finalTitle, odds, marketType: 'OTHER', isFreeBet: false },
+              create: {
+                selection: selection || finalTitle,
+                odds,
+                marketType: 'OTHER',
+                isFreeBet: isFreebet,
+                ...(isFreebet && freeBetValue ? { freeBetValue } : {}),
+              },
             },
           },
           select: { id: true },
@@ -400,7 +416,7 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
         totalStake: true,
         potentialReturn: true,
         primaryBookmakerId: true,
-        singleBetDetail: { select: { odds: true } },
+        singleBetDetail: { select: { odds: true, isFreeBet: true } },
         legs: {
           where: { deletedAt: null },
           orderBy: { id: 'asc' },
@@ -602,9 +618,13 @@ export async function settleBetAction(formData: FormData): Promise<BetActionResu
       // SINGLE / CASINO / COMBO / CUSTOM
       if (outcome === 'WON') {
         if (betType === 'SINGLE' && bet.singleBetDetail?.odds) {
-          // SINGLE: usar la cuota guardada en singleBetDetail
-          const singleOdds = D(bet.singleBetDetail.odds)
-          totalReturn = totalStake.mul(singleOdds).toDecimalPlaces(2)
+          if (bet.singleBetDetail.isFreeBet) {
+            // Freebet SNR: potentialReturn ya almacena sólo las ganancias (stake era gratis)
+            totalReturn = D(bet.potentialReturn ?? 0).toDecimalPlaces(2)
+          } else {
+            const singleOdds = D(bet.singleBetDetail.odds)
+            totalReturn = totalStake.mul(singleOdds).toDecimalPlaces(2)
+          }
         } else {
           // COMBO / CASINO / CUSTOM: usar el potentialReturn almacenado al crear la apuesta
           totalReturn = D(bet.potentialReturn ?? 0).toDecimalPlaces(2)

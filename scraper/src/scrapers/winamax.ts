@@ -13,6 +13,7 @@ import { BaseScraper } from "./base";
 import { browserManager, dismissCookies, captureJsonRequests, logPageState } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
+import type { Page } from "playwright";
 
 const BASE_FR = "https://www.winamax.fr";
 
@@ -213,6 +214,35 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   return events;
 }
 
+/** Resultado de la espera de datos Winamax */
+type WsWaitResult =
+  | "ws_data"    // wsState.matches tiene partidos → usar parseWinamaxWsState
+  | "rest_data"  // datos REST capturados vía XHR → usar captured
+  | "ws_empty"   // WS conectó pero no hay partidos (estado legítimo fuera de temporada)
+  | "timeout";   // Sin WS ni REST en maxMs → posible bloqueo
+
+/**
+ * Espera orientada a eventos: sale en cuanto hay datos WS o REST, con timeout máximo.
+ * Distingue "WS bloqueado" (timeout sin msgs) de "WS vacío" (msgs pero sin partidos).
+ */
+async function waitForWsOrRest(
+  page: Page,
+  wsState: Record<string, any>,
+  wsMessages: Array<{ url: string; payload: string }>,
+  captured: Array<{ url: string; data: any }>,
+  maxMs: number = 12_000
+): Promise<WsWaitResult> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    if (Object.keys(wsState.matches ?? {}).length > 0) return "ws_data";
+    if (captured.length > 0) return "rest_data";
+    if (page.isClosed()) return "timeout";
+    await new Promise<void>((r) => setTimeout(r, 400));
+  }
+  // Expiró el timeout — ¿al menos llegaron frames WS?
+  return wsMessages.length > 0 ? "ws_empty" : "timeout";
+}
+
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
@@ -276,8 +306,12 @@ export class WinamaxScraper extends BaseScraper {
         await page.goto(`${BASE_FR}/paris-sportifs`, { waitUntil: "domcontentloaded", timeout: 40_000 });
       });
       await dismissCookies(page);
-      // Give WS time to receive all match data
-      await page.waitForTimeout(15_000);
+      const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, 12_000);
+      if (waitResult === "timeout") {
+        this.warn(`${isLive ? "Live" : "Prematch"}: sin datos WS ni REST en 12s — posible bloqueo de Winamax`);
+      } else if (waitResult === "ws_empty") {
+        this.log(`${isLive ? "Live" : "Prematch"}: WS conectó pero sin partidos (estado legítimo)`);
+      }
 
       const wsStateKeys = Object.keys(wsState);
       const wsUrls = wsMessages.length > 0
@@ -322,12 +356,21 @@ export class WinamaxScraper extends BaseScraper {
       if (events.length === 0 && wsStateKeys.length === 0) {
         await logPageState(page, this.name, getApiCalls());
       } else if (events.length > 0) {
+        browserManager.recordSuccess();
         this.log(`${isLive ? "Live" : "Prematch"} total: ${events.length} events across ${this.sports.join("/")}`);
       }
-    } catch (err) {
+    } catch (err: any) {
+      const isCrash =
+        String(err?.message).includes("closed") ||
+        String(err?.message).includes("crashed") ||
+        String(err?.message).includes("disconnected");
+      if (isCrash) {
+        browserManager.recordCrash();
+        await browserManager.shutdown();
+      }
       this.warn(`${isLive ? "live" : "prematch"} page failed`, err);
     } finally {
-      await ctx.close();
+      await ctx.close().catch(() => {});
     }
     return events;
   }
@@ -337,6 +380,7 @@ export class WinamaxScraper extends BaseScraper {
     const { page, ctx } = await browserManager.newPage();
     const captured: Array<{ url: string; data: any }> = [];
     const wsState: Record<string, any> = {};
+    const wsMessages: Array<{ url: string; payload: string }> = [];
 
     page.on("response", async (res: any) => {
       try {
@@ -352,6 +396,7 @@ export class WinamaxScraper extends BaseScraper {
         const raw = frame.payload;
         const payload = typeof raw === "string" ? raw : (Buffer.isBuffer(raw) ? raw.toString("utf8") : "");
         if (payload.length > 10) {
+          wsMessages.push({ url: ws.url(), payload });
           const stripped = payload.replace(/^\d+/, "");
           if (stripped.startsWith("[")) {
             try {
@@ -377,7 +422,10 @@ export class WinamaxScraper extends BaseScraper {
         this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — skip`);
       });
       await dismissCookies(page);
-      await page.waitForTimeout(15_000);
+      const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, 12_000);
+      if (waitResult === "timeout") {
+        this.warn(`Prematch ${sport}: sin datos WS ni REST en 12s — posible bloqueo`);
+      }
 
       const wsStateKeys = Object.keys(wsState);
       if (wsStateKeys.length > 0) {
@@ -393,7 +441,6 @@ export class WinamaxScraper extends BaseScraper {
       }
       if (events.length === 0) {
         const wsKeys = Object.keys(wsState).slice(0, 10).join(",");
-        // Fallback: try parseWinamaxData on wsState structure
         const fallback = parseWinamaxData(wsState, sport, false, "ws-state");
         if (fallback.length > 0) {
           this.log(`WS prematch ${sport} fallback: ${fallback.length} events from wsState`);
@@ -401,11 +448,21 @@ export class WinamaxScraper extends BaseScraper {
         } else {
           this.warn(`Prematch ${sport}: 0 events (WS keys: ${wsKeys || "none"})`);
         }
+      } else {
+        browserManager.recordSuccess();
       }
-    } catch (err) {
+    } catch (err: any) {
+      const isCrash =
+        String(err?.message).includes("closed") ||
+        String(err?.message).includes("crashed") ||
+        String(err?.message).includes("disconnected");
+      if (isCrash) {
+        browserManager.recordCrash();
+        await browserManager.shutdown();
+      }
       this.warn(`Prematch ${sport} failed`, err);
     } finally {
-      await ctx.close();
+      await ctx.close().catch(() => {});
     }
     return events;
   }

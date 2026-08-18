@@ -11,6 +11,7 @@
  */
 
 import axios, { AxiosInstance } from "axios";
+import https from "https";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
@@ -56,10 +57,18 @@ const SPORT_EXCLUDE: Record<Sport, string[]> = {
 // ─── Axios instances ──────────────────────────────────────────────────────────
 
 function makeClient(proxyUrl?: string): AxiosInstance {
+  // Q3: Scoped HTTPS agent — disables certificate verification only for this client.
+  // Required when the proxy performs MITM TLS inspection (self-signed cert chain).
+  const httpsAgent = new https.Agent({
+    rejectUnauthorized: !proxyUrl,  // strict when direct; lenient only when proxied
+    keepAlive: true,
+  });
+
   const instance = axios.create({
     baseURL: BASE_ES,
     timeout: 15_000,
     headers: DEFAULT_HEADERS,
+    httpsAgent,
   });
 
   if (proxyUrl) {
@@ -230,10 +239,12 @@ export class BwinScraper extends BaseScraper {
     const path = `sports/${sportId}/events?lang=es&facility=composite${isLive ? "&state=InPlay" : "&sort=StartDate&maxItems=100"}`;
     const tryFetch = async (proxyUrl?: string): Promise<any | null> => {
       try {
+        const agent = new https.Agent({ rejectUnauthorized: !proxyUrl, keepAlive: true });
         const instance = axios.create({
           baseURL: BASE_ES_V2,
           timeout: 15_000,
           headers: { ...DEFAULT_HEADERS, "x-app-context": undefined },
+          httpsAgent: agent,
           ...(proxyUrl ? { proxy: (() => { const u = new URL(proxyUrl); return { protocol: u.protocol.replace(":", "") as "http", host: u.hostname, port: parseInt(u.port, 10) }; })() } : {}),
         });
         const res = await instance.get(path);

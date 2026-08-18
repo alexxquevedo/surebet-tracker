@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
-import bcrypt from 'bcryptjs'
+import { hash as bcryptHash, compare as bcryptCompare } from '@node-rs/bcrypt'
 import { randomBytes } from 'crypto'
 import { hashApiKey } from '@/lib/auth/api-key'
 import { revalidatePath } from 'next/cache'
@@ -60,10 +60,10 @@ export async function changePasswordAction(formData: FormData): Promise<Settings
       error: 'Esta cuenta usa inicio de sesión con Google y no tiene contraseña local',
     }
 
-  const isValid = await bcrypt.compare(currentPw, user.passwordHash)
+  const isValid = await bcryptCompare(currentPw, user.passwordHash)
   if (!isValid) return { success: false, error: 'La contraseña actual no es correcta' }
 
-  const hash = await bcrypt.hash(newPw, 12)
+  const hash = await bcryptHash(newPw, 12)
   await prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } })
   return { success: true, message: 'Contraseña actualizada correctamente' }
 }

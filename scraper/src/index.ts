@@ -286,12 +286,13 @@ async function pollCycle(isLive: boolean): Promise<void> {
 
   console.log(`[orchestrator] ${label}: found ${arbs.length} arbs!`);
 
-  // 4. Save new arbs to DB
-  const savedArbs: Array<{ dbId: string; arb: typeof arbs[0] }> = [];
-  for (const arb of arbs) {
-    const dbId = await saveDetectedArb(arb);
-    savedArbs.push({ dbId, arb });
-  }
+  // 4. Save new arbs to DB (parallel — each create is independent)
+  const savedArbs = await Promise.all(
+    arbs.map(async (arb) => {
+      const dbId = await saveDetectedArb(arb);
+      return { dbId, arb };
+    }),
+  );
 
   // 5. Notify subscribers
   await notifyArbs(savedArbs);

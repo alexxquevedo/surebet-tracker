@@ -24,7 +24,8 @@ export interface BetForSettle {
 }
 
 interface Props {
-  bet: BetForSettle
+  bet:        BetForSettle
+  onSettled?: () => void
 }
 
 const SETTLED_LABELS: Record<string, { text: string; cls: string }> = {
@@ -34,7 +35,7 @@ const SETTLED_LABELS: Record<string, { text: string; cls: string }> = {
   CASHOUT: { text: '💰 Cashout',  cls: 'text-blue-600'  },
 }
 
-export function SettleButton({ bet }: Props) {
+export function SettleButton({ bet, onSettled }: Props) {
   const [open, setOpen]       = useState(false)
   const [settled, setSettled] = useState<string | null>(null)
 
@@ -61,7 +62,7 @@ export function SettleButton({ bet }: Props) {
         <SettleModal
           bet={bet}
           onClose={() => setOpen(false)}
-          onSettled={setSettled}
+          onSettled={(status) => { setSettled(status); onSettled?.() }}
         />
       )}
     </>

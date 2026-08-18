@@ -479,7 +479,15 @@ export class BetssonScraper extends BaseScraper {
 
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
       await dismissCookies(page);
-      await page.waitForTimeout(15_000); // wait for WS state + XHR
+      // Event-driven: exit as soon as first WS message or XHR arrives (max 15s)
+      const captureDeadline = Date.now() + 15_000;
+      while (wsMessages.length === 0 && xhrCaptures.length === 0 && Date.now() < captureDeadline) {
+        await new Promise<void>((r) => setTimeout(r, 200));
+      }
+      // Grace window: collect simultaneous WS frames + additional XHR
+      if (wsMessages.length > 0 || xhrCaptures.length > 0) {
+        await new Promise<void>((r) => setTimeout(r, 2_000));
+      }
 
       // ── 1. Parse WS messages ───────────────────────────────────────────────
       const { state: wsState, typeCounts, marketSample } = parseWsMarkets(wsMessages);

@@ -4,10 +4,10 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
 import { getDashboardMetrics, getRecentBetRecords, getOpenBets } from '@/lib/queries/dashboard'
-import type { OpenBetItem } from '@/lib/queries/dashboard'
 import { StrategyChart } from './_components/strategy-chart'
 import { SetupProgress } from './_components/setup-progress'
 import { MonthlyGoalWidget } from './_components/monthly-goal-widget'
+import { OpenBetsSection } from './_components/open-bets-section'
 import { formatCurrency, formatPercentage, formatDate } from '@/lib/utils/format'
 import type {
   BankrollMetrics,
@@ -221,6 +221,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <OpenBetsSection bets={openBets} />
         </section>
       )}
+
+
 
       {/* ── S4: Últimas Operaciones ─────────────────────────────────────── */}
       <section>
@@ -514,107 +516,6 @@ function RecentRecordsSection({ records }: { records: BetRecordListItem[] }) {
                 >
                   {statusMeta.label}
                 </span>
-              </div>
-            </a>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// EN JUEGO — OPERACIONES ABIERTAS
-// ════════════════════════════════════════════════════════════════════════════
-
-function OpenBetsSection({ bets }: { bets: OpenBetItem[] }) {
-  const totalStake = bets.reduce((sum, b) => sum + b.totalStake, 0)
-  const totalGuaranteed = bets
-    .filter((b) => b.type === 'ARBITRAGE' && b.potentialReturn !== null)
-    .reduce((sum, b) => sum + (b.potentialReturn! - b.totalStake), 0)
-
-  return (
-    <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-card overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/40">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400 truncate">
-            {bets.length === 1 ? '1 operación en juego' : `${bets.length} operaciones en juego`}
-            {' '}·{' '}
-            <span className="tabular-nums">{formatCurrency(totalStake)}</span> en riesgo
-            {totalGuaranteed > 0 && (
-              <span className="ml-1.5 text-green-700 dark:text-green-400 font-semibold">
-                · ~+{formatCurrency(totalGuaranteed)} garantizados
-              </span>
-            )}
-          </span>
-        </div>
-        <a
-          href="/records"
-          className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-medium flex-shrink-0 ml-3"
-        >
-          Ver todas →
-        </a>
-      </div>
-
-      {/* Filas */}
-      <div className="divide-y">
-        {bets.map((bet) => {
-          const typeMeta = BET_TYPE_META[bet.type]
-          const bookmakerLabel =
-            bet.legs.length > 0
-              ? bet.legs.map((l) => l.bookmaker.name).join(' + ')
-              : (bet.primaryBookmaker?.name ?? '—')
-          const expectedProfit = bet.type === 'ARBITRAGE' && bet.potentialReturn !== null
-            ? bet.potentialReturn - bet.totalStake
-            : null
-
-          return (
-            <a
-              key={bet.id}
-              href="/records"
-              className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/30 transition-colors"
-            >
-              <span
-                className={`hidden sm:inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1 flex-shrink-0 ${typeMeta.cls}`}
-              >
-                <span aria-hidden="true">{typeMeta.emoji}</span>
-                <span>{typeMeta.label}</span>
-              </span>
-              <span className="sm:hidden text-base flex-shrink-0" aria-hidden="true">
-                {typeMeta.emoji}
-              </span>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">
-                  {bet.title ?? bet.eventName ?? 'Sin título'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {bookmakerLabel} · {formatDate(bet.datePlaced)}
-                </p>
-              </div>
-
-              <div className="text-right flex-shrink-0">
-                {expectedProfit !== null ? (
-                  <>
-                    <p className="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">
-                      ~+{formatCurrency(expectedProfit)}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                      {formatCurrency(bet.totalStake)} stake
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-semibold tabular-nums">
-                      {formatCurrency(bet.totalStake)}
-                    </p>
-                    <span className="inline-block text-[10px] font-medium rounded-full px-2 py-0.5 mt-0.5 bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
-                      en juego
-                    </span>
-                  </>
-                )}
               </div>
             </a>
           )

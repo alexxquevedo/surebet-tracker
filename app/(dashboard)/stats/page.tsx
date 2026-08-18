@@ -144,6 +144,7 @@ function ActivityHeatmap({ data }: { data: HeatmapDay[] }) {
     if (p >  50) return 'bg-green-600 dark:bg-green-500'
     if (p >  10) return 'bg-green-400 dark:bg-green-600'
     if (p >   0) return 'bg-green-200 dark:bg-green-800'
+    if (p === 0) return 'bg-muted/60 dark:bg-muted/40'
     if (p < -50) return 'bg-red-600 dark:bg-red-500'
     if (p < -10) return 'bg-red-400 dark:bg-red-600'
     return 'bg-red-200 dark:bg-red-800'
