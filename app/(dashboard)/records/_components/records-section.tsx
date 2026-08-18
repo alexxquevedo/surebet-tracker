@@ -36,6 +36,8 @@ export interface SerializedRecord {
   title: string | null
   primaryBookmakerId: string | null
   primaryBookmaker: { name: string; etiqueta: string | null; color: string | null } | null
+  isFreeBet: boolean
+  freeBetValue: number | null
   singleBetDetail: { selection: string | null; odds: number | null; isFreeBet: boolean; freeBetValue: number | null } | null
   arbitrageDetail: { winningLegId: string | null } | null
   middleDetail: { winningLegId: string | null; middleHit: boolean | null } | null
@@ -348,9 +350,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                               ? <span className="text-xs font-mono text-muted-foreground">@{r.singleBetDetail.odds.toFixed(2)}</span>
                               : null
                           }
-                          {r.singleBetDetail?.isFreeBet && (
+                          {(r.isFreeBet || r.singleBetDetail?.isFreeBet) && (
                             <span className="inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400 mt-0.5 w-fit">
-                              🎁 crédito{r.singleBetDetail.freeBetValue != null ? ` ${r.singleBetDetail.freeBetValue.toFixed(2)}€` : ''}
+                              {(() => { const fv = r.freeBetValue ?? r.singleBetDetail?.freeBetValue; return `🎁 crédito${fv != null ? ` ${Number(fv).toFixed(2)}€` : ''}`; })()}
                             </span>
                           )}
                         </>
@@ -586,9 +588,9 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
                         </>
                       )}
                     </div>
-                    {r.singleBetDetail?.isFreeBet && (
+                    {(r.isFreeBet || r.singleBetDetail?.isFreeBet) && (
                       <span className="inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400 w-fit">
-                        🎁 crédito{r.singleBetDetail.freeBetValue != null ? ` ${r.singleBetDetail.freeBetValue.toFixed(2)}€` : ''}
+                        {(() => { const fv = r.freeBetValue ?? r.singleBetDetail?.freeBetValue; return `🎁 crédito${fv != null ? ` ${Number(fv).toFixed(2)}€` : ''}`; })()}
                       </span>
                     )}
                     {casaGanadaMob && (

@@ -156,6 +156,10 @@ async function getBet365Browser(): Promise<Browser> {
       args: [
         "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
+        // Q-A: suppress ERR_CERT_INVALID from proxy MITM SSL — must be at launch level,
+        // ignoreHTTPSErrors on context does not apply during the initial TLS handshake.
+        "--ignore-certificate-errors",
+        "--ignore-certificate-errors-spki-list",
       ],
       ...(proxyConfig ? { proxy: proxyConfig } : {}),
     });

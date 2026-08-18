@@ -10,6 +10,7 @@
  */
 
 import * as https from "https";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import type { Page, Response as PlaywrightResponse } from "playwright";
 import { BaseScraper } from "./base";
 import { browserManager, getProxyForScraper } from "./playwright-base";
@@ -38,6 +39,9 @@ const KAMBI_HEADERS = {
 };
 
 const BLOCKED_STATUSES = new Set([403, 429, 451]);
+
+// Q-B: proxy for native Node.js HTTPS fallback path (Playwright primary path uses getProxyForScraper)
+const SPORTIUM_PROXY_URL = process.env.SPORTIUM_PROXY_URL ?? "";
 
 // ── Challenge detection helpers ────────────────────────────────────────────────
 
@@ -222,10 +226,16 @@ async function fetchKambiViaPlaywright(
   }
 }
 
-// ── Axios fallback path (direct, no proxy) ────────────────────────────────────
+// ── Axios fallback path — uses proxy if SPORTIUM_PROXY_URL is set ─────────────
 function httpsGet(url: string): Promise<{ data: any; status: number }> {
   return new Promise((resolve) => {
-    const req = https.get(url, { headers: KAMBI_HEADERS }, (res) => {
+    const options: https.RequestOptions = {
+      headers: KAMBI_HEADERS,
+      // Q-B: route through residential proxy to bypass Kambi CDN datacenter geo-block
+      // Cast needed: HttpsProxyAgent extends http.Agent but TS types don't align in v7
+      ...(SPORTIUM_PROXY_URL ? { agent: new HttpsProxyAgent(SPORTIUM_PROXY_URL) as any } : {}),
+    };
+    const req = https.get(url, options, (res) => {
       const chunks: Buffer[] = [];
       // Q5: log non-200 status codes for diagnostics instead of silently returning null
       if ((res.statusCode ?? 0) !== 200) {

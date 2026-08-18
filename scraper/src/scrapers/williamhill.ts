@@ -198,6 +198,7 @@ export class WilliamHillScraper extends BaseScraper {
     let ctx: BrowserContext | null = null;
     const captures: Array<{ url: string; data: any }> = [];
     const allRequestUrls: Array<{ url: string; status: number }> = [];
+    const wsFramesWH: string[] = [];
     const events: ScrapedEvent[] = [];
     let browserCrashed = false;
 
@@ -226,6 +227,19 @@ export class WilliamHillScraper extends BaseScraper {
           const data = await res.json().catch(() => null);
           if (data && JSON.stringify(data).length > 300) captures.push({ url: u, data });
         } catch { /* non-JSON */ }
+      });
+
+      // Q-L: capture WebSocket frames from sports.whcdn.net (WH push-based odds delivery)
+      page.on("websocket", (ws: any) => {
+        const wsUrl: string = ws.url();
+        if (!wsUrl.includes("whcdn.net") && !wsUrl.includes("williamhill")) return;
+        this.log(`WH WebSocket connected: ${wsUrl.slice(0, 80)}`);
+        ws.on("framereceived", (frame: any) => {
+          const raw = frame.payload;
+          const payload = typeof raw === "string" ? raw :
+            Buffer.isBuffer(raw) ? raw.toString("utf8") : "";
+          if (payload.length > 20) wsFramesWH.push(payload);
+        });
       });
 
       // Load homepage first so WH establishes a guest session (cookies, CAS token) before betting API calls
@@ -273,6 +287,34 @@ export class WilliamHillScraper extends BaseScraper {
           this.log(`Parsed ${parsed.length} events from: ${capUrl.replace(/https?:\/\/[^/]+/, "").slice(0, 70)}`);
           events.push(...parsed);
         }
+      }
+
+      // Q-L: parse WS frames from sports.whcdn.net if XHR gave nothing
+      if (events.length === 0 && wsFramesWH.length > 0) {
+        this.log(`WH WS: ${wsFramesWH.length} frames from whcdn.net`);
+        for (const payload of wsFramesWH) {
+          try {
+            const data = JSON.parse(payload);
+            const parsed = tryAllParsers(data, "williamhill", sport, isLive);
+            if (parsed.length > 0) {
+              this.log(`WH WS parsed ${parsed.length} events`);
+              events.push(...parsed);
+              break;
+            }
+            // Log keys for diagnosis — helps identify the correct parser
+            const topKeys = typeof data === "object" && data !== null
+              ? Object.keys(data).slice(0, 8).join(",") : typeof data;
+            this.log(`WH WS frame keys: [${topKeys}] sample: ${JSON.stringify(data).slice(0, 200)}`);
+            break; // log only first parseable frame
+          } catch {
+            // Non-JSON or binary frame — log raw sample for protocol diagnosis
+            if (wsFramesWH.indexOf(payload) === 0) {
+              this.log(`WH WS raw frame[0]: ${payload.slice(0, 200)}`);
+            }
+          }
+        }
+      } else if (wsFramesWH.length > 0) {
+        this.log(`WH WS: ${wsFramesWH.length} frames captured (whcdn.net)`);
       }
 
       // DOM fallback si XHR no dio resultados

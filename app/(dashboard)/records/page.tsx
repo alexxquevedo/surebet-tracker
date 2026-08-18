@@ -147,6 +147,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
         dateSettled: true,
         title: true,
         primaryBookmakerId: true,
+        isFreeBet: true,
+        freeBetValue: true,
         primaryBookmaker: { select: { name: true, etiqueta: true, color: true } },
         singleBetDetail:  { select: { selection: true, odds: true, isFreeBet: true, freeBetValue: true } },
         arbitrageDetail:  { select: { winningLegId: true } },
@@ -234,6 +236,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     dateSettled:        r.dateSettled ? r.dateSettled.toISOString() : null,
     title:              r.title,
     primaryBookmakerId: r.primaryBookmakerId,
+    isFreeBet:          r.isFreeBet,
+    freeBetValue:       r.freeBetValue !== null ? parseFloat(r.freeBetValue.toString()) : null,
     primaryBookmaker:   r.primaryBookmaker ?? null,
     singleBetDetail:    r.singleBetDetail
       ? {

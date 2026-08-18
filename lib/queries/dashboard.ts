@@ -722,6 +722,8 @@ export async function getRecentBetRecords(
       datePlaced: true,
       dateSettled: true,
       createdVia: true,
+      isFreeBet: true,
+      freeBetValue: true,
       primaryBookmaker: {
         select: {
           id: true,
@@ -772,6 +774,7 @@ export async function getRecentBetRecords(
           odds: true,
           marketType: true,
           isFreeBet: true,
+          freeBetValue: true,
         },
       },
     },

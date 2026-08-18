@@ -419,6 +419,10 @@ model BetRecord {
   bankrollId    String?
   bankroll      Bankroll? @relation("BetRecordBankroll", fields: [bankrollId], references: [id])
 
+  // Crédito / freebet — aplica a cualquier tipo de apuesta
+  isFreeBet    Boolean  @default(false)
+  freeBetValue Decimal? @db.Decimal(12, 2) // valor facial del crédito si aplica
+
   // Integración FidesBot
   isApproximate Boolean @default(false) // datos de la alerta, no confirmados por el usuario
   botPendingId  String? @unique          // ID interno del bot — evita registros duplicados

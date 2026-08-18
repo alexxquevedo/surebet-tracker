@@ -1,0 +1,10 @@
+app = 'fidesbot-scanner'
+primary_region = 'cdg'
+
+[build]
+  dockerfile = "Dockerfile.scraper"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1

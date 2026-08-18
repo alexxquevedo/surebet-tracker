@@ -119,24 +119,29 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
 
       let created: { id: string }
 
+      const betRecordBase = {
+        userId, status: 'PLACED' as const,
+        totalStake: stake, potentialReturn: potReturn,
+        datePlaced, createdVia: 'MANUAL' as const,
+        isLive, notes: rawNotes,
+        sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
+        primaryBookmakerId: bookmakerId,
+        bankrollId: rawBankrollId ?? undefined,
+        title: finalTitle,
+        isFreeBet: isFreebet,
+        ...(isFreebet && freeBetValue ? { freeBetValue } : {}),
+      }
+
       if (betType === 'SINGLE') {
         created = await tx.betRecord.create({
           data: {
-            userId, type: 'SINGLE', status: 'PLACED',
-            totalStake: stake, potentialReturn: potReturn,
-            datePlaced, createdVia: 'MANUAL',
-            isLive, notes: rawNotes,
-            sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
+            ...betRecordBase, type: 'SINGLE',
             competition: rawCompetition,
             eventName: rawEventName,
-            primaryBookmakerId: bookmakerId,
-            bankrollId: rawBankrollId ?? undefined,
-            title: finalTitle,
             singleBetDetail: {
               create: {
                 selection: selection || finalTitle,
-                odds,
-                marketType: 'OTHER',
+                odds, marketType: 'OTHER',
                 isFreeBet: isFreebet,
                 ...(isFreebet && freeBetValue ? { freeBetValue } : {}),
               },
@@ -146,16 +151,7 @@ export async function createQuickBetAction(formData: FormData): Promise<BetActio
         })
       } else {
         created = await tx.betRecord.create({
-          data: {
-            userId, type: betType, status: 'PLACED',
-            totalStake: stake, potentialReturn: potReturn,
-            datePlaced, createdVia: 'MANUAL',
-            isLive, notes: rawNotes,
-            sport: rawSport as Parameters<typeof tx.betRecord.create>[0]['data']['sport'] ?? undefined,
-            primaryBookmakerId: bookmakerId,
-            bankrollId: rawBankrollId ?? undefined,
-            title: finalTitle,
-          },
+          data: { ...betRecordBase, type: betType },
           select: { id: true },
         })
       }
@@ -239,12 +235,21 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
   }
 
   const rawBankrollId2 = (formData.get('bankrollId') as string | null) || null
+  const isFreebet2     = formData.get('isFreeBet') === 'true'
 
-  const stake1 = D(s1).toDecimalPlaces(2), odds1 = D(o1).toDecimalPlaces(6)
-  const stake2 = D(s2).toDecimalPlaces(2), odds2 = D(o2).toDecimalPlaces(6)
-  const ret1   = stake1.mul(odds1).toDecimalPlaces(2)
+  const odds1  = D(o1).toDecimalPlaces(6)
+  const odds2  = D(o2).toDecimalPlaces(6)
+  // When leg 1 is a freebet: no real money out-of-pocket for leg 1
+  const stake1FaceValue = D(s1).toDecimalPlaces(2)   // face value (used for return calc)
+  const stake1Actual    = isFreebet2 ? D(0) : stake1FaceValue  // actual deduction
+  const stake2 = D(s2).toDecimalPlaces(2)
+  // Freebet leg 1 return is SNR (Stake Not Returned): face × (odds − 1)
+  const ret1   = isFreebet2
+    ? stake1FaceValue.mul(odds1.minus(1)).toDecimalPlaces(2)
+    : stake1FaceValue.mul(odds1).toDecimalPlaces(2)
   const ret2   = stake2.mul(odds2).toDecimalPlaces(2)
-  const totalStake    = stake1.plus(stake2).toDecimalPlaces(2)
+  // Real money at stake = only paid legs
+  const totalStake    = stake1Actual.plus(stake2).toDecimalPlaces(2)
   const betType       = rawType as 'ARBITRAGE' | 'MIDDLE'
   const finalTitle    = selection || autoTitle(betType, rawSport, datePlaced)
 
@@ -281,6 +286,8 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
           eventName:   rawEventName,
           bankrollId:  rawBankrollId2 ?? undefined,
           title:       finalTitle,
+          isFreeBet:   isFreebet2,
+          ...(isFreebet2 ? { freeBetValue: stake1FaceValue } : {}),
           // Create type-specific detail
           ...(betType === 'ARBITRAGE' ? {
             arbitrageDetail: {
@@ -299,7 +306,7 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
           legs: {
             createMany: {
               data: [
-                { bookmakerId: bm1Id, selection: selection || `Leg 1`, odds: odds1, stake: stake1, potentialReturn: ret1, currency: 'EUR' },
+                { bookmakerId: bm1Id, selection: selection || `Leg 1`, odds: odds1, stake: stake1Actual, potentialReturn: ret1, currency: 'EUR' },
                 { bookmakerId: bm2Id, selection: selection || `Leg 2`, odds: odds2, stake: stake2, potentialReturn: ret2, currency: 'EUR' },
               ],
             },
@@ -310,8 +317,8 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
 
       // ── Auto-ajuste + deducción de stakes ────────────────────────────────
       let bal1 = D(bm1.currentBalance)
-      if (bal1.lt(stake1)) {
-        const deficit1 = stake1.minus(bal1).toDecimalPlaces(2)
+      if (!isFreebet2 && bal1.lt(stake1Actual)) {
+        const deficit1 = stake1Actual.minus(bal1).toDecimalPlaces(2)
         await tx.bookmakerTransaction.create({
           data: {
             userId,
@@ -347,7 +354,7 @@ export async function createMultiLegBetAction(formData: FormData): Promise<BetAc
         bal2 = bal2.plus(deficit2)
       }
 
-      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: bal1.minus(stake1), totalStaked: { increment: stake1.toNumber() }, operationCount: { increment: 1 } } })
+      await tx.bookmaker.update({ where: { id: bm1Id }, data: { currentBalance: bal1.minus(stake1Actual), totalStaked: { increment: stake1Actual.toNumber() }, operationCount: { increment: 1 } } })
       await tx.bookmaker.update({ where: { id: bm2Id }, data: { currentBalance: bal2.minus(stake2), totalStaked: { increment: stake2.toNumber() }, operationCount: { increment: 1 } } })
 
       return created

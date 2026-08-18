@@ -576,12 +576,13 @@ function NewOperationModal({
       fd.append('odds2',       odds2)
       fd.append('stake2',      stake2)
       if (betType === 'MIDDLE') fd.append('middleRange', middleRange)
+      if (isFreeBet) fd.append('isFreeBet', 'true')
       result = await createMultiLegBetAction(fd)
     } else {
       fd.append('bookmakerId', bm1Id)
       fd.append('stake',       stake1)
       fd.append('odds',        odds1)
-      if (isFreeBet && betType === 'SINGLE') {
+      if (isFreeBet) {
         fd.append('isFreeBet', 'true')
         if (retorno1) fd.append('potentialReturn', retorno1)
       }
@@ -881,6 +882,20 @@ function NewOperationModal({
                       </div>
                     )}
 
+                    <button
+                      type="button"
+                      onClick={toggleFreeBet}
+                      className={`flex items-center gap-2 w-full text-xs px-3 py-2 rounded-lg border transition-colors ${
+                        isFreeBet
+                          ? 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400'
+                          : 'border-border text-muted-foreground hover:border-amber-300 hover:text-amber-700 dark:hover:text-amber-400'
+                      }`}
+                    >
+                      <span>🎁</span>
+                      <span className="font-medium">Crédito de apuesta (Leg 1)</span>
+                      {isFreeBet && <span className="ml-auto text-[10px] font-bold uppercase tracking-wider opacity-80">Activo</span>}
+                    </button>
+
                     <LegFields
                       label="🔵 Leg 1"
                       bookmakers={bookmakers}
@@ -942,7 +957,7 @@ function NewOperationModal({
                       )}
                     </div>
 
-                    {betType === 'SINGLE' && (
+                    {(
                       <button
                         type="button"
                         onClick={toggleFreeBet}

@@ -32,14 +32,16 @@ import { WilliamHillScraper } from "./scrapers/williamhill";
 import { DaznBetScraper } from "./scrapers/daznbet";
 // PokerStarsScraper excluded: PS Sports retirado del mercado español (redirige a .fr)
 import { Bet365Scraper } from "./scrapers/bet365";
+import { OddsApiScraper } from "./scrapers/oddsapi";
 
 // ─── Scraper registry ─────────────────────────────────────────────────────────
 
 const scrapers: BaseScraper[] = [
-  new BetfairScraper(),
+  new OddsApiScraper(),    // Bet365, Betsson, Bwin, WilliamHill, Betfair, Unibet via The Odds API
   new WinamaxScraper(),
-  new Bet365Scraper(),
   new CodereScraper(),
+  new BetfairScraper(),
+  new Bet365Scraper(),
   new SportiumScraper(),
   new BwinScraper(),
   new WilliamHillScraper(),
@@ -205,7 +207,7 @@ async function sendAdminAlert(text: string): Promise<void> {
 // Track consecutive cycles where ALL scrapers return 0 events.
 // Proxy 402 heuristic: if working scrapers (Betsson, Winamax, Codere) still have events
 // but proxy-dependent ones return 0, that's a proxy issue — no alert needed.
-const WORKING_SCRAPERS = ["betsson", "winamax", "codere"]; // never use proxy
+const WORKING_SCRAPERS = ["betsson", "winamax", "codere", "oddsapi"]; // never use proxy
 let zeroCyclesLive = 0;
 let zeroCyclesPrematch = 0;
 

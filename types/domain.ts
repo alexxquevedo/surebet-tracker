@@ -247,7 +247,9 @@ export interface BetRecordListItem {
   legs: BetLegListItem[]
   arbitrageDetail: Pick<ArbitrageDetail, 'arbPercentage' | 'expectedReturn' | 'winningLegId'> | null
   middleDetail: Pick<MiddleDetail, 'middleRange' | 'worstCaseLoss' | 'bestCaseProfit' | 'middleHit'> | null
-  singleBetDetail: Pick<SingleBetDetail, 'selection' | 'odds' | 'marketType' | 'isFreeBet'> | null
+  isFreeBet: boolean
+  freeBetValue: number | null
+  singleBetDetail: Pick<SingleBetDetail, 'selection' | 'odds' | 'marketType' | 'isFreeBet' | 'freeBetValue'> | null
 }
 
 // ════════════════════════════════════════════════════════════════════

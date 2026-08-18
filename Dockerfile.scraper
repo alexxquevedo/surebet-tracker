@@ -1,0 +1,31 @@
+FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+
+WORKDIR /app
+
+# Prisma schema (needed for @prisma/client generation)
+COPY prisma/ ./prisma/
+
+# Scraper package files
+COPY scraper/package*.json ./scraper/
+COPY scraper/tsconfig.json ./scraper/
+
+WORKDIR /app/scraper
+
+# Install all deps (dev needed for tsc)
+RUN npm ci
+
+# Install the exact chromium-headless-shell revision that playwright@1.48.0 needs.
+# The base image has full Chromium but not the headless-shell variant.
+RUN npx playwright install chromium
+
+# Generate Prisma client
+RUN npx prisma generate --schema=../prisma/schema.prisma
+
+# Source + build
+COPY scraper/src/ ./src/
+RUN npm run build
+
+# Drop dev deps to reduce image size
+RUN npm prune --omit=dev
+
+CMD ["node", "dist/scrape-local.js"]
