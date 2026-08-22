@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Kambi B2B platform scraper — covers multiple Spanish bookmakers from one class.
  *
  * Bookmakers using Kambi: LeoVegas, 888sport, Casumo (+ betsson_es via betsson clientId)
@@ -19,10 +19,15 @@ import { config } from "../config";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 // Our Sport → Kambi URL path segment (same string used twice in the path)
-const SPORT_PATH: Record<Sport, string> = {
-  FOOTBALL: "football",
-  TENNIS: "tennis",
-  BASKETBALL: "basketball",
+// Partial because only core sports are confirmed; new sports added when proxy allows verification.
+const SPORT_PATH: Partial<Record<Sport, string>> = {
+  FOOTBALL:        "football",
+  TENNIS:          "tennis",
+  BASKETBALL:      "basketball",
+  AMERICANFOOTBALL:"american-football",
+  ICEHOCKEY:       "ice-hockey",
+  BASEBALL:        "baseball",
+  RUGBYLEAGUE:     "rugby-league",
 };
 
 // Kambi CDN — same host as Sportium uses (eu-offering.kambicdn.org).
@@ -154,6 +159,7 @@ export class KambiScraper extends BaseScraper {
 
   private async scrapeForSport(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     const sp = SPORT_PATH[sport];
+    if (!sp) return [];
     const base = `${KAMBI_CDN}/offering/v2/${this.clientId}/listView/${sp}/${sp}/all/all`;
     const url = isLive
       ? `${base}/in-play.json?lang=es&market=ES&includeParticipants=true`

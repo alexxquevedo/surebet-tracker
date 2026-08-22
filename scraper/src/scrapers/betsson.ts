@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Betsson France — SSB platform scraper.
  *
  * Architecture:
@@ -16,7 +16,7 @@ import type { BrowserContext } from "playwright";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-const URLS: Record<Sport, { live: string; prematch: string }> = {
+const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
   FOOTBALL: {
     live: "https://www.betsson.fr/fr/sport/en-direct/football",
     prematch: "https://www.betsson.fr/fr/paris-sportifs/football",
@@ -32,7 +32,7 @@ const URLS: Record<Sport, { live: string; prematch: string }> = {
 };
 
 // Betsson SSB sport codes from idfosporttype field
-const SPORT_CODES: Record<Sport, string[]> = {
+const SPORT_CODES: Partial<Record<Sport, string[]>> = {
   FOOTBALL: ["FBL", "FB", "football", "futbol"],
   TENNIS: ["TNS", "TEN", "tennis"],
   BASKETBALL: ["BKB", "basketball"],
@@ -515,7 +515,7 @@ export class BetssonScraper extends BaseScraper {
 
       // ── 2. Parse XHR events ────────────────────────────────────────────────
       const allXhrEvents = parseXhrEvents(xhrCaptures);
-      const sportCodes = SPORT_CODES[sport];
+      const sportCodes = SPORT_CODES[sport]!;
       const sportXhrEvents = allXhrEvents.filter(ev =>
         sportCodes.some(code => ev.sportType.toLowerCase() === code.toLowerCase()) ||
         sportCodes.some(code => ev.sportType.toLowerCase().includes(code.toLowerCase()))
@@ -644,7 +644,7 @@ export class BetssonScraper extends BaseScraper {
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
     try {
-      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].live, sport, true));
+      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport]!.live, sport, true));
     } catch (err) {
       setScraperCooldown(this.name);
       this.warn("scrapeLive fallido — circuit breaker activado", err);
@@ -656,7 +656,7 @@ export class BetssonScraper extends BaseScraper {
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
     try {
-      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport].prematch, sport, false));
+      for (const sport of this.sports) all.push(...await this.scrapePage(URLS[sport]!.prematch, sport, false));
     } catch (err) {
       setScraperCooldown(this.name);
       this.warn("scrapePrematch fallido — circuit breaker activado", err);

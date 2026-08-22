@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bet365 España — Playwright scraper.
  *
  * Bet365 usa Cloudflare Enterprise Bot Management con IP-reputation scoring.
@@ -23,7 +23,7 @@ const B365_PROXY_URL = config.scraperProxies.bet365;
 
 // ─── URLs ────────────────────────────────────────────────────────────────────
 
-const URLS: Record<Sport, { live: string; prematch: string }> = {
+const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
   FOOTBALL:   { live: "https://www.bet365.es/#/IP/B1",  prematch: "https://www.bet365.es/#/AS/B1"  },
   TENNIS:     { live: "https://www.bet365.es/#/IP/B13", prematch: "https://www.bet365.es/#/AS/B13" },
   BASKETBALL: { live: "https://www.bet365.es/#/IP/B7",  prematch: "https://www.bet365.es/#/AS/B7"  },
@@ -462,7 +462,7 @@ export class Bet365Scraper extends BaseScraper {
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
     try {
-      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].live, sport, true)));
+      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.live, sport, true)));
     } catch (err) {
       setScraperCooldown(this.name);
       this.warn("scrapeLive fallido — circuit breaker activado", err);
@@ -474,7 +474,7 @@ export class Bet365Scraper extends BaseScraper {
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
     try {
-      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].prematch, sport, false)));
+      for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.prematch, sport, false)));
     } catch (err) {
       setScraperCooldown(this.name);
       this.warn("scrapePrematch fallido — circuit breaker activado", err);

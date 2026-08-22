@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PokerStars Sports España — Playwright scraper.
  *
  * PokerStars Sports usa la plataforma Kambi (mismo que Sportium y Betsson).
@@ -13,7 +13,7 @@ import { browserManager, dismissCookies, logPageState } from "./playwright-base"
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-const URLS: Record<Sport, { live: string; prematch: string }> = {
+const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
   FOOTBALL: {
     live:     "https://www.pokerstarssports.es/sports/football/live",
     prematch: "https://www.pokerstarssports.es/sports/football",
@@ -189,13 +189,13 @@ export class PokerStarsScraper extends BaseScraper {
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].live, sport, true)));
+    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.live, sport, true)));
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport].prematch, sport, false)));
+    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.prematch, sport, false)));
     return all;
   }
 }

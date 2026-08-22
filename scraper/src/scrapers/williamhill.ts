@@ -1,4 +1,4 @@
-/**
+﻿/**
  * William Hill España — Playwright scraper.
  *
  * WH ES usa una plataforma SPA. El problema anterior: el filtro de dominio solo capturaba
@@ -16,7 +16,7 @@ import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 // WilliamHill España — múltiples candidatos de URL
 // La plataforma cambió a 888sport; puede que el SPA use rutas distintas
-const URL_CANDIDATES: Record<Sport, { live: string[]; prematch: string[] }> = {
+const URL_CANDIDATES: Partial<Record<Sport, { live: string[]; prematch: string[] }>> = {
   FOOTBALL: {
     live: [
       "https://www.williamhill.es/es-es/sports/football/live",
@@ -411,7 +411,7 @@ export class WilliamHillScraper extends BaseScraper {
   async scrapeLive(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
-      all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport].live, sport, true)));
+      all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport]!.live, sport, true)));
     }
     return all;
   }
@@ -419,7 +419,7 @@ export class WilliamHillScraper extends BaseScraper {
   async scrapePrematch(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
-      all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport].prematch, sport, false)));
+      all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport]!.prematch, sport, false)));
     }
     return all;
   }

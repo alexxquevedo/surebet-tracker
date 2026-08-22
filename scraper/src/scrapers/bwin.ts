@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bwin España — cliente HTTP puro sobre sports.bwin.es (CDS API v1).
  *
  * El dominio bwin.fr bloqueaba IPs de OVH/datacenter.
@@ -36,19 +36,19 @@ const DEFAULT_HEADERS = {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // Sport IDs confirmed from bwin CDS (Football=4, Tennis=5, Basketball=7)
-const SPORT_IDS: Record<Sport, number> = {
+const SPORT_IDS: Partial<Record<Sport, number>> = {
   FOOTBALL:   4,
   TENNIS:     5,
   BASKETBALL: 7,
 };
 
-const SPORT_NAMES: Record<Sport, string[]> = {
+const SPORT_NAMES: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["football", "soccer", "fútbol", "futbol"],
   TENNIS:     ["tennis", "tenis"],
   BASKETBALL: ["basketball", "baloncesto", "basket"],
 };
 
-const SPORT_EXCLUDE: Record<Sport, string[]> = {
+const SPORT_EXCLUDE: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["football us", "football américain", "american football", "fútbol americano", "futbol americano"],
   TENNIS:     [],
   BASKETBALL: [],
@@ -98,8 +98,8 @@ function parseCdsFixtures(data: any, sport: Sport, isLive: boolean): ScrapedEven
     (Array.isArray(data) ? data : []);
 
   if (fixtures.length === 0 && Array.isArray(data?.sportsOffer)) {
-    const sportNames = SPORT_NAMES[sport];
-    const sportExclude = SPORT_EXCLUDE[sport];
+    const sportNames = SPORT_NAMES[sport]!;
+    const sportExclude = SPORT_EXCLUDE[sport]!;
     const matchingSo = (data.sportsOffer as any[]).filter((so: any) => {
       const soName: string = (so?.sport?.name?.value ?? so?.sport?.name ?? so?.name ?? "").toLowerCase();
       return soName && sportNames.some(n => soName.includes(n)) && !sportExclude.some(x => soName.includes(x));

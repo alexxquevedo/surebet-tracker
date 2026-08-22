@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sportium España (Cirsa) — Kambi Offering API.
  *
  * Primary path: Playwright + residential proxy (Chromium/BoringSSL avoids Node.js JA3 detection).
@@ -24,7 +24,7 @@ const KAMBI_CUSTOMER_LEGACY = "sisp";
 const KAMBI_BASE_V2    = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_CUSTOMER}`;
 const KAMBI_BASE_V2018 = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
 
-const KAMBI_SPORT_FILTER: Record<Sport, string> = {
+const KAMBI_SPORT_FILTER: Partial<Record<Sport, string>> = {
   FOOTBALL:   "FOOTBALL",
   TENNIS:     "TENNIS",
   BASKETBALL: "BASKETBALL",
@@ -144,7 +144,7 @@ async function fetchKambiViaPlaywright(
   try {
     await page.setExtraHTTPHeaders(KAMBI_HEADERS);
 
-    const filter = KAMBI_SPORT_FILTER[sport].toLowerCase();
+    const filter = KAMBI_SPORT_FILTER[sport]!.toLowerCase();
     const apiUrlV2 = isLive
       ? `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`
       : `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all.json?lang=es&market=ES&numberOfEvents=200`;
@@ -271,7 +271,7 @@ async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
   if (playwrightData) return playwrightData;
 
   // Fallback: direct Node.js/axios (no proxy — useful in dev, or if proxy not configured)
-  const filter = KAMBI_SPORT_FILTER[sport].toLowerCase();
+  const filter = KAMBI_SPORT_FILTER[sport]!.toLowerCase();
   if (isLive) {
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`;
     const r2 = await httpsGetWithFallback(urlV2);

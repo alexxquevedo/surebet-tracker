@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Betfair Exchange API scraper.
  * Uses the official free JSON-RPC API — no web scraping needed.
  * Docs: https://developer.betfair.com/exchange-api/
@@ -15,7 +15,7 @@ import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 import { BaseScraper } from "./base";
 
 // Betfair event type IDs
-const EVENT_TYPE_IDS: Record<Sport, string> = {
+const EVENT_TYPE_IDS: Partial<Record<Sport, string>> = {
   FOOTBALL: "1",
   TENNIS: "2",
   BASKETBALL: "7522",
@@ -231,7 +231,7 @@ export class BetfairScraper extends BaseScraper {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
       try {
-        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport], true);
+        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport]!, true);
         all.push(...this.parseMarkets(markets, sport, true));
       } catch (err) {
         this.warn(`Error scraping live ${sport}`, err);
@@ -250,7 +250,7 @@ export class BetfairScraper extends BaseScraper {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
       try {
-        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport], false);
+        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport]!, false);
         all.push(...this.parseMarkets(markets, sport, false));
       } catch (err) {
         this.warn(`Error scraping prematch ${sport}`, err);

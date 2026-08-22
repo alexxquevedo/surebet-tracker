@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Marathonbet España — Playwright scraper.
  *
  * marathonbet.es redirected to their casino section, so we use the
@@ -22,7 +22,7 @@ import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 const BASE = "https://www.marathonbet.com";
 
-const SPORT_PATHS: Record<Sport, { live: string; prematch: string }> = {
+const SPORT_PATHS: Partial<Record<Sport, { live: string; prematch: string }>> = {
   FOOTBALL: {
     live: `${BASE}/su/live/Football/`,
     prematch: `${BASE}/su/popular/Football`,
@@ -99,7 +99,7 @@ export class MarathonbetScraper extends BaseScraper {
   async scrapeLive(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
-      all.push(...await this.scrapePage(SPORT_PATHS[sport].live, sport, true));
+      all.push(...await this.scrapePage(SPORT_PATHS[sport]!.live, sport, true));
     }
     return all;
   }
@@ -107,7 +107,7 @@ export class MarathonbetScraper extends BaseScraper {
   async scrapePrematch(): Promise<ScrapedEvent[]> {
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
-      all.push(...await this.scrapePage(SPORT_PATHS[sport].prematch, sport, false));
+      all.push(...await this.scrapePage(SPORT_PATHS[sport]!.prematch, sport, false));
     }
     return all;
   }

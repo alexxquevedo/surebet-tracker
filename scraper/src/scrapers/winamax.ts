@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Winamax France — Playwright XHR interception scraper.
  *
  * Winamax uses an SPA that handles routing client-side. Server-side navigation
@@ -19,20 +19,20 @@ const BASE_FR = "https://www.winamax.fr";
 
 // Confirmed from DOM discovery (2026-07-29): 1=Football, 2=Basketball, 5=Tennis
 // Actual DOM hrefs: /paris-sportifs/sports/1 (Football), /paris-sportifs/sports/5 (Tennis)
-const SPORT_IDS: Record<Sport, number> = {
+const SPORT_IDS: Partial<Record<Sport, number>> = {
   FOOTBALL: 1,
   TENNIS: 5,
   BASKETBALL: 2,
 };
 
-const SPORT_HREF_PATTERNS: Record<Sport, string[]> = {
+const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
   TENNIS:     ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
   BASKETBALL: ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
 };
 
 // Fallback text-based click labels (French site)
-const SPORT_LINK_TEXTS: Record<Sport, string[]> = {
+const SPORT_LINK_TEXTS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["football", "foot"],
   TENNIS:     ["tennis"],
   BASKETBALL: ["basket", "basketball"],
@@ -45,7 +45,7 @@ function parseWinamaxData(raw: any, sport: Sport, isLive: boolean, srcUrl: strin
   let competitions: any[] = [];
 
   if (raw?.sports) {
-    const sportData = raw.sports[sportId] ?? raw.sports[String(sportId)];
+    const sportData = sportId != null ? (raw.sports[sportId] ?? raw.sports[String(sportId)]) : undefined;
     if (sportData?.competitions) {
       competitions = sportData.competitions;
     } else if (Array.isArray(raw.sports)) {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Retabet España — SignalR + REST scraper.
  *
  * Plataforma: propia (NO Kambi). Verificado el 31/07/2026.
@@ -192,7 +192,7 @@ export class RetabetScraper extends BaseScraper {
   }
 
   private async scrapeViaRest(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const sp = ({ FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto", HOCKEY: "hockey", BASEBALL: "beisbol", RUGBY: "rugby-league" } as Record<Sport, string>)[sport];
+    const sp = ({ FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto", ICEHOCKEY: "hockey", BASEBALL: "beisbol", RUGBYLEAGUE: "rugby-league", AMERICANFOOTBALL: "futbol-americano" } as Partial<Record<Sport, string>>)[sport];
     const paths = [
       `/api/render/LoadWidget?sport=${sp}&live=${isLive}&lang=es`,
       `/api/render/LoadWidget?sportId=1&live=${isLive}&locale=es-ES`,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Altenar B2B platform scraper — Spanish bookmakers.
  *
  * Bookmakers on Altenar: Luckia, Casino Gran Madrid, TonyBet ES
@@ -18,7 +18,7 @@ import { config } from "../config";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 // Altenar sport IDs (confirmed: football=66, tennis=80, basketball=67)
-const ALTENAR_SPORT_IDS: Record<Sport, number> = {
+const ALTENAR_SPORT_IDS: Partial<Record<Sport, number>> = {
   FOOTBALL:   66,
   TENNIS:     80,
   BASKETBALL: 67,
@@ -189,7 +189,7 @@ export class AltenarScraper extends BaseScraper {
   }
 
   private buildUrl(sport: Sport, isLive: boolean): string {
-    const sportId = ALTENAR_SPORT_IDS[sport];
+    const sportId = ALTENAR_SPORT_IDS[sport] ?? 0;
     const base = `${ALTENAR_CDN}/api/Sportsbook/GetEvents`;
     const params = new URLSearchParams({
       culture: "es-ES",

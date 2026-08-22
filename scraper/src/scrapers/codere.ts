@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Codere España — NavigationService HTTP scraper (sin navegador).
  *
  * Codere usa su propia API REST en m.apuestas.codere.es/NavigationService.
@@ -23,13 +23,13 @@ import { saveFailedPayload } from "./playwright-base";
 const BASE = "https://m.apuestas.codere.es/NavigationService";
 
 // Sport NodeIds — from /NavigationService/LeftMenu/GetMenuLeft (static, verified 2026-07)
-const SPORT_NODEIDS: Record<Sport, string> = {
+const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
   FOOTBALL:   "9553177903",
   TENNIS:     "2819846742",
   BASKETBALL: "2819833466",
 };
 
-const SPORT_HANDLES: Record<Sport, string> = {
+const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   FOOTBALL:   "soccer",
   TENNIS:     "tennis",
   BASKETBALL: "basketball",

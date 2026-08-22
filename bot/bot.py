@@ -120,6 +120,16 @@ SPORT_DISPLAY = {
     "baseball_mlb":         ("⚾", "Béisbol"),
     "rugbyleague":          ("🏉", "Rugby"),
 }
+SPORT_STATUS = {
+    "soccer":               "OddsAPI + Betsson/Winamax/Codere",
+    "basketball":           "OddsAPI (NBA/EuroLeague)",
+    "tennis":               "OddsAPI (ATP/WTA)",
+    "americanfootball_nfl": "OddsAPI — temporada oct-feb",
+    "icehockey_nhl":        "OddsAPI — temporada oct-jun",
+    "baseball_mlb":         "OddsAPI — temporada abr-oct",
+    "rugbyleague":          "OddsAPI — NRL/Super League",
+}
+
 LEAGUE_MAP = {
     "soccer":               "Fútbol",
     "basketball":           "NBA / EuroLeague",
@@ -1667,6 +1677,9 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         cfg = get_config(uid)
         for sport, active in cfg["sports"].items():
             if active: all_sports.add(sport)
+    # Filtrar deportes pausados globalmente por el admin
+    _scanner_state = _load_scanner_state()
+    all_sports -= set(_scanner_state.get("disabled_sports", []))
     if not all_sports: return 0
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
@@ -3034,6 +3047,70 @@ async def handle_scraper_toggle(update, context):
     icono  = "✅" if accion == "activado" else "⏸"
     await query.answer(f"{icono} {nombre} {accion}", show_alert=False)
     await _mostrar_casas(query)
+
+# ============================================================
+# GESTIÓN DE DEPORTES (toggle sport ON/OFF — solo admins)
+# ============================================================
+
+async def _mostrar_deportes(target):
+    """target puede ser un Message o un CallbackQuery."""
+    state    = _load_scanner_state()
+    disabled = set(state.get("disabled_sports", []))
+    activos  = len(SPORT_DISPLAY) - len(disabled & SPORT_DISPLAY.keys())
+
+    lines = [f"🏅 *Deportes — Scanner* ({len(SPORT_DISPLAY)} deportes · {activos}/{len(SPORT_DISPLAY)} activos)\n━━━━━━━━━━━━━━━━━━"]
+    keyboard = []
+    for key, (emoji, nombre) in SPORT_DISPLAY.items():
+        activo = key not in disabled
+        estado = "✅" if activo else "❌"
+        nota   = SPORT_STATUS.get(key, "")
+        lines.append(f"{estado} {emoji} *{nombre}* — _{nota}_")
+        lbl = f"{'⏸ Pausar' if activo else '▶️ Activar'} {nombre}"
+        keyboard.append([InlineKeyboardButton(lbl, callback_data=f"sport_toggle_{key}")])
+    keyboard.append([InlineKeyboardButton("🔄 Actualizar", callback_data="sport_refresh")])
+
+    text   = "\n".join(lines)
+    markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target, "edit_message_text"):
+        await target.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        await target.reply_text(text, parse_mode="Markdown", reply_markup=markup)
+
+async def cmd_deportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS: return
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    await _mostrar_deportes(update.message)
+
+async def handle_sport_toggle(update, context):
+    query = update.callback_query
+    data  = query.data
+
+    if data == "sport_refresh":
+        await _mostrar_deportes(query)
+        return
+
+    key = data[len("sport_toggle_"):]
+    if key not in SPORT_DISPLAY:
+        await query.answer("Deporte no reconocido", show_alert=True)
+        return
+
+    state    = _load_scanner_state()
+    disabled = set(state.get("disabled_sports", []))
+    if key in disabled:
+        disabled.discard(key)
+        accion = "activado"
+    else:
+        disabled.add(key)
+        accion = "pausado"
+
+    state["disabled_sports"] = sorted(disabled)
+    _save_scanner_state(state)
+
+    nombre = SPORT_DISPLAY[key][1]
+    icono  = "✅" if accion == "activado" else "⏸"
+    await query.answer(f"{icono} {nombre} {accion}", show_alert=False)
+    await _mostrar_deportes(query)
 
 # ============================================================
 # ██████╗ ██╗   ██╗ █████╗ ██╗     ███████╗████████╗ █████╗ ████████╗███████╗
@@ -4527,10 +4604,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
     # Subscription check before blanket answer so BLOQUEADO_MSG show_alert=True works
-    _PUBLIC_PREFIXES = ("admin_", "scraper_", "menu_no_suscrito", "suscribirse",
+    _PUBLIC_PREFIXES = ("admin_", "scraper_", "sport_", "menu_no_suscrito", "suscribirse",
                         "stripe_", "plan_", "soporte", "novedades", "tyc",
                         "panel_freebets", "panel_valuebets", "mis_referidos",
-                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh")
+                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh", "sport_refresh")
     if not any(data == p or data.startswith(p) for p in _PUBLIC_PREFIXES):
         if not tiene_suscripcion(user_id):
             await query.answer(BLOQUEADO_MSG, show_alert=True); return
@@ -4570,6 +4647,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Gestión scrapers (admin) ────────────────────────────
     if (data.startswith("scraper_toggle_") or data == "scraper_refresh") and user_id in ADMIN_IDS:
         await handle_scraper_toggle(update, context)
+        return
+
+    # ── Gestión deportes (admin) ────────────────────────────
+    if (data.startswith("sport_toggle_") or data == "sport_refresh") and user_id in ADMIN_IDS:
+        await handle_sport_toggle(update, context)
         return
 
     # ── Sin suscripción ────────────────────────────────────
@@ -5639,6 +5721,7 @@ async def main():
     app.add_handler(CommandHandler("scanner_off",    cmd_scanner_off))
     app.add_handler(CommandHandler("scanner_config", cmd_scanner_config))
     app.add_handler(CommandHandler("casas",          cmd_casas))
+    app.add_handler(CommandHandler("deportes",       cmd_deportes))
 
     # Video tutoriales
     for _cmd_name in VIDEO_TUTORIALES:
