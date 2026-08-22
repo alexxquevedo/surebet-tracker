@@ -166,7 +166,7 @@ BOOKMAKERS: dict[str, dict] = {
     "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
     "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
     "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
-    "tonybet":     {"name": "TonyBet",       "emoji": "🎲", "url": "https://www.tonybet.es",          "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": False},
+    "tonybet":     {"name": "TonyBet",       "emoji": "🎲", "url": "https://www.tonybet.es",          "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": False},
 }
 
 # Scrapers internos que no son casas de usuario independientes

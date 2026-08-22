@@ -57,15 +57,16 @@ const scrapers: BaseScraper[] = [
   new KambiScraper("888sport",   "888"),
   new KambiScraper("casumo",     "casumo"),
   new KambiScraper("betsson_es", "betsson"),
-  // Kambi ES — nuevas casas (default: False hasta proxy Cudy)
-  new KambiScraper("unibet",   "unibet"),
-  new KambiScraper("tonybet",  "tonybet"),
-  // Kambi ES — verified smaller bookmakers (client IDs pending proxy test)
+  // Kambi ES — Unibet España usa "unibet_spain" como clientId (verificado vía CDN)
+  new KambiScraper("unibet",   "unibet_spain"),
+  // Kambi ES — smaller bookmakers (client IDs pendientes de verificar con proxy)
   new KambiScraper("marca",    "marcaapuestas"),
   new KambiScraper("kirolbet", "kirolbet"),
   // Altenar B2B — casas espanolas (requiere ALTENAR_PROXY_URL)
+  // TonyBet ES está en Altenar (no Kambi). integrationId pendiente de verificar con proxy.
   new AltenarScraper("luckia",           "Luckia"),
   new AltenarScraper("casino-gran-madrid","CasinoGranMadrid"),
+  new AltenarScraper("tonybet",          "TonyBet"),
   new RetabetScraper(),
 ];
 

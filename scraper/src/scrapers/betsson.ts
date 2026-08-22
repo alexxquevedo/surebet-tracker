@@ -490,8 +490,10 @@ export class BetssonScraper extends BaseScraper {
 
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
       await dismissCookies(page);
-      // Event-driven: exit as soon as first WS message or XHR arrives (max 15s)
-      const captureDeadline = Date.now() + 15_000;
+      // Prematch pages request Kambi CDN XHR asynchronously — give them more time.
+      // Live pages push WS data almost immediately; prematch pages take longer.
+      const captureDeadlineMs = isLive ? 15_000 : 30_000;
+      const captureDeadline = Date.now() + captureDeadlineMs;
       while (wsMessages.length === 0 && xhrCaptures.length === 0 && Date.now() < captureDeadline) {
         await new Promise<void>((r) => setTimeout(r, 200));
       }

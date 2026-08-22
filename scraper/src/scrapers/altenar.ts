@@ -15,6 +15,7 @@ import axios from "axios";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import { config } from "../config";
+import { createProxiedAxios } from "./proxy-helper";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 // Altenar sport IDs (confirmed: football=66, tennis=80, basketball=67)
@@ -148,34 +149,16 @@ export class AltenarScraper extends BaseScraper {
     this.name = bookmaker;
     this.integrationId = integrationId;
 
-    // Altenar-specific proxy override
+    // Altenar-specific proxy override.
+    // Supports both HTTP (http://host:port) and SOCKS5 (socks5://host:port) proxy URLs.
     const proxyUrl = (config.scraperProxies as any).altenar as string | undefined;
     if (proxyUrl) {
-      try {
-        const u = new URL(proxyUrl);
-        const port = parseInt(u.port || (u.protocol === "https:" ? "443" : "80"), 10);
-        this.http = axios.create({
-          timeout: 20_000,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept": "application/json, */*",
-            "Accept-Language": "es-ES,es;q=0.9",
-            "Origin": `https://www.${bookmaker}.es`,
-            "Referer": `https://www.${bookmaker}.es/`,
-          },
-          proxy: {
-            host: u.hostname,
-            port,
-            ...(u.username
-              ? { auth: { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) } }
-              : {}),
-          },
-        });
-      } catch {
-        this.warn("ALTENAR_PROXY_URL inválida — usando conexión directa");
-      }
+      this.http = createProxiedAxios(proxyUrl, 20_000, {
+        "Origin":  `https://www.${bookmaker}.es`,
+        "Referer": `https://www.${bookmaker}.es/`,
+      });
     } else {
-      // No proxy — add minimal headers to avoid 403
+      // No proxy — minimal headers to avoid 403
       this.http = axios.create({
         timeout: 20_000,
         headers: {

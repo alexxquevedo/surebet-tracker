@@ -16,6 +16,7 @@ import axios from "axios";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import { config } from "../config";
+import { createProxiedAxios } from "./proxy-helper";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
 // Our Sport → Kambi URL path segment (same string used twice in the path)
@@ -129,31 +130,13 @@ export class KambiScraper extends BaseScraper {
     this.name = bookmaker;
     this.clientId = clientId;
 
-    // Override http client with Kambi-specific proxy if KAMBI_PROXY_URL is set
+    // Override http client with Kambi-specific proxy if KAMBI_PROXY_URL is set.
+    // Supports both HTTP (http://host:port) and SOCKS5 (socks5://host:port) proxy URLs.
     const proxyUrl = config.scraperProxies.kambi;
     if (proxyUrl) {
-      try {
-        const u = new URL(proxyUrl);
-        const port = parseInt(u.port || (u.protocol === "https:" ? "443" : "80"), 10);
-        this.http = axios.create({
-          timeout: 25_000,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-            Accept: "application/json, text/html, */*",
-            Referer: `https://www.${bookmaker}.es/`,
-          },
-          proxy: {
-            host: u.hostname,
-            port,
-            ...(u.username
-              ? { auth: { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) } }
-              : {}),
-          },
-        });
-      } catch {
-        this.warn("KAMBI_PROXY_URL inválida — usando conexión directa");
-      }
+      this.http = createProxiedAxios(proxyUrl, 25_000, {
+        Referer: `https://www.${bookmaker}.es/`,
+      });
     }
   }
 
