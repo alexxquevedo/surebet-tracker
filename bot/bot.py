@@ -818,10 +818,11 @@ def activar_usuario(user_id, dias, nombre=None, plan="PRO"):
         subscriptions[user_id]["expires"] += timedelta(days=dias)
         subscriptions[user_id]["plan"] = plan  # actualiza plan aunque se renueve
     else:
+        existing_config = subscriptions.get(user_id, {}).get("config", deepcopy(DEFAULT_USER_CONFIG))
         subscriptions[user_id] = {
             "name":    nombre_guardado,
             "expires": datetime.now() + timedelta(days=dias),
-            "config":  deepcopy(DEFAULT_USER_CONFIG),
+            "config":  existing_config,
             "plan":    plan,
         }
     # Limpiar flag de trial al activar suscripción real
@@ -1130,7 +1131,7 @@ def calcular_stakes(total, legs):
         stake_redondeado = redondear_stake(stake_exacto)
         stakes_redondeados.append(stake_redondeado)
         total_redondeado += stake_redondeado
-    ganancia = round(stakes_redondeados[0] * legs[0]["odd"] - total_redondeado, 2)
+    ganancia = round(min(s * l["odd"] for s, l in zip(stakes_redondeados, legs)) - total_redondeado, 2)
     for i, leg in enumerate(legs):
         stake = stakes_redondeados[i]
         stake_str = f"{stake:.0f}" if stake == int(stake) else f"{stake:.1f}"
@@ -2578,29 +2579,6 @@ async def handle_numerico(update, context, tipo, accion):
 # ============================================================
 # SUSCRIPCIÓN / SOPORTE / TYC / ESTADO
 # ============================================================
-def get_texto_plan(dias, user_id, tracker=False):
-    iban     = "ES04 1583 0001 1191 8598 6678"
-    titular  = "Juan Portal Bosch / Alejandro de Quevedo Gallego"
-    sufijo   = "T" if tracker else ""
-    concepto = f"FidesBot {user_id} {dias}D{sufijo}"
-    base = (f"💳 *Transferencia bancaria*\nIBAN: `{iban}`\nTitular: {titular}\n\n"
-            f"📌 *Concepto del pago:*\n`{concepto}`\n"
-            f"Copia exactamente este concepto al hacer la transferencia\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"Una vez realizado el pago pulsa el botón de abajo.\n"
-            f"Recibirás confirmación lo antes posible 🚀")
-    if tracker:
-        return (f"🔗 *Plan PRO+Tracker — 1 mes — 49,99€*\n━━━━━━━━━━━━━━━━━━\n\n"
-                f"✅ Incluye:\n• Todas las alertas de FidesBot\n"
-                f"• Registro automático en DualStats Tracker\n"
-                f"• Botones ✅/❌ en cada alerta\n"
-                f"• Estadísticas web completas (ROI, P&L…)\n\n"
-                f"🎁 *1er mes: 39,99€* _(luego 49,99€)_\n\n{base}")
-    if dias == 7:    return f"🗓️ *Plan PRO 1 semana — 17€*\n━━━━━━━━━━━━━━━━━━\n\n{base}"
-    elif dias == 14: return f"📅 *Plan PRO 2 semanas — 25€*\n━━━━━━━━━━━━━━━━━━\n\n{base}"
-    else: return (f"💎 *Plan PRO 1 mes — 45€* ⭐\n━━━━━━━━━━━━━━━━━━\n\n"
-                  f"🎁 *OFERTA NUEVO USUARIO: 35€*\n_(45€ los meses siguientes)_\n\n{base}")
-
 async def pagar_plan_stripe(update, context, plan_key: str):
     """Genera un link de Stripe y lo manda al usuario."""
     query = update.callback_query
@@ -2662,63 +2640,6 @@ async def mostrar_suscripcion(update, context):
             [InlineKeyboardButton(btn_tracker,                   callback_data="stripe_bot_tracker")],
             [InlineKeyboardButton("🔙 Volver",                   callback_data=volver)],
         ]), parse_mode="Markdown")
-
-async def mostrar_plan(update, context, dias, tracker=False):
-    user_id = update.effective_user.id
-    if tracker:
-        label = "PRO+Tracker (1 mes)"
-        cb    = "pago_plan_tracker_30"
-    else:
-        label = {7:"PRO 1 semana", 14:"PRO 2 semanas"}.get(dias,"PRO 1 mes")
-        cb    = f"pago_plan_{dias}"
-    texto = get_texto_plan(dias, user_id, tracker=tracker)
-    await update.callback_query.edit_message_text(texto,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"✅ Ya he pagado — {label}", callback_data=cb)],
-            [InlineKeyboardButton("🔙 Volver a planes", callback_data="suscribirse")],
-        ]), parse_mode="Markdown")
-
-async def pago_realizado(update, context, dias=30, tracker=False):
-    await update.callback_query.answer()
-    user   = update.effective_user
-    user_id = user.id; nombre = user.full_name
-    suscrito = tiene_suscripcion(user_id)
-    volver   = "menu_principal" if suscrito else "menu_no_suscrito"
-    if tracker:
-        plan_label = "PRO+TRACKER (1 mes)"
-        concepto   = f"FidesBot {user_id} 30DT"
-    else:
-        plan_label = {7:"PRO 1 SEMANA", 14:"PRO 2 SEMANAS"}.get(dias,"PRO 1 MES")
-        concepto   = f"FidesBot {user_id} {dias}D"
-    if suscrito:
-        await update.callback_query.edit_message_text(
-            f"ℹ️ *Ya tienes una suscripción activa*\n\n"
-            f"Si quieres renovar o ampliar tu suscripción, contacta directamente con el administrador.\n\n"
-            f"Tu ID: `{user_id}`\nConcepto de pago: `{concepto}`",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]])); return
-    try:
-        sufijo_t = "_T" if tracker else ""
-        await context.bot.send_message(chat_id=PAGOS_GROUP_ID,
-            text=f"💰 *Nuevo pago notificado*\n━━━━━━━━━━━━━━━━━━\n"
-                 f"👤 *{nombre}*\n🪪 ID: `{user_id}`\n📅 Plan: *{plan_label}*\n━━━━━━━━━━━━━━━━━━\nPulsa el botón para activar:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
-                f"✅ Activar {plan_label}",
-                callback_data=f"admin_activar_rapido_{user_id}_{dias}{sufijo_t}"
-            )]]), parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Error notificando grupo: {e}")
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID,
-                text=f"💰 *Nuevo pago notificado*\n👤 *{nombre}*\n🪪 ID: `{user_id}`\nPlan: {plan_label}\n\nPara activar:\n`activar {user_id} {dias}`",
-                parse_mode="Markdown")
-        except: pass
-    await update.callback_query.edit_message_text(
-        f"✅ *¡Notificación enviada!*\n\n"
-        f"El administrador ha recibido tu solicitud.\nRecibirás confirmación lo antes posible 🚀\n\n"
-        f"Tu ID: `{user_id}`\nPlan elegido: *{plan_label}*",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]))
 
 async def mostrar_hub_soporte(update, context):
     query  = update.callback_query
@@ -3565,7 +3486,8 @@ async def handle_alerta_hecha(update, context, uid, alert_id):
         await context.bot.edit_message_text(
             chat_id=uid, message_id=datos["msg_id"],
             text=datos["mensaje"] + "\n\n✅ *Hecha · Pendiente de registrar*\nUsa /pendientes cuando puedas.",
-            parse_mode="Markdown")
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([]))
     except: pass
 
     await query.answer("✅ Guardada en pendientes")
@@ -3593,7 +3515,8 @@ async def handle_alerta_nohecha(update, context, uid, alert_id):
             await context.bot.edit_message_text(
                 chat_id=uid, message_id=datos["msg_id"],
                 text=datos["mensaje"] + "\n\n❌ *No realizada*",
-                parse_mode="Markdown")
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([]))
         except: pass
 
     await query.answer("❌ Registrado como no realizada")
@@ -4082,6 +4005,10 @@ async def handle_resultado(update, context, user_id, rid, resultado_str, won_leg
 
     reg["estado"]         = resultado_str
     reg["ts_result"]      = local_now().isoformat()
+    if resultado_str == "LOST" and ganancia_real is None and stakes:
+        ganancia_real = round(-sum(stakes), 2)
+    elif resultado_str == "VOID" and ganancia_real is None:
+        ganancia_real = 0.0
     if ganancia_real is not None:
         reg["ganancia_real"]  = ganancia_real
     if legs_resultado:
@@ -4824,12 +4751,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Alertas ✅/❌ ──────────────────────────────────────
     elif data.startswith("AH_"):
         parts = data.split("_", 2)
-        if len(parts) == 3:
-            await handle_alerta_hecha(update, context, int(parts[1]), parts[2])
+        if len(parts) == 3 and int(parts[1]) == user_id:
+            await handle_alerta_hecha(update, context, user_id, parts[2])
     elif data.startswith("ANH_"):
         parts = data.split("_", 2)
-        if len(parts) == 3:
-            await handle_alerta_nohecha(update, context, int(parts[1]), parts[2])
+        if len(parts) == 3 and int(parts[1]) == user_id:
+            await handle_alerta_nohecha(update, context, user_id, parts[2])
 
     # ── Completar pendiente ────────────────────────────────
     elif data.startswith("PC_"):
@@ -5228,6 +5155,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sport_key = "basketball" if es_middle else "soccer"
 
         datos = FAKE_EVENTS[sport_key]
+        _era_vinculado = user_id in dualstats_vinculados
         dualstats_vinculados.add(user_id)
         stake_sug = 100.0
         try:
@@ -5282,11 +5210,13 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent = await update.message.reply_text(mensaje, reply_markup=kb)
         alerta_cache[cache_key]["msg_id"] = sent.message_id
         _save_alerts_cache()
+        if not _era_vinculado:
+            dualstats_vinculados.discard(user_id)
         emoji, nombre = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
         tipo_label = "Middle" if es_middle else "Surebet"
         await update.message.reply_text(
             f"✅ Alerta de prueba enviada: {tipo_label} {emoji} {nombre}\n"
-            f"Cuenta marcada como vinculada para poder probar el registro."
+            f"Los botones ✅/❌ están activos para que puedas probar el registro."
         )
 
     except Exception as e:
@@ -5377,7 +5307,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for ap in surebets:
                 if ap.get("draw_risk"):
                     blocked_draw += 1
-                elif ap["profit"] < cfg.get("min_profit_surebet", 3.0):
+                elif ap["profit"] < cfg.get("min_profit_surebet", DEFAULT_USER_CONFIG["min_profit_surebet"]):
                     blocked_profit += 1
                 elif commence and not ((commence - now).total_seconds() < 0 or (commence - now).total_seconds() / 86400 <= cfg["max_days"]):
                     blocked_days += 1
@@ -5393,7 +5323,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"*Tu configuración:*\n"
-        f"• Profit mín: {cfg.get('min_profit_surebet', 3.0)}%\n"
+        f"• Profit mín: {cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG["min_profit_surebet"])}%\n"
         f"• Filtro días: {cfg['max_days']} días\n"
         f"• Casas activas: {len(active_bks)}/{len(cfg['bookmakers'])}\n"
         f"• Deportes activos: {len(active_sports)}\n\n"
