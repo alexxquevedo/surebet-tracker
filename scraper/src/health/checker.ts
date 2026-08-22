@@ -8,7 +8,9 @@
  *   healthReport()                  → snapshot for logging
  */
 
-const ALERT_AFTER = 2;
+// Ciclos consecutivos a 0 antes de alertar. Solo alerta si el scraper
+// tenía datos antes (lastSeen !== null) — los bloqueados por proxy nunca alertan.
+const ALERT_AFTER = 5;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN ?? "";
 const ADMIN_IDS: number[] = [1207554638, 2051653218];
 
@@ -42,7 +44,9 @@ export function healthUpdate(bookmaker: string, isLive: boolean, count: number):
     r.alertSent = false;
   } else {
     r.consecutive++;
-    if (r.consecutive >= ALERT_AFTER && !r.alertSent) {
+    // Solo alerta si el scraper tenía datos previos (lastSeen !== null).
+    // Los scrapers bloqueados por proxy NUNCA han devuelto eventos → no alertar.
+    if (r.consecutive >= ALERT_AFTER && !r.alertSent && r.lastSeen !== null) {
       r.alertSent = true;
       void sendCritical(bookmaker, isLive, r.consecutive);
     }
