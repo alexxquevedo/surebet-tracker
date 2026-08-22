@@ -645,6 +645,7 @@ export class BetssonScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("betsson")) { this.log("Sin BETSSON_PROXY_URL — necesita proxy ES"); return []; }
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
     try {
@@ -657,6 +658,7 @@ export class BetssonScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("betsson")) { this.log("Sin BETSSON_PROXY_URL — necesita proxy ES"); return []; }
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
     try {

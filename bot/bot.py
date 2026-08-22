@@ -5472,7 +5472,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif passed == 0 and blocked_profit > 0:
         texto += f"\n\n💡 *Sugerencia:* Baja el profit mínimo. La mayoría de surebets reales están entre 0.5% y 2%."
     elif total_events == 0:
-        texto += "\n\n⚠️ *La API no devolvió datos.* Puede que la cuota de The Odds API esté agotada. Revisa en theoddsapi.com."
+        texto += "\n\n⚠️ *Sin datos disponibles.* Los scrapers pueden estar iniciándose o las casas seleccionadas no tienen eventos en este momento."
 
     await msg.edit_text(texto, parse_mode="Markdown")
 

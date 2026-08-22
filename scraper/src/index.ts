@@ -33,7 +33,6 @@ import { WilliamHillScraper } from "./scrapers/williamhill";
 import { DaznBetScraper } from "./scrapers/daznbet";
 import { PokerStarsScraper } from "./scrapers/pokerstars";
 import { Bet365Scraper } from "./scrapers/bet365";
-import { OddsApiScraper } from "./scrapers/oddsapi";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
 import { RetabetScraper } from "./scrapers/retabet";
@@ -41,7 +40,6 @@ import { RetabetScraper } from "./scrapers/retabet";
 // ─── Scraper registry ─────────────────────────────────────────────────────────
 
 const scrapers: BaseScraper[] = [
-  new OddsApiScraper(),    // Bet365, Betsson, Bwin, WilliamHill, Betfair, Unibet via The Odds API
   new WinamaxScraper(),
   new CodereScraper(),
   new BetfairScraper(),
@@ -227,7 +225,7 @@ async function sendAdminAlert(text: string): Promise<void> {
 // Track consecutive cycles where ALL scrapers return 0 events.
 // Proxy 402 heuristic: if working scrapers (Betsson, Winamax, Codere) still have events
 // but proxy-dependent ones return 0, that's a proxy issue — no alert needed.
-const WORKING_SCRAPERS = ["betsson", "winamax", "codere", "oddsapi"]; // never use proxy
+const WORKING_SCRAPERS = ["winamax", "codere"]; // never use proxy
 let zeroCyclesLive = 0;
 let zeroCyclesPrematch = 0;
 // Rate-limit critical alerts: only send once per 30 min per mode to avoid spam

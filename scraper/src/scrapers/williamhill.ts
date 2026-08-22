@@ -409,6 +409,7 @@ export class WilliamHillScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("williamhill")) { this.log("Sin WILLIAMHILL_PROXY_URL — necesita proxy ES"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
       all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport]!.live, sport, true)));
@@ -417,6 +418,7 @@ export class WilliamHillScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("williamhill")) { this.log("Sin WILLIAMHILL_PROXY_URL — necesita proxy ES"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
       all.push(...(await this.scrapeWithFallback(URL_CANDIDATES[sport]!.prematch, sport, false)));

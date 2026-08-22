@@ -460,6 +460,7 @@ export class Bet365Scraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!B365_PROXY_URL) { this.log("Sin BET365_PROXY_URL — necesita proxy ES"); return []; }
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo live"); return []; }
     const all: ScrapedEvent[] = [];
     try {
@@ -472,6 +473,7 @@ export class Bet365Scraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!B365_PROXY_URL) { this.log("Sin BET365_PROXY_URL — necesita proxy ES"); return []; }
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     const all: ScrapedEvent[] = [];
     try {

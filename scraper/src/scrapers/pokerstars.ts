@@ -188,12 +188,14 @@ export class PokerStarsScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("pokerstars")) { this.log("Sin POKERSTARS_PROXY_URL — necesita proxy ES"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.live, sport, true)));
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!getProxyForScraper("pokerstars")) { this.log("Sin POKERSTARS_PROXY_URL — necesita proxy ES"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.prematch, sport, false)));
     return all;
