@@ -65,13 +65,7 @@ DEFAULT_USER_CONFIG = {
         "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
         "baseball_mlb": True, "rugbyleague": True,
     },
-    "bookmakers": {
-        "bet365": True, "winamax": True, "pokerstars": True,
-        "bwin": True, "betfair": True, "betsson": True, "leovegas": True,
-        "williamhill": True, "888sport": True, "daznbet": True,
-        "codere": True, "sportium": True, "retabet": True,
-        "casumo": True, "luckia": True,
-    },
+    "bookmakers": {},  # se sobreescribe abajo con {k: True for k in BOOKMAKERS}
     "stake": 100.0,
 }
 
@@ -137,36 +131,44 @@ LEAGUE_MAP = {
 }
 BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
 
-BOOKMAKER_NAMES = {
-    "bet365": "Bet365", "winamax": "Winamax", "pokerstars": "PokerStars",
-    "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
-    "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
-    "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
-    "casumo": "Casumo", "luckia": "Luckia",
+# ============================================================
+# FUENTE ÚNICA DE CASAS — añadir/quitar solo aquí
+# ============================================================
+# Campos: name, emoji, url (None si no hay), region (ES/INT), status (para /casas admin)
+BOOKMAKERS: dict[str, dict] = {
+    "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando"},
+    "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando"},
+    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR"},
+    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": None,                               "region": "INT", "status": "⏸ Sin credenciales API"},
+    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy"},
+    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy"},
+    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy"},
+    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "🔄 Activo"},
+    "betsson":     {"name": "Betsson",       "emoji": "🃏", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright"},
+    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy"},
+    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES"},
+    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES"},
+    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES"},
+    "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES"},
+    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES"},
 }
 
-BOOKMAKER_URLS: dict[str, str] = {
-    "betsson":     "https://www.betsson.es",
-    "winamax":     "https://www.winamax.es",
-    "codere":      "https://www.codere.es",
-    "sportium":    "https://apuestas.sportium.es",
-    "williamhill": "https://sports.williamhill.es",
-    "bwin":        "https://www.bwin.es",
-    "daznbet":     "https://www.daznbet.es",
-    "retabet":     "https://www.retabet.es",
-    "bet365":      "https://www.bet365.es",
-    "leovegas":    "https://www.leovegas.es",
-    "casumo":      "https://www.casumo.es",
-    "luckia":      "https://apuestas.luckia.es",
+# Scrapers internos que no son casas de usuario independientes
+# (sub-scrapers del mismo operador con tecnología distinta)
+EXTRA_SCRAPERS: dict[str, dict] = {
+    "betsson_es": {"name": "Betsson ES", "emoji": "🇪🇸", "status": "⏸ Kambi — proxy ES", "maps_to": "betsson"},
 }
 
-# Región regulatoria: ES = DGOJ (España), INT = plataforma internacional
-BOOKMAKER_REGION = {
-    "betsson": "ES", "winamax": "ES", "codere": "ES", "sportium": "ES",
-    "williamhill": "ES", "bwin": "ES", "daznbet": "ES", "retabet": "ES",
-    "bet365": "INT", "betfair": "INT", "pokerstars": "INT",
-    "leovegas": "INT", "888sport": "INT", "casumo": "INT", "luckia": "ES",
+# ── Derivados automáticos — NO editar a mano ──────────────
+BOOKMAKER_NAMES:  dict[str, str]       = {k: v["name"]   for k, v in BOOKMAKERS.items()}
+BOOKMAKER_URLS:   dict[str, str]       = {k: v["url"]    for k, v in BOOKMAKERS.items() if v["url"]}
+BOOKMAKER_REGION: dict[str, str]       = {k: v["region"] for k, v in BOOKMAKERS.items()}
+SCRAPER_DISPLAY:  dict[str, tuple]     = {
+    **{k: (v["emoji"], v["name"], v["status"]) for k, v in BOOKMAKERS.items()},
+    **{k: (v["emoji"], v["name"], v["status"]) for k, v in EXTRA_SCRAPERS.items()},
 }
+# Sync DEFAULT_USER_CONFIG.bookmakers con BOOKMAKERS (fuente única)
+DEFAULT_USER_CONFIG["bookmakers"] = {k: True for k in BOOKMAKERS}
 
 # DualStats odds endpoint (VPS scraper data via Supabase)
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
@@ -185,26 +187,6 @@ def son_casas_clon(bk1, bk2):
 # ── Gestión de scrapers (toggle ON/OFF por admin) ─────────
 # Shared con el scanner Node.js — ambos leen/escriben este JSON.
 SCANNER_STATE_FILE = "/home/ubuntu/scanner-state.json"
-
-# Todas las casas registradas en el scanner (orden = index.ts)
-SCRAPER_DISPLAY = {
-    "winamax":     ("🃏", "Winamax",       "✅ Funcionando"),
-    "codere":      ("🎰", "Codere",        "✅ Funcionando"),
-    "retabet":     ("🔴", "Retabet",       "🔄 SignalR"),
-    "betfair":     ("💱", "Betfair",       "⏸ Sin credenciales API"),
-    "bet365":      ("🏆", "Bet365",        "⏸ Necesita proxy"),
-    "sportium":    ("⚽", "Sportium",      "⏸ Necesita proxy"),
-    "bwin":        ("🎯", "Bwin",          "⏸ Necesita proxy"),
-    "williamhill": ("🎩", "William Hill",  "🔄 Activo"),
-    "betsson":     ("🃏", "Betsson FR",    "🔄 Playwright"),
-    "daznbet":     ("📺", "DaznBet",       "⏸ Necesita proxy"),
-    "pokerstars":  ("♠️", "PokerStars",    "⏸ Kambi — proxy ES"),
-    "leovegas":    ("🦁", "LeoVegas",      "⏸ Kambi — proxy ES"),
-    "888sport":    ("8️⃣", "888sport",       "⏸ Kambi — proxy ES"),
-    "casumo":      ("🎪", "Casumo",        "⏸ Kambi — proxy ES"),
-    "betsson_es":  ("🇪🇸", "Betsson ES",   "⏸ Kambi — proxy ES"),
-    "luckia":      ("🍀", "Luckia",        "⏸ Altenar — proxy ES"),
-}
 
 def _load_scanner_state() -> dict:
     try:
@@ -3068,15 +3050,17 @@ async def _mostrar_casas(target):
     """target puede ser un Message o un CallbackQuery."""
     state    = _load_scanner_state()
     disabled = set(state.get("disabled_scrapers", []))
-    total    = len(SCRAPER_DISPLAY)
-    activas  = total - len(disabled & SCRAPER_DISPLAY.keys())
+    n_casas   = len(BOOKMAKERS)
+    n_scrapers = len(SCRAPER_DISPLAY)
+    activos   = n_scrapers - len(disabled & SCRAPER_DISPLAY.keys())
 
-    lines = [f"🏠 *Casas de apuestas — Scanner* ({activas}/{total} activas)\n━━━━━━━━━━━━━━━━━━"]
+    lines = [f"🏠 *Casas de apuestas — Scanner* ({n_casas} casas · {activos}/{n_scrapers} scrapers activos)\n━━━━━━━━━━━━━━━━━━"]
     keyboard = []
     for key, (emoji, nombre, nota) in SCRAPER_DISPLAY.items():
         activo = key not in disabled
         estado = "✅" if activo else "❌"
-        lines.append(f"{estado} {emoji} *{nombre}* — _{nota}_")
+        extra  = " _(sub-scraper)_" if key in EXTRA_SCRAPERS else ""
+        lines.append(f"{estado} {emoji} *{nombre}*{extra} — _{nota}_")
         lbl = f"{'⏸ Pausar' if activo else '▶️ Activar'} {nombre}"
         keyboard.append([InlineKeyboardButton(lbl, callback_data=f"scraper_toggle_{key}")])
     keyboard.append([InlineKeyboardButton("🔄 Actualizar", callback_data="scraper_refresh")])
