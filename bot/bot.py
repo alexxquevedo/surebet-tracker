@@ -2263,7 +2263,15 @@ async def freebet_casa_seleccionada(update, context, casa_key):
     halladas = []
     for sport_key in sports_on:
         try:
-            events = await fetch_odds(sport_key, live=False)
+            if sport_key == "basketball":
+                api_keys = BASKETBALL_API_KEYS
+            elif sport_key == "rugbyleague":
+                api_keys = RUGBYLEAGUE_API_KEYS
+            else:
+                api_keys = [sport_key]
+            events = []
+            for ak in api_keys:
+                events.extend(await fetch_odds(ak, live=False))
         except Exception:
             continue
         for event in events:
