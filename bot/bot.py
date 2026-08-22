@@ -63,13 +63,14 @@ DEFAULT_USER_CONFIG = {
     "sports": {
         "soccer": True, "basketball": True,
         "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
-        "baseball_mlb": True, "rugbyleague": True, "cricket": False, "golf": False,
+        "baseball_mlb": True, "rugbyleague": True,
     },
     "bookmakers": {
         "bet365": True, "winamax": True, "pokerstars": True,
         "bwin": True, "betfair": True, "betsson": True, "leovegas": True,
         "williamhill": True, "888sport": True, "daznbet": True,
         "codere": True, "sportium": True, "retabet": True,
+        "casumo": True, "luckia": True,
     },
     "stake": 100.0,
 }
@@ -124,8 +125,6 @@ SPORT_DISPLAY = {
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
     "baseball_mlb":         ("⚾", "Béisbol"),
     "rugbyleague":          ("🏉", "Rugby"),
-    "cricket":              ("🏏", "Cricket"),
-    "golf":                 ("⛳", "Golf"),
 }
 LEAGUE_MAP = {
     "soccer":               "Fútbol",
@@ -135,8 +134,6 @@ LEAGUE_MAP = {
     "icehockey_nhl":        "NHL",
     "baseball_mlb":         "MLB",
     "rugbyleague":          "Rugby League",
-    "cricket":              "Cricket",
-    "golf":                 "Golf",
 }
 BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
 
@@ -145,7 +142,7 @@ BOOKMAKER_NAMES = {
     "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
     "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
     "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
-    "marathonbet": "Marathonbet",
+    "casumo": "Casumo", "luckia": "Luckia",
 }
 
 BOOKMAKER_URLS: dict[str, str] = {
@@ -158,8 +155,9 @@ BOOKMAKER_URLS: dict[str, str] = {
     "daznbet":     "https://www.daznbet.es",
     "retabet":     "https://www.retabet.es",
     "bet365":      "https://www.bet365.es",
-    "marathonbet": "https://www.marathonbet.es",
     "leovegas":    "https://www.leovegas.es",
+    "casumo":      "https://www.casumo.es",
+    "luckia":      "https://apuestas.luckia.es",
 }
 
 # Región regulatoria: ES = DGOJ (España), INT = plataforma internacional
@@ -167,7 +165,7 @@ BOOKMAKER_REGION = {
     "betsson": "ES", "winamax": "ES", "codere": "ES", "sportium": "ES",
     "williamhill": "ES", "bwin": "ES", "daznbet": "ES", "retabet": "ES",
     "bet365": "INT", "betfair": "INT", "pokerstars": "INT",
-    "leovegas": "INT", "888sport": "INT",
+    "leovegas": "INT", "888sport": "INT", "casumo": "INT", "luckia": "ES",
 }
 
 # DualStats odds endpoint (VPS scraper data via Supabase)
@@ -184,48 +182,78 @@ def son_casas_clon(bk1, bk2):
             return True
     return False
 
+# ── Gestión de scrapers (toggle ON/OFF por admin) ─────────
+# Shared con el scanner Node.js — ambos leen/escriben este JSON.
+SCANNER_STATE_FILE = "/home/ubuntu/scanner-state.json"
+
+# Todas las casas registradas en el scanner (orden = index.ts)
+SCRAPER_DISPLAY = {
+    "oddsapi":     ("📡", "The Odds API",  "Betsson/WH/Betfair/Unibet"),
+    "winamax":     ("🃏", "Winamax",       "✅ Funcionando"),
+    "codere":      ("🎰", "Codere",        "✅ Funcionando"),
+    "betfair":     ("💱", "Betfair",       "⏸ Sin credenciales API"),
+    "bet365":      ("🏆", "Bet365",        "⏸ Necesita proxy"),
+    "sportium":    ("⚽", "Sportium",      "⏸ Necesita proxy"),
+    "bwin":        ("🎯", "Bwin",          "⏸ Necesita proxy"),
+    "williamhill": ("🎩", "William Hill",  "🔄 Activo"),
+    "betsson":     ("🃏", "Betsson FR",    "🔄 Playwright"),
+    "daznbet":     ("📺", "DaznBet",       "⏸ Necesita proxy"),
+    "leovegas":    ("🦁", "LeoVegas",      "⏸ Kambi — proxy ES"),
+    "888sport":    ("8️⃣", "888sport",       "⏸ Kambi — proxy ES"),
+    "casumo":      ("🎪", "Casumo",        "⏸ Kambi — proxy ES"),
+    "betsson_es":  ("🇪🇸", "Betsson ES",   "⏸ Kambi — proxy ES"),
+}
+
+def _load_scanner_state() -> dict:
+    try:
+        with open(SCANNER_STATE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"disabled_scrapers": []}
+
+def _save_scanner_state(state: dict):
+    from datetime import timezone
+    state["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with open(SCANNER_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"[scanner-state] Error guardando: {e}")
+
 BLOQUEADO_MSG = "⛔ Función solo disponible para usuarios suscritos.\n\nPulsa 💳 Suscribirse para activar tu cuenta."
 
-SUSCRIPCION = """💳 *Suscribirse a FidesBot*
+SUSCRIPCION = """💳 *Planes FidesBot*
 ━━━━━━━━━━━━━━━━━━
 
-📋 *¿Qué incluye cada plan?*
-
-🆓 *FREE* — Gratis
-  • Acceso básico al bot
-  • Freebets y créditos
-  • Sin alertas de surebets
-
 💎 *PRO* — Alertas ilimitadas
-  • ⚡ Alertas en tiempo real (surebets, middles, LIVE)
-  • ⚙️ Configuración personalizada (casas, deportes, profit)
+  • ⚡ Surebets, Middlebets y LIVE en tiempo real
+  • ⚙️ Configuración por casas, deportes y profit mínimo
   • 🧮 Calculadora de stake automática
 
 🔗 *PRO+Tracker* — PRO + web DualStats
   • Todo lo de PRO
-  • ✅ Botones Hecha/No hecha en cada alerta
+  • ✅ Marca apuestas como Hecha/No hecha desde la alerta
   • 📋 Registro automático en DualStats Tracker
-  • 🏆 Estadísticas completas: ROI, P&L, win rate
+  • 🏆 Estadísticas: ROI, P&L, win rate
 
 ━━━━━━━━━━━━━━━━━━
 💰 *Precios:*
-• PRO 1 semana: *17€*
-• PRO 2 semanas: *25€*
-• PRO 1 mes: *45€* _(1er mes 35€)_ 🎁
-• PRO+Tracker 1 mes: *49,99€* _(1er mes 39,99€)_ 🎁
+• PRO 1 semana: *19,99€*
+• PRO 2 semanas: *32,99€*
+• PRO 1 mes: *44,99€*
+• PRO+Tracker 1 mes: *49,99€*
 
-_🎁 Descuento aplicado automáticamente en tu primera compra_
+_✨ Primera compra: 34,99€ PRO · 39,99€ PRO+Tracker_
 
 ━━━━━━━━━━━━━━━━━━
-💳 *Pago seguro con Stripe*
-Elige tu plan y pulsa el botón de pago.
-Tu suscripción se activa *automáticamente* al completar el pago.
+💳 Pago 100% seguro con Stripe.
+Tu acceso se activa *automáticamente* al completar el pago.
 
 👇 *Elige tu plan:*"""
 
 TERMINOS = """📋 *Términos y Condiciones — FidesBot & DualStats Tracker*
 
-_Última actualización: junio 2026_
+_Última actualización: 21/08/2026_
 
 *1. Identificación del servicio*
 FidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
@@ -275,7 +303,7 @@ Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. El acceso 
 Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
 
 ❓ *¿La suscripción se renueva sola? ¿Cómo la cancelo?*
-No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar o cancelar antes del vencimiento contacta al administrador.
+No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar, pulsa 🔄 Renovar en el menú principal y elige tu plan.
 
 ❓ *¿Qué es DualStats Tracker?*
 DualStats es la app web complementaria al bot. Registra todas tus apuestas y muestra: ROI, beneficio acumulado, rendimiento por casa, estadísticas por deporte y mucho más. Con PRO+Tracker las alertas que aceptas en el bot se registran automáticamente.
@@ -283,7 +311,8 @@ DualStats es la app web complementaria al bot. Registra todas tus apuestas y mue
 ❓ *¿Cómo vinculo el bot con DualStats?*
 Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta activa en DualStats y el plan PRO+Tracker.
 
-━━━━━━━━━━━━━━━━━━""",
+━━━━━━━━━━━━━━━━━━
+_Actualizado: 21/08/2026_""",
 """🆘 *Soporte — FidesBot*  _(2/2)_
 ━━━━━━━━━━━━━━━━━━
 
@@ -316,7 +345,7 @@ Envía /start para reiniciar la sesión. Si el problema persiste, escribe al adm
 NOVEDADES_HUB = (
     "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
     "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
-    "🕒 Última actualización: *15/08/2026*\n\n"
+    "🕒 Última actualización: *21/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
@@ -327,7 +356,9 @@ NOVEDADES_HUB = (
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕒 *Última actualización — Agosto 2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "🕒 *Última actualización — 22/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ *Activación automática* — tu suscripción se activa al instante "
+    "tras el pago con Stripe, sin esperar confirmación manual\n"
     "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
     "web y registra apuestas directamente desde las alertas del bot\n"
     "✅ Sistema de créditos y freebets — búsquedas gratuitas por invitar "
@@ -338,24 +369,25 @@ NOVEDADES_ULTIMA = (
     "se registran solas a las 48h con aviso por Telegram\n"
     "✅ Flujo de Apuestas Pendientes — acepta o rechaza cada alerta "
     "antes de registrarla en DualStats\n"
-    "✅ 14 correcciones de bugs (julio 2026): PARTIAL_WIN en dashboard, "
-    "P&L por pierna, renovación de suscripción, depósito/retiro, etc.\n"
-    "✅ Diagnóstico mejorado — explica exactamente por qué no llegan alertas\n"
-    "✅ Mercado de labels corregido: fútbol muestra [1X2], resto [Ganador]\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
-    "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "🔜 Valuebets — alertas de apuestas con valor esperado positivo\n"
-    "🔜 Más casas de apuestas — Codere, Sportium y Bwin con datos propios\n"
-    "🔜 Alertas WebSocket — latencia <100ms en vez del escaneo cada 10 min\n"
-    "🔜 Calculadora de stake avanzada (Kelly, plana, proporcional)\n"
-    "🔜 Estadísticas personales de surebets aprovechadas vs perdidas\n\n"
+    "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
+    "_Actualizado: 21/08/2026_\n\n"
+    "🔜 20 casas de apuestas — añadimos Betway, Interwetten, Paston, "
+    "AdmiralBet y TonyBet para más combinaciones de surebet\n"
+    "🔜 Más cobertura live — activamos scrapers adicionales para "
+    "detectar más surebets en tiempo real\n"
+    "🔜 Canal gratuito de Telegram — alertas de muestra para que "
+    "veas cómo funciona FidesBot antes de suscribirte\n"
+    "🔜 Integración web completa — registra y gestiona todas tus "
+    "apuestas directamente desde las alertas del bot\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_AVISOS = (
-    "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n"
+    "_Actualizado: 21/08/2026_\n\n"
     "⚠️ *Cobertura de casas españolas limitada*\n"
     "Las casas como Codere, Sportium, Bwin y William Hill España "
     "requieren proxies residenciales para acceder a sus odds. "
@@ -447,7 +479,7 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
         for bk in DEFAULT_USER_CONFIG["bookmakers"]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
-        cfg.get("bookmakers", {}).pop("marathonbet", None)  # eliminada del mercado español
+        cfg.get("bookmakers", {}).pop("marathonbet", None)   # eliminada del mercado español
         # Migrar min_profit_surebet de 3.0 (default antiguo) a 1.5 (más útil en la práctica)
         if cfg.get("min_profit_surebet") == 3.0:
             cfg["min_profit_surebet"] = 1.5
@@ -459,6 +491,8 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
         for sp in DEFAULT_USER_CONFIG["sports"]:
             if sp not in cfg.get("sports", {}):
                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
+        for _removed_sp in ["golf", "cricket"]:
+            cfg.get("sports", {}).pop(_removed_sp, None)
         subs[uid] = {"name": sub.get("name", str(uid)), "expires": expires, "config": cfg,
                      "is_trial": cfg.get("_is_trial", False)}
     refs  = {int(k): v for k, v in data.get("referrals", {}).items()}
@@ -563,6 +597,8 @@ async def cargar_db():
                         for sp in DEFAULT_USER_CONFIG["sports"]:
                             if sp not in cfg.get("sports", {}):
                                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
+                        for _removed_sp in ["golf", "cricket"]:
+                            cfg.get("sports", {}).pop(_removed_sp, None)
                         name = sub.get("telegramName") or file_subs.get(uid, {}).get("name", str(uid))
                         subscriptions[uid] = {"name": name, "expires": expires, "config": cfg,
                                               "is_trial": cfg.get("_is_trial", False)}
@@ -619,6 +655,7 @@ async def cargar_db():
 
     # ── Restaurar alerta_cache desde disco ────────────────────
     _load_alerts_cache()
+    _load_banned()
 
     # ── Si había fichero local: sync a API y renombrar ───────
     if file_subs and api_ok:
@@ -628,6 +665,97 @@ async def cargar_db():
             logger.info(f"[DB] Fichero migrado → {DB_FILE}.migrated")
         except Exception as e:
             logger.error(f"[DB] No se pudo renombrar el fichero: {e}")
+
+# ============================================================
+# BAN DE USUARIOS
+# ============================================================
+BANNED_FILE = "banned_users.json"
+banned_users: dict = {}  # {user_id: {"ts": ..., "motivo": ..., "by": ...}}
+
+def _save_banned():
+    try:
+        with open(BANNED_FILE, "w", encoding="utf-8") as f:
+            json.dump({str(k): v for k, v in banned_users.items()}, f, ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.warning(f"[ban] Error guardando: {e}")
+
+def _load_banned():
+    global banned_users
+    if not os.path.exists(BANNED_FILE):
+        return
+    try:
+        with open(BANNED_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        banned_users = {int(k): v for k, v in data.items()}
+        logger.info(f"[ban] {len(banned_users)} usuarios baneados cargados")
+    except Exception as e:
+        logger.warning(f"[ban] Error cargando: {e}")
+
+def is_banned(user_id: int) -> bool:
+    return user_id in banned_users
+
+async def cmd_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    if not context.args:
+        await update.message.reply_text("Uso: /ban <user_id> [motivo]"); return
+    try:
+        target = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ ID inválido."); return
+    if target in ADMIN_IDS:
+        await update.message.reply_text("❌ No puedes banear a un administrador."); return
+    motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Sin motivo especificado"
+    banned_users[target] = {
+        "ts": local_now().isoformat(),
+        "motivo": motivo,
+        "by": update.effective_user.id,
+    }
+    _save_banned()
+    await update.message.reply_text(
+        f"🚫 *Usuario {target} baneado*\nMotivo: {motivo}",
+        parse_mode="Markdown")
+    try:
+        await context.bot.send_message(
+            chat_id=target,
+            text="🚫 Tu acceso a FidesBot ha sido restringido por el administrador.\n"
+                 "Si crees que es un error, contacta con soporte.")
+    except Exception:
+        pass
+
+async def cmd_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    if not context.args:
+        await update.message.reply_text("Uso: /unban <user_id>"); return
+    try:
+        target = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ ID inválido."); return
+    if target not in banned_users:
+        await update.message.reply_text(f"ℹ️ El usuario {target} no está baneado."); return
+    del banned_users[target]
+    _save_banned()
+    await update.message.reply_text(f"✅ *Usuario {target} desbaneado*", parse_mode="Markdown")
+    try:
+        await context.bot.send_message(
+            chat_id=target,
+            text="✅ Tu acceso a FidesBot ha sido restaurado. Escribe /start para continuar.")
+    except Exception:
+        pass
+
+async def cmd_baneados(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    if not banned_users:
+        await update.message.reply_text("✅ No hay usuarios baneados actualmente."); return
+    lines = ["🚫 *Usuarios baneados*\n━━━━━━━━━━━━━━━━━━\n"]
+    for uid, info in banned_users.items():
+        ts     = info.get("ts", "—")[:10]
+        motivo = info.get("motivo", "—")
+        lines.append(f"• `{uid}` — {motivo} _{ts}_")
+    lines.append(f"\n_Total: {len(banned_users)}_")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 # ============================================================
 # SUSCRIPCIONES Y CRÉDITOS
@@ -669,6 +797,10 @@ def tiene_suscripcion(user_id):
     sub = subscriptions[user_id]
     if sub["expires"] is None: return True
     return sub["expires"] > datetime.now()
+
+def ha_pagado_antes(user_id):
+    """True si el usuario alguna vez tuvo una suscripción (aunque esté caducada)."""
+    return user_id in subscriptions
 
 def dias_restantes(user_id):
     cache = subscription_api_cache.get(user_id)
@@ -756,6 +888,63 @@ async def tarea_flush_db(context: ContextTypes.DEFAULT_TYPE):
         await flush_to_api()
 
 # ============================================================
+# TAREA SYNC DESDE API (cada 5min — recoge pagos Stripe nuevos)
+# ============================================================
+async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
+    """Sincroniza suscripciones desde la API para activar pagos Stripe al instante."""
+    try:
+        headers = {"x-bot-secret": DUALSTATS_API_KEY}
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"{DUALSTATS_API_URL}/users", headers=headers,
+                             timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return
+                api_data = await resp.json()
+
+        for sub in api_data.get("botSubscriptions", []):
+            uid = int(sub["telegramId"])
+            exp_str = sub.get("expiresAt")
+            expires = None
+            if exp_str:
+                try:
+                    expires = datetime.fromisoformat(exp_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                except Exception:
+                    pass
+            existing = subscriptions.get(uid)
+            if existing:
+                # Only extend expiry — never shrink (protects manually given subscriptions)
+                if expires and (existing.get("expires") is None or expires > existing.get("expires")):
+                    existing["expires"] = expires
+                    existing["is_trial"] = False
+                    existing.get("config", {}).pop("_is_trial", None)
+            else:
+                # New subscription — add to in-memory dict (Stripe payment just processed)
+                cfg = sub.get("config") or deepcopy(DEFAULT_USER_CONFIG)
+                for k, v in DEFAULT_USER_CONFIG.items():
+                    if k not in cfg:
+                        cfg[k] = deepcopy(v)
+                for bk in DEFAULT_USER_CONFIG["bookmakers"]:
+                    cfg.setdefault("bookmakers", {})[bk] = cfg["bookmakers"].get(bk, DEFAULT_USER_CONFIG["bookmakers"][bk])
+                for sp in DEFAULT_USER_CONFIG["sports"]:
+                    cfg.setdefault("sports", {})[sp] = cfg["sports"].get(sp, DEFAULT_USER_CONFIG["sports"][sp])
+                cfg.pop("_is_trial", None)
+                subscriptions[uid] = {
+                    "name":     sub.get("telegramName") or str(uid),
+                    "expires":  expires,
+                    "config":   cfg,
+                    "is_trial": False,
+                }
+                creditos[uid] = sub.get("credits") or creditos.get(uid, 0)
+                logger.info(f"[sync] Suscripción nueva cargada desde API: {uid}")
+
+        for u in api_data.get("linkedUsers", []):
+            uid = int(u["telegramId"])
+            dualstats_vinculados.add(uid)
+            dualstats_plan[uid] = u["plan"]
+    except Exception as e:
+        logger.error(f"[sync] Error: {e}")
+
+# ============================================================
 # TAREA VERIFICAR SUSCRIPCIONES
 # ============================================================
 async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
@@ -781,7 +970,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=uid,
                         text="⚠️ *¡Tu suscripción caduca mañana!*\n\n"
                              "Renueva hoy para no perder ninguna alerta.\n\n"
-                             "👉 /start → 💳 Suscribirse",
+                             "👉 /start → 🔄 Renovar suscripción",
                         parse_mode="Markdown")
             elif dias <= 7:
                 if f"{uid}_7d" not in avisos_enviados:
@@ -790,7 +979,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                         text=f"🔔 *Tu suscripción caduca en {dias} días.*\n\n"
                              f"Para no perder acceso, renueva antes del "
                              f"{expires.strftime('%d/%m/%Y')}.\n\n"
-                             f"👉 /start → 💳 Suscribirse",
+                             f"👉 /start → 🔄 Renovar suscripción",
                         parse_mode="Markdown")
         except: pass
     guardar_db()
@@ -1002,7 +1191,7 @@ async def fetch_odds(sport_key, live=False):
 _VPS_SPORT_MAP = {
     "soccer": "FOOTBALL", "basketball": "BASKETBALL", "tennis": "TENNIS",
     "baseball_mlb": "BASEBALL", "icehockey_nhl": "HOCKEY",
-    "rugbyleague": "RUGBY", "cricket": "CRICKET", "golf": "GOLF",
+    "rugbyleague": "RUGBY",
 }
 
 def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
@@ -1639,9 +1828,9 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     if not user_ids:
         stats["surebets_encontradas"]  = total_surebets
         stats["middlebets_encontradas"] = total_middles
-        stats["ultima_actualizacion"]   = datetime.now()
+        stats["ultima_actualizacion"]   = local_now()
         interval = BOT_CONFIG["scan_live_interval"] if live else BOT_CONFIG["scan_prematch_interval"]
-        stats["proxima_actualizacion"]  = datetime.now() + timedelta(seconds=interval)
+        stats["proxima_actualizacion"]  = local_now() + timedelta(seconds=interval)
     logger.info(f"Escaneo {'LIVE' if live else 'PRE'}: {total_surebets} surebets, {total_middles} middles")
     return total_surebets + total_middles
 
@@ -1727,6 +1916,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     args    = context.args
 
+    if is_banned(user_id):
+        await update.message.reply_text(
+            "🚫 Tu acceso a FidesBot está restringido.\n"
+            "Si crees que es un error, contacta con soporte.")
+        return
+
     # ── Vinculación DualStats (token CONNECT_xxxx) ─────────
     if args and args[0].startswith("CONNECT_"):
         token = args[0][len("CONNECT_"):]
@@ -1781,7 +1976,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Tienes *3 días de prueba gratuita* para descubrir cómo funcionan las alertas "
             f"de surebets y middlebets en tiempo real.\n\n"
             f"⏰ Tu prueba expira el *{trial_exp.strftime('%d/%m/%Y a las %H:%M')}*\n\n"
-            f"_Cuando termine, contacta con el administrador para continuar recibiendo alertas._",
+            f"_Cuando termine, elige un plan desde el menú para seguir recibiendo alertas._",
             parse_mode="Markdown")
     else:
         guardar_db()
@@ -1796,7 +1991,8 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     await update.message.reply_text(
         f"🪪 *Tu ID de Telegram:*\n`{uid}`\n\n"
-        "Comparte este ID con el administrador para activar tu suscripción.",
+        "Puedes suscribirte directamente desde el menú principal del bot.\n"
+        "Si necesitas ayuda, comparte este ID con soporte.",
         parse_mode="Markdown")
 
 async def cmd_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1815,11 +2011,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
-    ahora   = datetime.now()
+    ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     casas_str   = "\n".join([f" • 🟢 {n}: Activa" for n in BOOKMAKER_NAMES.values()])
-    total_subs  = len([u for u in subscriptions if tiene_suscripcion(u)])
     creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
                       if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
     creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
@@ -1827,7 +2022,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
         f" • ⏱️ Próx. actualización: {proxima}\n"
-        f" • 👥 Suscriptores activos: {total_subs}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📡 *Casas monitorizadas:*\n{casas_str}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -1861,14 +2055,14 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         icono_sub         = "🆕"
         dias_str_completo = f"PRUEBA — {horas_left}h restantes\n🗓️ Hasta {expires_dt.strftime('%d/%m/%y %H:%M')}"
         aviso = (f"\n⚠️ *Prueba gratuita: {horas_left}h restantes.* "
-                 f"Contacta con el administrador para continuar.") if horas_left < 24 else ""
+                 f"Pulsa 🔄 Renovar para continuar.") if horas_left < 24 else ""
     elif dias == 9999:
         dias_str_completo = "∞ días restantes"
         aviso = ""
     else:
         fecha_str         = expires_dt.strftime("%d/%m/%y %H:%M") if expires_dt else "—"
         dias_str_completo = f"{dias} días restantes\n🗓️ Termina {fecha_str}"
-        aviso = f"\n⚠️ *¡Suscripción caduca en {dias} días!* Renueva pronto." if dias <= 5 else ""
+        aviso = f"\n⚠️ *¡Suscripción caduca en {dias} días!* Pulsa 🔄 Renovar abajo." if dias <= 5 else ""
 
     # ── Botón DualStats con estado ─────────────────────────
     ds_label = "📈 DualStats ✅" if user_id in dualstats_vinculados else "📈 DualStats"
@@ -1888,7 +2082,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("💰 Créditos",     callback_data="mis_creditos")],
         [InlineKeyboardButton("🆘 Soporte",      callback_data="soporte"),
          InlineKeyboardButton("🆕 Novedades",    callback_data="novedades")],
-        [InlineKeyboardButton("💳 Suscribirse",  callback_data="suscribirse")],
+        [InlineKeyboardButton("🔄 Renovar suscripción", callback_data="suscribirse")],
     ]
     surebets_icon  = "✅" if cfg.get("surebets_on", True) else "❌"
     middles_icon   = "✅" if cfg.get("middlebets_on", False) else "❌"
@@ -1926,7 +2120,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 async def panel_surebets(update, context):
     await update.callback_query.answer()
-    ahora   = datetime.now()
+    ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
@@ -1947,7 +2141,7 @@ async def panel_surebets(update, context):
 
 async def panel_middles(update, context):
     await update.callback_query.answer()
-    ahora   = datetime.now()
+    ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
@@ -1956,9 +2150,9 @@ async def panel_middles(update, context):
         f"🎯 Nº Middlebets: *{stats['middlebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Información:*\n• Zona donde ganas las dos apuestas a la vez.\n"
+        f"💡 *Información:*\n• Apuestas en dos casas con un rango de resultados ganador.\n"
         f"• Si el resultado cae en el middle, ganas las DOS apuestas.\n"
-        f"• Riesgo 0 — matemáticamente superior a una surebet.\n\n"
+        f"• Si no cae en el middle, la pérdida es mínima.\n\n"
         f"⚠️ *Atención:*\n• La probabilidad del middle es una estimación.\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
         reply_markup=InlineKeyboardMarkup([
@@ -1968,7 +2162,7 @@ async def panel_middles(update, context):
 
 async def panel_valuebets(update, context):
     await update.callback_query.answer()
-    ahora   = datetime.now()
+    ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     volver  = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
@@ -2161,7 +2355,7 @@ async def mis_creditos(update, context):
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎁 Buscar surebets", callback_data="panel_freebets")],
             [InlineKeyboardButton("👥 Mis referidos",   callback_data="mis_referidos")],
-            [InlineKeyboardButton("💳 Suscribirse",     callback_data="suscribirse")],
+            [InlineKeyboardButton("🔄 Renovar" if suscrito else "💳 Suscribirse", callback_data="suscribirse")],
             [InlineKeyboardButton("🔙 Volver",          callback_data=volver)],
         ]), parse_mode="Markdown")
 
@@ -2169,7 +2363,6 @@ async def mis_creditos(update, context):
 # MENÚ ALERTAS
 # ============================================================
 async def menu_alertas(update, context):
-    await update.callback_query.answer()
     uid = update.effective_user.id
     cfg = get_config(uid)
     s = cfg.get("surebets_on", True);  m = cfg.get("middlebets_on", False)
@@ -2189,7 +2382,7 @@ async def menu_alertas(update, context):
     await update.callback_query.edit_message_text(
         f"🔔 *Alertas*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"• 💎 Surebets: {'✅ ON' if s else '❌ OFF'}\n  Arbitraje puro. Ganancia garantizada.\n\n"
-        f"• 🎯 Middlebets: {'✅ ON' if m else '❌ OFF'}\n  Siempre ganas algo. Si cae en el middle, ganas las dos.\n\n"
+        f"• 🎯 Middlebets: {'✅ ON' if m else '❌ OFF'}\n  Si cae en el middle, ganas las dos. Si no, pérdida mínima.\n\n"
         f"• 📊 Valuebets: {'✅ ON' if v else '❌ OFF'}\n  Apuestas con valor esperado positivo.\n\n"
         f"• ⚡ LIVE: {'✅ ON' if l else '❌ OFF'}\n  Alertas durante el partido en directo.\n\n"
         f"━━━━━━━━━━━━━━━━━━{pausa_info}",
@@ -2208,7 +2401,6 @@ async def menu_alertas(update, context):
 # MENÚ CONFIGURACIÓN
 # ============================================================
 async def menu_config(update, context):
-    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
     await update.callback_query.edit_message_text(
         f"⚙️ *Configuración*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2226,13 +2418,12 @@ async def menu_config(update, context):
             [InlineKeyboardButton(f"🍀 Prob. Middle mín: {cfg.get('min_prob_middle',5.0)}%", callback_data="cfg_prob_middle")],
             [InlineKeyboardButton(f"📊 Profit Value: {cfg.get('min_profit_value',5.0)}%",    callback_data="cfg_profit_value")],
             [InlineKeyboardButton(f"📆 Filtro Pre-partido: {cfg['max_days']} días",           callback_data="cfg_days")],
-            [InlineKeyboardButton("🏅 Deportes",         callback_data="cfg_deportes")],
-            [InlineKeyboardButton("🏦 Casas de apuestas", callback_data="cfg_casas")],
+            [InlineKeyboardButton(f"🏅 Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])})", callback_data="cfg_deportes")],
+            [InlineKeyboardButton(f"🏦 Casas de apuestas ({sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])})", callback_data="cfg_casas")],
             [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
 async def menu_cfg_deportes(update, context):
-    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
     keyboard = [[InlineKeyboardButton(
         ("✅ " if cfg["sports"].get(k) else "❌ ") + emoji + " " + nombre,
@@ -2241,11 +2432,12 @@ async def menu_cfg_deportes(update, context):
                      InlineKeyboardButton("❌ Ninguno", callback_data="deportes_ninguno")])
     keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
-        "🏅 *Deportes*\nToca para activar o desactivar.",
+        f"🏅 *Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])} activos)*\n"
+        f"Elige los deportes para los que quieres recibir alertas de surebets y middlebets.\n"
+        f"_Toca cualquier deporte para activarlo o desactivarlo._",
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def menu_cfg_casas(update, context):
-    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
     keyboard = [[InlineKeyboardButton(
         ("✅ " if cfg["bookmakers"].get(k) else "❌ ") + n,
@@ -2254,7 +2446,9 @@ async def menu_cfg_casas(update, context):
                      InlineKeyboardButton("❌ Ninguna", callback_data="casas_ninguna")])
     keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
-        "🏦 *Casas de apuestas*\nToca para activar o desactivar.",
+        f"🏦 *Casas de apuestas ({sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])} activas)*\n"
+        f"Elige las casas de las que quieres recibir oportunidades. Solo verás alertas entre las casas activas.\n"
+        f"_Toca cualquier casa para activarla o desactivarla._",
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ============================================================
@@ -2440,15 +2634,18 @@ async def pagar_plan_stripe(update, context, plan_key: str):
         if not checkout_url:
             await msg.edit_text("❌ Error al generar el enlace. Inténtalo de nuevo más tarde.")
             return
+        nuevo = not ha_pagado_antes(user_id)
         plan_info = {
-            "bot_7":       ("🗓️ PRO 1 semana",          "17€"),
-            "bot_14":      ("📅 PRO 2 semanas",          "25€"),
-            "bot_30":      ("💎 PRO 1 mes",              "45€"),
-            "bot_tracker": ("🔗 PRO+Tracker 1 mes",      "49,99€"),
+            "bot_7":       ("🗓️ PRO 1 semana",     "19,99€"),
+            "bot_14":      ("📅 PRO 2 semanas",    "32,99€"),
+            "bot_30":      ("💎 PRO 1 mes",        "34,99€" if nuevo else "44,99€"),
+            "bot_tracker": ("🔗 PRO+Tracker 1 mes", "39,99€" if nuevo else "49,99€"),
         }
         label, precio = plan_info.get(plan_key, ("Plan", ""))
+        primer_mes = nuevo and plan_key in ("bot_30", "bot_tracker")
+        oferta_txt = "\n_✨ Precio especial de bienvenida — primer mes_" if primer_mes else ""
         await msg.edit_text(
-            f"💳 *{label} — {precio}*\n\n"
+            f"💳 *{label} — {precio}*{oferta_txt}\n\n"
             f"Pulsa el botón para pagar de forma segura con Stripe.\n"
             f"Tu suscripción se activará *automáticamente* al completar el pago ✅",
             parse_mode="Markdown",
@@ -2465,16 +2662,21 @@ async def mostrar_suscripcion(update, context):
     await update.callback_query.answer()
     user_id  = update.effective_user.id
     suscrito = tiene_suscripcion(user_id)
+    nuevo    = not ha_pagado_antes(user_id)
     volver   = "menu_principal" if suscrito else "menu_no_suscrito"
+    if nuevo:
+        btn_30      = "💎 1 mes — 34,99€ ✨ Oferta 1er mes"
+        btn_tracker = "🔗 1 mes — 39,99€ ✨ Oferta 1er mes"
+    else:
+        btn_30      = "💎 1 mes — 44,99€"
+        btn_tracker = "🔗 1 mes — 49,99€"
     await update.callback_query.edit_message_text(SUSCRIPCION,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("— PRO —", callback_data="bloqueado")],
-            [InlineKeyboardButton("🗓️ 1 semana — 17€",              callback_data="stripe_bot_7")],
-            [InlineKeyboardButton("📅 2 semanas — 25€",             callback_data="stripe_bot_14")],
-            [InlineKeyboardButton("💎 1 mes — 45€ (35€ 1er mes) ⭐", callback_data="stripe_bot_30")],
-            [InlineKeyboardButton("— PRO+Tracker —",                callback_data="bloqueado")],
-            [InlineKeyboardButton("🔗 1 mes — 49,99€ (39,99€ 1er mes)", callback_data="stripe_bot_tracker")],
-            [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
+            [InlineKeyboardButton("🗓️ PRO · 1 semana — 19,99€",  callback_data="stripe_bot_7")],
+            [InlineKeyboardButton("📅 PRO · 2 semanas — 32,99€", callback_data="stripe_bot_14")],
+            [InlineKeyboardButton(btn_30,                        callback_data="stripe_bot_30")],
+            [InlineKeyboardButton(btn_tracker,                   callback_data="stripe_bot_tracker")],
+            [InlineKeyboardButton("🔙 Volver",                   callback_data=volver)],
         ]), parse_mode="Markdown")
 
 async def mostrar_plan(update, context, dias, tracker=False):
@@ -2607,10 +2809,13 @@ async def mostrar_novedades(update, context):
         await update.message.reply_text(NOVEDADES_HUB, reply_markup=kb, parse_mode="Markdown")
 
 async def novedades_subpagina(update, context, texto):
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(texto,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="novedades")]]),
-        parse_mode="Markdown")
+    try:
+        await update.callback_query.edit_message_text(texto,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="novedades")]]),
+            parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"[novedades_subpagina] FALLO: {type(e).__name__}: {e}")
+        raise
 
 async def soporte_mi_id(update, context):
     await update.callback_query.answer()
@@ -2618,20 +2823,18 @@ async def soporte_mi_id(update, context):
     await update.callback_query.edit_message_text(
         f"🪪 *Tu ID de Telegram*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"`{uid}`\n\n"
-        "_Comparte este ID con el administrador para activar o renovar tu suscripción._",
+        "_Puedes suscribirte directamente desde el menú principal. Si necesitas ayuda, comparte este ID con soporte._",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="soporte")]]),
         parse_mode="Markdown")
 
 async def soporte_estado_bot(update, context):
     await update.callback_query.answer()
-    ahora   = datetime.now()
+    ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
-    total_subs = len([u for u in subscriptions if tiene_suscripcion(u)])
     await update.callback_query.edit_message_text(
         f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"✅ Servicio operativo\n"
-        f"👥 Suscriptores activos: *{total_subs}*\n"
         f"⏱️ Último escaneo: *{ultima}*\n"
         f"⏭️ Próximo escaneo: *{proxima}*\n"
         f"💎 Surebets encontradas: *{stats['surebets_encontradas']}*\n"
@@ -2674,7 +2877,10 @@ async def ver_estado(update, context):
         f"👥 Referidos: *{len(mis_refs)}*\n\n"
         "🏅 *Deportes:*\n" + "\n".join(deportes_activos) + "\n\n"
         "🏦 *Casas:*\n" + ", ".join(casas_activas),
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver al panel", callback_data="menu_principal")]]),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Ver planes",        callback_data="suscribirse")],
+            [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
+        ]),
         parse_mode="Markdown")
 
 # ============================================================
@@ -2736,8 +2942,15 @@ async def handle_admin_callback(update, context):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="admin_volver")]]),
             parse_mode="Markdown")
     elif data == "admin_broadcast":
-        await query.edit_message_text("📢 Escribe el mensaje para todos:")
+        await query.edit_message_text(
+            "📢 *Mensaje a todos los suscriptores*\n\nEscribe el mensaje a enviar:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_broadcast_cancel")]]),
+            parse_mode="Markdown")
         context.user_data["admin_waiting"] = "broadcast"
+    elif data == "admin_broadcast_cancel":
+        context.user_data.pop("admin_waiting", None)
+        await query.edit_message_text("❌ Broadcast cancelado.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="admin_volver")]]))
     elif data == "admin_reflink":
         link = f"https://t.me/{BOT_USERNAME}?start={ADMIN_ID}"
         await query.edit_message_text(f"🔗 *Tu link de referido:*\n`{link}`",
@@ -2844,6 +3057,70 @@ async def cmd_scanner_config(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Uso: `/scanner_config [profit]` · `/scanner_config [uid] [profit]`\n"
         f"Ej: `/scanner_config 2.0` · `/scanner_on` · `/scanner_off`",
         parse_mode="Markdown")
+
+# ============================================================
+# GESTIÓN DE CASAS (toggle scraper ON/OFF — solo admins)
+# ============================================================
+
+async def _mostrar_casas(target):
+    """target puede ser un Message o un CallbackQuery."""
+    state    = _load_scanner_state()
+    disabled = set(state.get("disabled_scrapers", []))
+    total    = len(SCRAPER_DISPLAY)
+    activas  = total - len(disabled & SCRAPER_DISPLAY.keys())
+
+    lines = [f"🏠 *Casas de apuestas — Scanner* ({activas}/{total} activas)\n━━━━━━━━━━━━━━━━━━"]
+    keyboard = []
+    for key, (emoji, nombre, nota) in SCRAPER_DISPLAY.items():
+        activo = key not in disabled
+        estado = "✅" if activo else "❌"
+        lines.append(f"{estado} {emoji} *{nombre}* — _{nota}_")
+        lbl = f"{'⏸ Pausar' if activo else '▶️ Activar'} {nombre}"
+        keyboard.append([InlineKeyboardButton(lbl, callback_data=f"scraper_toggle_{key}")])
+    keyboard.append([InlineKeyboardButton("🔄 Actualizar", callback_data="scraper_refresh")])
+
+    text   = "\n".join(lines)
+    markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target, "edit_message_text"):
+        await target.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        await target.reply_text(text, parse_mode="Markdown", reply_markup=markup)
+
+async def cmd_casas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS: return
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    await _mostrar_casas(update.message)
+
+async def handle_scraper_toggle(update, context):
+    query = update.callback_query
+    data  = query.data
+
+    if data == "scraper_refresh":
+        await _mostrar_casas(query)
+        return
+
+    key = data[len("scraper_toggle_"):]
+    if key not in SCRAPER_DISPLAY:
+        await query.answer("Casa no reconocida", show_alert=True)
+        return
+
+    state    = _load_scanner_state()
+    disabled = set(state.get("disabled_scrapers", []))
+    if key in disabled:
+        disabled.discard(key)
+        accion = "activado"
+    else:
+        disabled.add(key)
+        accion = "pausado"
+
+    state["disabled_scrapers"] = sorted(disabled)
+    _save_scanner_state(state)
+
+    nombre = SCRAPER_DISPLAY[key][1]
+    icono  = "✅" if accion == "activado" else "⏸"
+    await query.answer(f"{icono} {nombre} {accion}", show_alert=False)
+    await _mostrar_casas(query)
 
 # ============================================================
 # ██████╗ ██╗   ██╗ █████╗ ██╗     ███████╗████████╗ █████╗ ████████╗███████╗
@@ -3014,18 +3291,20 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔗 *Vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
         "Para vincular tu cuenta:\n\n"
-        "1️⃣ Ve a *dualstats-tracker.vercel.app*\n"
+        "1️⃣ Pulsa el botón de abajo para abrir DualStats\n"
         "2️⃣ Inicia sesión con tu cuenta\n"
         "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
         "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
         "Una vez vinculado, las alertas mostrarán botones ✅/❌ "
         "para registrar tus apuestas automáticamente.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🌐 Abrir DualStats", url="https://dualstats-tracker.vercel.app")
+        ]]),
         parse_mode="Markdown")
 
 # ── Panel DualStats en el menú principal ─────────────────
 
 async def panel_dualstats(update, context):
-    await update.callback_query.answer()
     user_id   = update.effective_user.id
     vinculado = user_id in dualstats_vinculados
     n_pend      = len(_uid_pendientes(user_id))
@@ -3061,9 +3340,6 @@ async def panel_dualstats(update, context):
                 InlineKeyboardButton(f"📋 Pendientes ({n_pend})", callback_data="DS_pendientes"),
                 InlineKeyboardButton(f"🏆 Resultados ({n_res})",  callback_data="DS_resultados"),
             ])
-        keyboard.append([InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))])
-        keyboard.append([InlineKeyboardButton("🔓 Desvincular",     callback_data="DS_desvincular")])
-        keyboard.append([InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")])
 
         signo   = "+" if pnl_total >= 0 else ""
         pnl_str = f"{signo}{fmt_eur(pnl_total)}€"
@@ -3074,14 +3350,21 @@ async def panel_dualstats(update, context):
             estado_txt += "💡 Cuando pulses *Hecha* en una alerta, la apuesta se guarda automaticamente."
         else:
             estado_txt += "⚠️ Tu plan *PRO* no incluye integración con el bot.\nActualiza a *PRO+Tracker* para usar /pendientes y /resultados."
+            keyboard.append([InlineKeyboardButton("⬆️ Actualizar a PRO+Tracker", callback_data="stripe_bot_tracker")])
+
+        keyboard.append([InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))])
+        keyboard.append([InlineKeyboardButton("🔓 Desvincular",     callback_data="DS_desvincular")])
+        keyboard.append([InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")])
     else:
         keyboard = [
             [InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))],
-            [InlineKeyboardButton("🔗 Como vincular",   callback_data="DS_info_vincular")],
-            [InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")],
+            [InlineKeyboardButton("ℹ️ Cómo vincular",   callback_data="DS_info_vincular")],
         ]
+        if not es_tracker:
+            keyboard.append([InlineKeyboardButton("⬆️ Obtener PRO+Tracker", callback_data="stripe_bot_tracker")])
+        keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")])
         estado_txt = "❌ *No conectado*\n\n"
-        estado_txt += "🔗 Vincula tu cuenta para que las alertas se registren automaticamente.\n💎 Necesitas plan *PRO+Tracker* en DualStats para vincular."
+        estado_txt += "🔗 Vincula tu cuenta para que las alertas se registren automáticamente.\n💎 Necesitas plan *PRO+Tracker* en DualStats para vincular."
 
     await update.callback_query.edit_message_text(
         f"📈 *DualStats Tracker*\n"
@@ -3467,7 +3750,8 @@ async def handle_flow_confirmado(update, context, user_id, pid):
     flow  = context.user_data.get("ds_flow", {})
     p     = get_pendiente(user_id, pid)
     if not p:
-        await query.answer("⚠️ Pendiente no encontrado", show_alert=True); return
+        await query.edit_message_text("⚠️ Pendiente no encontrado. Puede que ya haya sido procesado.")
+        return
 
     stakes_raw = flow.get("stakes", [])
     odds_raw   = flow.get("odds", [])
@@ -3771,6 +4055,7 @@ async def handle_ganada_selector(update, context, user_id, rid):
             )])
 
     keyboard.append([InlineKeyboardButton("↩️ Cancelar", callback_data="DS_resultados")])
+    await query.answer()
     await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
@@ -4211,9 +4496,10 @@ async def handle_desvincular(update, context):
     await query.edit_message_text(
         "🔓 *Cuenta desvinculada*\n\n"
         "Tu cuenta de FidesBot ya no está conectada a DualStats Tracker.\n"
-        "Puedes volver a vincularla desde Configuración en la web.",
+        "Puedes volver a vincularla pulsando 📈 DualStats en el menú principal.",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔙 Volver", callback_data="menu_principal"),
+            InlineKeyboardButton("📈 Volver a DualStats", callback_data="panel_dualstats"),
+            InlineKeyboardButton("🔙 Menú",               callback_data="menu_principal"),
         ]]), parse_mode="Markdown")
 
 # ── Texto del flujo de completar ─────────────────────────
@@ -4302,30 +4588,41 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data    = query.data
     user_id = update.effective_user.id
 
+    if is_banned(user_id):
+        await query.answer("🚫 Tu acceso está restringido.", show_alert=True)
+        return
+
     # "bloqueado" necesita show_alert=True como primera (y única) respuesta
     if data == "bloqueado":
         await query.answer(BLOQUEADO_MSG, show_alert=True); return
 
-    await query.answer()
+    # Checks que necesitan show_alert=True y deben ir ANTES del answer() blanket
+    if data == "escanear_ahora":
+        SCAN_COOLDOWN_S = 120
+        last_manual = ultimo_scan_manual.get(user_id)
+        if last_manual:
+            elapsed = (datetime.now() - last_manual).total_seconds()
+            if elapsed < SCAN_COOLDOWN_S:
+                secs_left = int(SCAN_COOLDOWN_S - elapsed)
+                await query.answer(f"⏳ Espera {secs_left}s antes del siguiente escaneo.", show_alert=True)
+                return
 
-    # ── Admin ──────────────────────────────────────────────
-    if data.startswith("admin_"):
-        if user_id in ADMIN_IDS: await handle_admin_callback(update, context)
-        return
+    # Subscription check before blanket answer so BLOQUEADO_MSG show_alert=True works
+    _PUBLIC_PREFIXES = ("admin_", "scraper_", "menu_no_suscrito", "suscribirse",
+                        "stripe_", "plan_", "soporte", "novedades", "tyc",
+                        "panel_freebets", "panel_valuebets", "mis_referidos",
+                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh")
+    if not any(data == p or data.startswith(p) for p in _PUBLIC_PREFIXES):
+        if not tiene_suscripcion(user_id):
+            await query.answer(BLOQUEADO_MSG, show_alert=True); return
 
-    # ── Sin suscripción ────────────────────────────────────
-    if data == "menu_no_suscrito": await menu_no_suscrito(update); return
-    if data == "suscribirse":          await mostrar_suscripcion(update, context); return
-    # Nuevos botones Stripe
-    if data == "stripe_bot_7":       await pagar_plan_stripe(update, context, "bot_7"); return
-    if data == "stripe_bot_14":      await pagar_plan_stripe(update, context, "bot_14"); return
-    if data == "stripe_bot_30":      await pagar_plan_stripe(update, context, "bot_30"); return
-    if data == "stripe_bot_tracker": await pagar_plan_stripe(update, context, "bot_tracker"); return
-    # Callbacks legacy (por si hay mensajes viejos en caché de Telegram)
-    if data == "plan_7":               await pagar_plan_stripe(update, context, "bot_7"); return
-    if data == "plan_14":              await pagar_plan_stripe(update, context, "bot_14"); return
-    if data == "plan_30":              await pagar_plan_stripe(update, context, "bot_30"); return
-    if data == "plan_tracker_30":      await pagar_plan_stripe(update, context, "bot_tracker"); return
+    # Callbacks que gestionan su propio answer() con mensajes de error personalizados.
+    # Si ya respondemos aquí con answer() vacío, su show_alert=True queda silenciado.
+    _OWN_ANSWER = ("NM|", "CSH|", "FKN|", "AH_", "ANH_", "RES_", "DS_resumen_", "FL_confirm_", "PEC_", "FL_sc_yes_")
+    if not any(data.startswith(p) for p in _OWN_ANSWER):
+        await query.answer()
+
+    # ── Admin activar rápido (desde grupo de pagos) ────────
     if data.startswith("admin_activar_rapido_") and user_id in ADMIN_IDS:
         parts       = data.split("_")
         uid_activar = int(parts[3]); dias_activar = int(parts[4])
@@ -4345,6 +4642,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown")
         except: pass
         return
+
+    # ── Admin ──────────────────────────────────────────────
+    if data.startswith("admin_"):
+        if user_id in ADMIN_IDS: await handle_admin_callback(update, context)
+        return
+
+    # ── Gestión scrapers (admin) ────────────────────────────
+    if (data.startswith("scraper_toggle_") or data == "scraper_refresh") and user_id in ADMIN_IDS:
+        await handle_scraper_toggle(update, context)
+        return
+
+    # ── Sin suscripción ────────────────────────────────────
+    if data == "menu_no_suscrito": await menu_no_suscrito(update); return
+    if data == "suscribirse":          await mostrar_suscripcion(update, context); return
+    # Nuevos botones Stripe
+    if data == "stripe_bot_7":       await pagar_plan_stripe(update, context, "bot_7"); return
+    if data == "stripe_bot_14":      await pagar_plan_stripe(update, context, "bot_14"); return
+    if data == "stripe_bot_30":      await pagar_plan_stripe(update, context, "bot_30"); return
+    if data == "stripe_bot_tracker": await pagar_plan_stripe(update, context, "bot_tracker"); return
+    # Callbacks legacy (por si hay mensajes viejos en caché de Telegram)
+    if data == "plan_7":               await pagar_plan_stripe(update, context, "bot_7"); return
+    if data == "plan_14":              await pagar_plan_stripe(update, context, "bot_14"); return
+    if data == "plan_30":              await pagar_plan_stripe(update, context, "bot_30"); return
+    if data == "plan_tracker_30":      await pagar_plan_stripe(update, context, "bot_tracker"); return
     if data == "soporte":             await mostrar_hub_soporte(update, context); return
     if data == "soporte_faq":         await mostrar_soporte(update, context, page=0); return
     if data.startswith("soporte_p"):
@@ -4431,15 +4752,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("|")
         await handle_numerico(update, context, parts[1], parts[2])
     elif data == "escanear_ahora":
-        # Cooldown: un escaneo manual cada 2 minutos por usuario
-        SCAN_COOLDOWN_S = 120
-        last_manual = ultimo_scan_manual.get(user_id)
-        if last_manual:
-            elapsed = (datetime.now() - last_manual).total_seconds()
-            if elapsed < SCAN_COOLDOWN_S:
-                secs_left = int(SCAN_COOLDOWN_S - elapsed)
-                await query.answer(f"⏳ Espera {secs_left}s antes del siguiente escaneo.", show_alert=True)
-                return
         ultimo_scan_manual[user_id] = datetime.now()
         creditos_aviso = f"\n\n💳 API: {api_credits_remaining} créditos restantes." if api_credits_remaining is not None and api_credits_remaining < 500 else ""
         await query.edit_message_text("🔍 Escaneando apuestas... espera un momento.")
@@ -4482,11 +4794,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data in ("pausa_2h", "pausa_4h", "pausa_8h"):
         horas = {"pausa_2h": 2, "pausa_4h": 4, "pausa_8h": 8}[data]
         _set_pausa(user_id, datetime.now() + timedelta(hours=horas))
-        await query.answer(f"⏸️ Alertas pausadas {horas}h", show_alert=False)
         await menu_alertas(update, context)
     elif data == "reanudar_alertas":
         _clear_pausa(user_id)
-        await query.answer("▶️ Alertas reanudadas", show_alert=False)
         await menu_alertas(update, context)
 
     # ── DualStats callbacks ────────────────────────────────
@@ -4511,6 +4821,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period={period}", {}, method="GET")
         if not api_data:
             await query.answer("❌ Error al obtener datos. Inténtalo de nuevo.", show_alert=True); return
+        await query.answer()
         texto, keyboard = _fmt_resumen(api_data, period)
         await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "DS_info_vincular":
@@ -4544,7 +4855,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = data[3:]
         p   = get_pendiente(user_id, pid)
         if not p:
-            await query.answer("⚠️ No encontrado", show_alert=True); return
+            await query.edit_message_text("⚠️ Pendiente no encontrado. Puede que ya haya sido procesado.")
+            return
         await query.edit_message_text(
             f"🗑 *¿Eliminar este pendiente?*\n\n"
             f"• {p['evento']}\n\n"
@@ -4656,7 +4968,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) == 4:
             await handle_cashout_numerico(update, context, user_id, parts[1], int(parts[2]), parts[3])
     elif data == "NOOP":
-        await query.answer()
+        pass  # blanket answer() ya gestionado arriba
     elif data.startswith("CASH_CANCEL_"):
         context.user_data.pop("pending_cashout", None)
         await query.answer("Cashout cancelado", show_alert=False)
@@ -4669,6 +4981,8 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
     user_id = update.effective_user.id
+    if is_banned(user_id):
+        return
     text    = update.message.text.strip()
 
     # ── Flujo DualStats activo (tiene prioridad sobre admin) ──
@@ -4783,7 +5097,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Solo admin. Envia alerta de prueba con formato real.
     Uso: /testalerta [middle] [deporte]
-    Deportes: futbol, baloncesto, tenis, golf, hockey, rugby, beisbol, americano, cricket
+    Deportes: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano
     Ejemplos:
       /testalerta               -> surebet fútbol
       /testalerta middle        -> middle baloncesto
@@ -4836,20 +5150,6 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {"bookmaker": "Betfair", "outcome": "Under", "odd": 2.00, "stake_pct": 50.0, "point": 23.5, "description": ""},
             ],
             "profit_sure": 2.94, "profit_base": 0.5, "profit_max": 6.3, "prob_mid": 22.0,
-        },
-        "golf": {
-            "home": "Rory McIlroy", "away": "Scottie Scheffler",
-            "sport_key": "golf", "liga": "PGA Tour",
-            "time": "2026-06-12T16:00:00Z",
-            "legs_sure": [
-                {"bookmaker": "Bet365",  "outcome": "McIlroy",  "odd": 2.20, "stake_pct": 47.73, "point": None, "description": ""},
-                {"bookmaker": "Betfair", "outcome": "Scheffler", "odd": 2.25, "stake_pct": 52.27, "point": None, "description": ""},
-            ],
-            "legs_mid": [
-                {"bookmaker": "Bwin",    "outcome": "Over",  "odd": 1.92, "stake_pct": 50.0, "point": 68.5, "description": ""},
-                {"bookmaker": "Betfair", "outcome": "Under", "odd": 2.05, "stake_pct": 50.0, "point": 70.5, "description": ""},
-            ],
-            "profit_sure": 2.17, "profit_base": 0.9, "profit_max": 5.8, "prob_mid": 19.0,
         },
         "icehockey_nhl": {
             "home": "Toronto Maple Leafs", "away": "Boston Bruins",
@@ -4907,20 +5207,6 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             "profit_sure": 2.20, "profit_base": 1.0, "profit_max": 9.0, "prob_mid": 32.0,
         },
-        "cricket": {
-            "home": "India", "away": "Australia",
-            "sport_key": "cricket", "liga": "Test Match",
-            "time": "2026-06-13T10:00:00Z",
-            "legs_sure": [
-                {"bookmaker": "Bet365",  "outcome": "India",     "odd": 2.15, "stake_pct": 48.0, "point": None, "description": ""},
-                {"bookmaker": "Betfair", "outcome": "Australia", "odd": 2.20, "stake_pct": 52.0, "point": None, "description": ""},
-            ],
-            "legs_mid": [
-                {"bookmaker": "Marathonbet","outcome": "Over",  "odd": 1.88, "stake_pct": 50.0, "point": 295.5, "description": ""},
-                {"bookmaker": "Betfair",    "outcome": "Under", "odd": 2.02, "stake_pct": 50.0, "point": 305.5, "description": ""},
-            ],
-            "profit_sure": 2.45, "profit_base": 0.7, "profit_max": 6.8, "prob_mid": 20.0,
-        },
     }
 
     # Alias de nombres para el arg del usuario
@@ -4928,12 +5214,10 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "futbol": "soccer", "fútbol": "soccer", "football": "soccer",
         "baloncesto": "basketball", "basket": "basketball", "nba": "basketball", "euroleague": "basketball",
         "tenis": "tennis", "tennis": "tennis",
-        "golf": "golf",
         "hockey": "icehockey_nhl", "nhl": "icehockey_nhl",
         "rugby": "rugbyleague",
         "beisbol": "baseball_mlb", "béisbol": "baseball_mlb", "mlb": "baseball_mlb",
         "americano": "americanfootball_nfl", "nfl": "americanfootball_nfl",
-        "cricket": "cricket",
     }
 
     try:
@@ -4951,7 +5235,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not sport_key:
                 await update.message.reply_text(
                     f"❓ Deporte '{sport_input}' no reconocido.\n\n"
-                    "Deportes disponibles: futbol, baloncesto, tenis, golf, hockey, rugby, beisbol, americano, cricket"
+                    "Deportes disponibles: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano"
                 )
                 return
         else:
@@ -5423,10 +5707,16 @@ async def main():
     app.add_handler(CommandHandler("resumen",       cmd_resumen))
     app.add_handler(CommandHandler("diagnostico",   cmd_diagnostico))
 
+    # Comandos de ban (admin)
+    app.add_handler(CommandHandler("ban",       cmd_ban))
+    app.add_handler(CommandHandler("unban",     cmd_unban))
+    app.add_handler(CommandHandler("baneados",  cmd_baneados))
+
     # Comandos scanner (admin)
     app.add_handler(CommandHandler("scanner_on",     cmd_scanner_on))
     app.add_handler(CommandHandler("scanner_off",    cmd_scanner_off))
     app.add_handler(CommandHandler("scanner_config", cmd_scanner_config))
+    app.add_handler(CommandHandler("casas",          cmd_casas))
 
     # Video tutoriales
     for _cmd_name in VIDEO_TUTORIALES:
@@ -5437,6 +5727,7 @@ async def main():
 
     # Tareas periódicas
     app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
+    app.job_queue.run_repeating(tarea_sync_desde_api,          interval=300,   first=60)  # 5min — activa pagos Stripe
     app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
     app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
     app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
