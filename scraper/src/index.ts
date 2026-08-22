@@ -57,6 +57,9 @@ const scrapers: BaseScraper[] = [
   new KambiScraper("888sport",   "888"),
   new KambiScraper("casumo",     "casumo"),
   new KambiScraper("betsson_es", "betsson"),
+  // Kambi ES — nuevas casas (default: False hasta proxy Cudy)
+  new KambiScraper("unibet",   "unibet"),
+  new KambiScraper("tonybet",  "tonybet"),
   // Kambi ES — verified smaller bookmakers (client IDs pending proxy test)
   new KambiScraper("marca",    "marcaapuestas"),
   new KambiScraper("kirolbet", "kirolbet"),

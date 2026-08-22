@@ -33,6 +33,9 @@ const BOOKMAKER_KEY_MAP: Record<string, string> = {
   williamhill:   "williamhill",
   betfair_ex_eu: "betfair",
   unibet_eu:     "unibet",
+  betway:        "betway",
+  interwetten:   "interwetten",
+  betano:        "betano",
 };
 
 const TARGET_BOOKMAKERS = Object.keys(BOOKMAKER_KEY_MAP).join(",");

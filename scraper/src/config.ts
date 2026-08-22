@@ -46,6 +46,11 @@ export const config = {
     betsson:     process.env.BETSSON_PROXY_URL     ?? "",
     winamax:     process.env.WINAMAX_PROXY_URL     ?? "",
     kambi:       process.env.KAMBI_PROXY_URL       ?? "",
+    // Nuevas casas — comparten KAMBI_PROXY_URL o una genérica
+    betway:      process.env.BETWAY_PROXY_URL      ?? process.env.KAMBI_PROXY_URL ?? "",
+    interwetten: process.env.INTERWETTEN_PROXY_URL ?? "",
+    betano:      process.env.BETANO_PROXY_URL      ?? "",
+    altenar:     process.env.ALTENAR_PROXY_URL     ?? "",
   },
   scanner: {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),
@@ -59,16 +64,10 @@ export const config = {
 } as const;
 
 export const BOOKMAKERS = [
-  "betfair",
-  "winamax",
-  "bet365",
-  "codere",
-  "sportium",
-  "bwin",
-  "williamhill",
-  "betsson",
-  "daznbet",
-  "pokerstars",
+  "betfair", "winamax", "bet365", "codere", "sportium",
+  "bwin", "williamhill", "betsson", "daznbet", "pokerstars",
+  "leovegas", "888sport", "casumo", "luckia", "retabet",
+  "betway", "interwetten", "betano", "unibet", "tonybet",
 ] as const;
 
 export type BookmakerKey = (typeof BOOKMAKERS)[number];
