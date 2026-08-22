@@ -191,8 +191,9 @@ DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKM
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "tonybet"},
+    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "pokerstars", "casumo"},
     {"codere", "sportium"},
+    {"tonybet", "luckia"},  # Altenar
 ]
 
 def son_casas_clon(bk1, bk2):
@@ -1728,7 +1729,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
             for uid in targets:
                 if not tiene_suscripcion(uid): continue
                 # ── Comprobar pausa de alertas ──────────────────
-                if uid in pausa_alertas and datetime.now() < pausa_alertas[uid]: continue
+                if uid in pausa_alertas and local_now() < pausa_alertas[uid]: continue
                 cfg = get_config(uid)
                 if not cfg["sports"].get(sport_key, False): continue
                 if commence and not live:
@@ -2435,7 +2436,7 @@ async def menu_config(update, context):
     cfg = get_config(update.effective_user.id)
     await update.callback_query.edit_message_text(
         f"⚙️ *Configuración*\n━━━━━━━━━━━━━━━━━━\n"
-        f"💎 Profit mín. Surebet: *{cfg.get('min_profit_surebet',3.0)}%*\n"
+        f"💎 Profit mín. Surebet: *{cfg.get('min_profit_surebet', 1.0)}%*\n"
         f"🎯 Profit mín. Middle: *{cfg.get('min_profit_middle',2.0)}%*\n"
         f"🍀 Prob. mín. Middle: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit mín. Value: *{cfg.get('min_profit_value',5.0)}%*\n"
@@ -3646,8 +3647,11 @@ def _resumen_flow(pendiente, stakes, odds) -> str:
         )
     profit_real = (ganancia / total_inv * 100) if total_inv > 0 else 0
     aviso = ""
-    if profit_real < 0:
+    es_middle = pendiente.get("tipo") == "middlebet"
+    if profit_real < 0 and not es_middle:
         aviso = f"\n\n⚠️ _Con estas cuotas/stakes el ROI es {profit_real:.2f}% (perdida esperada)._"
+    elif profit_real < 0 and es_middle:
+        aviso = f"\n\n💡 _Peor caso si el middle no se cumple: {profit_real:.2f}%. Si se cumple la apuesta el beneficio es mayor._"
 
     return (f"📋 *RESUMEN DE TU APUESTA*\n━━━━━━━━━━━━━━━━━━\n"
             f"{emoji} {pendiente['evento']}\n\n"
@@ -3769,6 +3773,7 @@ async def handle_flow_confirmado(update, context, user_id, pid):
     flow  = context.user_data.get("ds_flow", {})
     p     = get_pendiente(user_id, pid)
     if not p:
+        await query.answer()
         await query.edit_message_text("⚠️ Pendiente no encontrado. Puede que ya haya sido procesado.")
         return
 
@@ -3837,6 +3842,7 @@ async def handle_flow_confirmado(update, context, user_id, pid):
             eliminar_pendiente(user_id, pid)
             if "ds_flow" in context.user_data:
                 del context.user_data["ds_flow"]
+            await query.answer()
             await query.edit_message_text(
                 f"⚠️ *Apuesta guardada como Borrador*\n\n"
                 f"Se registró en DualStats pero en estado *Borrador* porque las siguientes casas "
@@ -3875,6 +3881,7 @@ async def handle_flow_confirmado(update, context, user_id, pid):
     context.user_data.pop("ds_flow", None)
 
     web_txt = "✅ Registrado en DualStats Tracker." if registrado_en_web else "📱 Guardado localmente."
+    await query.answer("✅ Apuesta registrada")
     await query.edit_message_text(
         f"✅ *¡Apuesta registrada!*\n\n{web_txt}\n\n"
         f"Cuando conozcas el resultado, ve a /resultados para actualizarlo.",
@@ -4821,7 +4828,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await panel_middles(update, context)
     elif data in ("pausa_2h", "pausa_4h", "pausa_8h"):
         horas = {"pausa_2h": 2, "pausa_4h": 4, "pausa_8h": 8}[data]
-        _set_pausa(user_id, datetime.now() + timedelta(hours=horas))
+        _set_pausa(user_id, local_now() + timedelta(hours=horas))
         await menu_alertas(update, context)
     elif data == "reanudar_alertas":
         _clear_pausa(user_id)
@@ -5404,6 +5411,11 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for _bk in BASKETBALL_API_KEYS:
                 events.extend(await fetch_odds(_bk, live=False))
                 events.extend(await fetch_odds(_bk, live=True))
+        elif sport_key == "rugbyleague":
+            events = []
+            for _bk in RUGBYLEAGUE_API_KEYS:
+                events.extend(await fetch_odds(_bk, live=False))
+                events.extend(await fetch_odds(_bk, live=True))
         else:
             events = await fetch_odds(sport_key, live=False)
             events += await fetch_odds(sport_key, live=True)
@@ -5447,7 +5459,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Surebets detectadas en bruto: {total_surebets_raw}\n\n"
         f"*Motivos por los que se filtran:*\n"
         f"• 🛡 Bloqueadas por riesgo de empate: {blocked_draw}\n"
-        f"• 📉 Profit insuficiente (<{cfg.get('min_profit_surebet',3.0)}%): {blocked_profit}\n"
+        f"• 📉 Profit insuficiente (<{cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG['min_profit_surebet'])}%): {blocked_profit}\n"
         f"• 📆 Fuera del filtro de días: {blocked_days}\n"
         f"• ✅ *Pasarían todos los filtros: {passed}*\n\n"
         f"*Surebets por deporte:*\n{detail_str}\n\n"
@@ -5455,7 +5467,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if passed == 0 and blocked_draw > 0 and blocked_profit == 0:
-        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets detectadas pero bloqueadas porque el empate no está cubierto (fútbol/americano/baloncesto sin 3ª pata). Prueba a buscar en otros deportes o esperar a que aparezcan más eventos."
+        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets detectadas pero bloqueadas porque el empate no está cubierto (fútbol/americano/rugby sin 3ª pata). Prueba a buscar en otros deportes o esperar a que aparezcan más eventos."
     elif passed == 0 and blocked_profit > 0:
         texto += f"\n\n💡 *Sugerencia:* Baja el profit mínimo. La mayoría de surebets reales están entre 0.5% y 2%."
     elif total_events == 0:
