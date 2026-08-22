@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/client'
 import { verifyBotSecret } from '@/lib/bot/auth'
-import { stripe, PRICE_IDS, PLAN_CONFIG, FIRST_MONTH_COUPON, type PlanKey } from '@/lib/stripe'
+import { stripe, PRICE_IDS, FIRST_MONTH_PRICE_IDS, PLAN_CONFIG, type PlanKey } from '@/lib/stripe'
 
 /**
  * POST /api/bot/checkout
@@ -46,8 +46,9 @@ export async function POST(request: NextRequest) {
   })
   const hasEverPaid = webUser?.hasEverPaid ?? !!botSub
 
-  // ── Descuento primer mes: solo en bot_tracker, primera compra ─────────────
-  const applyDiscount = planKey === 'bot_tracker' && !hasEverPaid
+  // ── Precio primer mes: bot_30 y bot_tracker, primera compra ─────────────────
+  const firstMonthPrice = FIRST_MONTH_PRICE_IDS[planKey]
+  const priceId = (firstMonthPrice && !hasEverPaid) ? firstMonthPrice : PRICE_IDS[planKey]
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dualstats-tracker.vercel.app'
 
@@ -55,8 +56,8 @@ export async function POST(request: NextRequest) {
     mode:                 'payment',
     payment_method_types: ['card'],
     customer_email:       webUser?.email ?? undefined,
-    line_items:           [{ price: PRICE_IDS[planKey], quantity: 1 }],
-    ...(applyDiscount ? { discounts: [{ coupon: FIRST_MONTH_COUPON }] } : {}),
+    allow_promotion_codes: true,
+    line_items:           [{ price: priceId, quantity: 1 }],
     metadata: {
       telegram_id: telegramId,
       planKey,

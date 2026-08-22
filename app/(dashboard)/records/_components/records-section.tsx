@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { SettleButton, type LegInfo } from './settle-button'
 import { DeleteButton } from './delete-button'
 import { EditButton } from './edit-button'
-import { moveBetsToBankrollAction } from '@/lib/actions/bet-record'
+import { moveBetsToBankrollAction, bulkDeleteOperationsAction } from '@/lib/actions/bet-record'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -147,12 +147,13 @@ interface Props {
 export function RecordsSection({ records, bankrolls, tz, filterSort, filterParams }: Props) {
   const router = useRouter()
 
-  const [selected,       setSelected]       = useState<Set<string>>(new Set())
-  const [bulkBankrollId, setBulkBankrollId] = useState<string>('__unchanged__')
-  const [isPending,      startTransition]    = useTransition()
-  const [bulkError,      setBulkError]       = useState<string | null>(null)
-  const [expandedCombos, setExpandedCombos] = useState<Set<string>>(new Set())
-  const [expandedNotes,  setExpandedNotes]  = useState<Set<string>>(new Set())
+  const [selected,        setSelected]       = useState<Set<string>>(new Set())
+  const [bulkBankrollId,  setBulkBankrollId] = useState<string>('__unchanged__')
+  const [isPending,       startTransition]   = useTransition()
+  const [bulkError,       setBulkError]      = useState<string | null>(null)
+  const [confirmDelete,   setConfirmDelete]  = useState(false)
+  const [expandedCombos,  setExpandedCombos] = useState<Set<string>>(new Set())
+  const [expandedNotes,   setExpandedNotes]  = useState<Set<string>>(new Set())
 
   function toggleNotes(id: string) {
     setExpandedNotes((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -172,7 +173,7 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
   }
 
   function selectAll() { setSelected(new Set(records.map((r) => r.id))) }
-  function clearAll()  { setSelected(new Set()); setBulkBankrollId('__unchanged__'); setBulkError(null) }
+  function clearAll()  { setSelected(new Set()); setBulkBankrollId('__unchanged__'); setBulkError(null); setConfirmDelete(false) }
 
   function handleBulkMove() {
     if (bulkBankrollId === '__unchanged__') return
@@ -185,6 +186,20 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
         router.refresh()
       } else {
         setBulkError(res.error)
+      }
+    })
+  }
+
+  function handleBulkDelete() {
+    setBulkError(null)
+    startTransition(async () => {
+      const res = await bulkDeleteOperationsAction([...selected])
+      if (res.success) {
+        clearAll()
+        router.refresh()
+      } else {
+        setBulkError(res.error)
+        setConfirmDelete(false)
       }
     })
   }
@@ -692,35 +707,72 @@ export function RecordsSection({ records, bankrolls, tz, filterSort, filterParam
 
       {/* ─── Barra flotante de acciones masivas ─────────────────────────── */}
       {selected.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border bg-popover shadow-2xl px-4 py-3 text-sm min-w-[320px] max-w-[95vw]">
-          <span className="text-muted-foreground font-medium shrink-0 text-xs">
-            {selected.size} selec.
-          </span>
-          <select
-            value={bulkBankrollId}
-            onChange={(e) => setBulkBankrollId(e.target.value)}
-            className="flex-1 min-w-0 rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="__unchanged__">— Bankroll —</option>
-            <option value="__none__">Sin bankroll</option>
-            {bankrolls.map((bk) => (
-              <option key={bk.id} value={bk.id}>{bk.name}</option>
-            ))}
-          </select>
-          <button
-            onClick={handleBulkMove}
-            disabled={isPending || bulkBankrollId === '__unchanged__'}
-            className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isPending ? '…' : 'Mover'}
-          </button>
-          <button
-            onClick={clearAll}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            aria-label="Cancelar selección"
-          >
-            ✕
-          </button>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-2xl border bg-popover shadow-2xl px-4 py-3 text-sm min-w-[320px] max-w-[95vw]">
+          {confirmDelete ? (
+            /* ── Paso de confirmación ── */
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-foreground shrink-0">
+                ¿Eliminar {selected.size} operación{selected.size !== 1 ? 'es' : ''}?
+              </span>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isPending}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-destructive text-destructive-foreground text-xs font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-50"
+              >
+                {isPending ? 'Eliminando…' : 'Sí, eliminar'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={isPending}
+                className="shrink-0 px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            /* ── Barra normal ── */
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground font-medium shrink-0 text-xs">
+                {selected.size} selec.
+              </span>
+              {bankrolls.length > 0 && (
+                <>
+                  <select
+                    value={bulkBankrollId}
+                    onChange={(e) => setBulkBankrollId(e.target.value)}
+                    className="flex-1 min-w-0 rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="__unchanged__">— Bankroll —</option>
+                    <option value="__none__">Sin bankroll</option>
+                    {bankrolls.map((bk) => (
+                      <option key={bk.id} value={bk.id}>{bk.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleBulkMove}
+                    disabled={isPending || bulkBankrollId === '__unchanged__'}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPending ? '…' : 'Mover'}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setConfirmDelete(true)}
+                disabled={isPending}
+                className="shrink-0 px-3 py-1.5 rounded-lg border border-destructive/40 text-destructive text-xs font-semibold hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              >
+                🗑 Eliminar
+              </button>
+              <button
+                onClick={clearAll}
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                aria-label="Cancelar selección"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth/auth'
 import { prisma } from '@/lib/db/client'
-import { stripe, PRICE_IDS, PLAN_CONFIG, FIRST_MONTH_COUPON, type PlanKey } from '@/lib/stripe'
+import { stripe, PRICE_IDS, FIRST_MONTH_PRICE_IDS, PLAN_CONFIG, type PlanKey } from '@/lib/stripe'
 
 export async function POST(req: NextRequest) {
   // ── Auth ─────────────────────────────────────────────────────────────────
@@ -34,8 +34,9 @@ export async function POST(req: NextRequest) {
 
   const config = PLAN_CONFIG[planKey]
 
-  // ── Descuento primer mes: solo PRO+Tracker (49,99€→39,99€), primera compra ─
-  const applyDiscount = planKey === 'tracker_30' && !user.hasEverPaid
+  // ── Precio primer mes: tracker_30, primera compra ────────────────────────────
+  const firstMonthPrice = FIRST_MONTH_PRICE_IDS[planKey]
+  const priceId = (firstMonthPrice && !user.hasEverPaid) ? firstMonthPrice : PRICE_IDS[planKey]
 
   // ── Crear sesión de Checkout ──────────────────────────────────────────────
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
@@ -44,8 +45,8 @@ export async function POST(req: NextRequest) {
     mode:                 'payment',
     payment_method_types: ['card'],
     customer_email:       user.email ?? undefined,
-    line_items: [{ price: PRICE_IDS[planKey], quantity: 1 }],
-    ...(applyDiscount ? { discounts: [{ coupon: FIRST_MONTH_COUPON }] } : {}),
+    allow_promotion_codes: true,
+    line_items: [{ price: priceId, quantity: 1 }],
     metadata: {
       userId:  user.id,
       planKey,

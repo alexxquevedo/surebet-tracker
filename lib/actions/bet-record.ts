@@ -1058,6 +1058,25 @@ export async function deleteOperationAction(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// bulkDeleteOperationsAction — elimina múltiples operaciones en un lote
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function bulkDeleteOperationsAction(
+  ids: string[],
+): Promise<{ success: true; deleted: number } | { success: false; error: string }> {
+  if (!ids.length) return { success: true, deleted: 0 }
+  let deleted = 0
+  let lastError = ''
+  for (const id of ids) {
+    const result = await deleteOperationAction(id)
+    if (result.success) deleted++
+    else lastError = result.error
+  }
+  if (deleted === 0) return { success: false, error: lastError || 'No se pudo eliminar ninguna operación' }
+  return { success: true, deleted }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // deleteDraftAction — elimina un borrador sin tocar saldos (capital nunca movido)
 // ════════════════════════════════════════════════════════════════════════════
 
