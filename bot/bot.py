@@ -188,9 +188,9 @@ SCANNER_STATE_FILE = "/home/ubuntu/scanner-state.json"
 
 # Todas las casas registradas en el scanner (orden = index.ts)
 SCRAPER_DISPLAY = {
-    "oddsapi":     ("📡", "The Odds API",  "Betsson/WH/Betfair/Unibet"),
     "winamax":     ("🃏", "Winamax",       "✅ Funcionando"),
     "codere":      ("🎰", "Codere",        "✅ Funcionando"),
+    "retabet":     ("🔴", "Retabet",       "🔄 SignalR"),
     "betfair":     ("💱", "Betfair",       "⏸ Sin credenciales API"),
     "bet365":      ("🏆", "Bet365",        "⏸ Necesita proxy"),
     "sportium":    ("⚽", "Sportium",      "⏸ Necesita proxy"),
@@ -198,10 +198,12 @@ SCRAPER_DISPLAY = {
     "williamhill": ("🎩", "William Hill",  "🔄 Activo"),
     "betsson":     ("🃏", "Betsson FR",    "🔄 Playwright"),
     "daznbet":     ("📺", "DaznBet",       "⏸ Necesita proxy"),
+    "pokerstars":  ("♠️", "PokerStars",    "⏸ Kambi — proxy ES"),
     "leovegas":    ("🦁", "LeoVegas",      "⏸ Kambi — proxy ES"),
     "888sport":    ("8️⃣", "888sport",       "⏸ Kambi — proxy ES"),
     "casumo":      ("🎪", "Casumo",        "⏸ Kambi — proxy ES"),
     "betsson_es":  ("🇪🇸", "Betsson ES",   "⏸ Kambi — proxy ES"),
+    "luckia":      ("🍀", "Luckia",        "⏸ Altenar — proxy ES"),
 }
 
 def _load_scanner_state() -> dict:
