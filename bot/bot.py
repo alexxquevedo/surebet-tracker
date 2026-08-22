@@ -139,7 +139,8 @@ LEAGUE_MAP = {
     "baseball_mlb":         "MLB",
     "rugbyleague":          "Rugby League",
 }
-BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
+BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
+RUGBYLEAGUE_API_KEYS  = ["rugbyleague_nrl", "rugbyleague_super_league"]
 
 # ============================================================
 # FUENTE ÚNICA DE CASAS — añadir/quitar solo aquí
@@ -149,16 +150,16 @@ BOOKMAKERS: dict[str, dict] = {
     "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando",          "default": True},
     "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando",          "default": True},
     "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR",              "default": True},
-    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": None,                               "region": "INT", "status": "⏸ Sin credenciales API", "default": True},
+    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": "https://www.betfair.es",          "region": "INT", "status": "⏸ Sin credenciales API", "default": True},
     "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy",        "default": True},
     "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
     "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "🔄 Activo",               "default": True},
-    "betsson":     {"name": "Betsson",       "emoji": "🃏", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright",           "default": True},
+    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
+    "betsson":     {"name": "Betsson",       "emoji": "💚", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright",           "default": True},
     "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": "https://www.pokerstars.es",      "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": "https://www.888sport.es",        "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
     # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
@@ -190,7 +191,7 @@ DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKM
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "nordicbet", "unibet", "tonybet"},
+    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "tonybet"},
     {"codere", "sportium"},
 ]
 
@@ -1076,8 +1077,8 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
             if not son_casas_clon(b1["bookmaker_key"], b2["bookmaker_key"]):
                 result = calcular_surebet(b1["price"], b2["price"])
                 if result:
-                    # Fútbol/americano: empate posible. Basket: sin empate pero usuario lo bloquea
-                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "basketball"}
+                    # Fútbol, americano y rugby pueden terminar en empate
+                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "rugbyleague"}
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
@@ -1188,11 +1189,26 @@ async def fetch_odds(sport_key, live=False):
     except Exception as e:
         logger.error(f"Error {sport_key}: {e}"); return []
 
+# ── OddsAPI league-specific key → user-facing sport key (for cross-source merge) ──
+_ODDSAPI_SPORT_KEY_NORM = {
+    "basketball_nba":            "basketball",
+    "basketball_euroleague":     "basketball",
+    "rugbyleague_nrl":           "rugbyleague",
+    "rugbyleague_super_league":  "rugbyleague",
+}
+
+def _norm_sport_key(sk: str) -> str:
+    return _ODDSAPI_SPORT_KEY_NORM.get(sk, sk)
+
 # ── Odds API sport_key → VPS SportType (for filtering DualStats events) ────────
 _VPS_SPORT_MAP = {
-    "soccer": "FOOTBALL", "basketball": "BASKETBALL", "tennis": "TENNIS",
-    "baseball_mlb": "BASEBALL", "icehockey_nhl": "HOCKEY",
-    "rugbyleague": "RUGBY",
+    "soccer":               "FOOTBALL",
+    "basketball":           "BASKETBALL",
+    "tennis":               "TENNIS",
+    "baseball_mlb":         "BASEBALL",
+    "icehockey_nhl":        "ICEHOCKEY",
+    "rugbyleague":          "RUGBYLEAGUE",
+    "americanfootball_nfl": "AMERICANFOOTBALL",
 }
 
 def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
@@ -1502,8 +1518,8 @@ def _merge_cross_source_events(events: list, live: bool) -> list:
 
         best_score, best_match = 0.0, None
         for oa in merged:
-            if ds.get("sport_key") != oa.get("sport_key"):
-                continue  # strict sport_key equality — evita falsos matches entre deportes
+            if _norm_sport_key(ds.get("sport_key", "")) != _norm_sport_key(oa.get("sport_key", "")):
+                continue  # sport mismatch — evita falsos matches entre deportes
             if not live and ds_time:
                 try:
                     oa_time = datetime.fromisoformat(oa.get("commence_time", "").replace("Z", ""))
@@ -1687,6 +1703,8 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         # Concurrent fetch: The Odds API (international) + DualStats (VPS, ES casas)
         if sport_key == "basketball":
             odds_tasks = [fetch_odds(_bk, live=live) for _bk in BASKETBALL_API_KEYS]
+        elif sport_key == "rugbyleague":
+            odds_tasks = [fetch_odds(_bk, live=live) for _bk in RUGBYLEAGUE_API_KEYS]
         else:
             odds_tasks = [fetch_odds(sport_key, live=live)]
         odds_tasks.append(fetch_dualstats_odds(sport_key, live=live))
@@ -2018,7 +2036,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ahora   = local_now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
-    casas_str   = "\n".join([f" • 🟢 {n}: Activa" for n in BOOKMAKER_NAMES.values()])
+    casas_activas = sum(1 for v in BOOKMAKERS.values() if "✅" in v.get("status", ""))
+    casas_str   = f" • {casas_activas}/{len(BOOKMAKERS)} casas con scraper activo (detalle en /casas)"
     creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
                       if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
     creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
