@@ -16,18 +16,20 @@ import type { BrowserContext } from "playwright";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
+// betsson.es requiere IP española — con el proxy residencial (Cudy LT500 + SIM Digi) debe funcionar.
+// Si la URL no carga, probar /es/deportes/en-directo/ o /es/sport/en-directo/
 const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
   FOOTBALL: {
-    live: "https://www.betsson.fr/fr/sport/en-direct/football",
-    prematch: "https://www.betsson.fr/fr/paris-sportifs/football",
+    live:     "https://www.betsson.es/es/deportes/en-directo/futbol",
+    prematch: "https://www.betsson.es/es/deportes/futbol",
   },
   TENNIS: {
-    live: "https://www.betsson.fr/fr/sport/en-direct/tennis",
-    prematch: "https://www.betsson.fr/fr/paris-sportifs/tennis",
+    live:     "https://www.betsson.es/es/deportes/en-directo/tenis",
+    prematch: "https://www.betsson.es/es/deportes/tenis",
   },
   BASKETBALL: {
-    live: "https://www.betsson.fr/fr/sport/en-direct/basketball",
-    prematch: "https://www.betsson.fr/fr/paris-sportifs/basketball",
+    live:     "https://www.betsson.es/es/deportes/en-directo/baloncesto",
+    prematch: "https://www.betsson.es/es/deportes/baloncesto",
   },
 };
 

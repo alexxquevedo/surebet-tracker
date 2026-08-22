@@ -25,9 +25,11 @@ const KAMBI_BASE_V2    = `https://eu-offering.kambicdn.org/offering/v2/${KAMBI_C
 const KAMBI_BASE_V2018 = `https://eu-offering.kambicdn.org/offering/v2018/${KAMBI_CUSTOMER}`;
 
 const KAMBI_SPORT_FILTER: Partial<Record<Sport, string>> = {
-  FOOTBALL:   "FOOTBALL",
-  TENNIS:     "TENNIS",
-  BASKETBALL: "BASKETBALL",
+  FOOTBALL:          "football",
+  TENNIS:            "tennis",
+  BASKETBALL:        "basketball",
+  AMERICANFOOTBALL:  "american-football",
+  RUGBYLEAGUE:       "rugby-league",
 };
 
 const KAMBI_HEADERS = {
@@ -210,7 +212,7 @@ async function fetchKambiViaPlaywright(
     if (!data && !isLive) {
       await drainEventLoops(page);
 
-      const fallbackUrl = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${KAMBI_SPORT_FILTER[sport]}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
+      const fallbackUrl = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${(KAMBI_SPORT_FILTER[sport] ?? "").toUpperCase().replace(/-/g, "_")}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
       const [v2018Resp] = await Promise.all([
         page.waitForResponse(isV2018, { timeout: 8_000 }).catch(() => null),
         page.goto(fallbackUrl, { waitUntil: "commit", timeout: 10_000 }).catch(() => null),
@@ -272,12 +274,13 @@ async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
 
   // Fallback: direct Node.js/axios (no proxy — useful in dev, or if proxy not configured)
   const filter = KAMBI_SPORT_FILTER[sport]!.toLowerCase();
+  const filterCat = filter.toUpperCase().replace(/-/g, "_"); // "rugby-league" → "RUGBY_LEAGUE"
   if (isLive) {
     const urlV2 = `${KAMBI_BASE_V2}/listView/${filter}/${filter}/all/all/in-play.json?lang=es&market=ES&includeParticipants=true`;
     const r2 = await httpsGetWithFallback(urlV2);
     if (!BLOCKED_STATUSES.has(r2.status) && r2.data) return r2.data;
 
-    const urlFallback = `${KAMBI_BASE_V2018}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filter.toUpperCase()}&includeParticipants=true`;
+    const urlFallback = `${KAMBI_BASE_V2018}/liveEvent/get.json?lang=es&market=ES&startRowIndex=0&numberOfRows=150&filter=${filterCat}&includeParticipants=true`;
     const rf = await httpsGetWithFallback(urlFallback);
     return BLOCKED_STATUSES.has(rf.status) ? null : rf.data;
   } else {
@@ -285,7 +288,7 @@ async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
     const r2 = await httpsGetWithFallback(urlV2);
     if (!BLOCKED_STATUSES.has(r2.status) && r2.data?.events?.length) return r2.data;
 
-    const urlFallback = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${filter.toUpperCase()}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
+    const urlFallback = `${KAMBI_BASE_V2018}/betoffer/group.json?lang=es&market=ES&category=${filterCat}&numberOfEvents=200&clientId=2&includedBetOfferCategories=`;
     const rf = await httpsGetWithFallback(urlFallback);
     return BLOCKED_STATUSES.has(rf.status) ? null : rf.data;
   }
@@ -358,7 +361,7 @@ function parsePrematch(data: any, sport: Sport): ScrapedEvent[] {
 
 export class SportiumScraper extends BaseScraper {
   readonly name = "sportium";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE"];
 
   private async scrapeOneSport(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     try {

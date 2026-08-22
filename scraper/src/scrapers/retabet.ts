@@ -104,7 +104,14 @@ export class RetabetScraper extends BaseScraper {
 
   private async ensureConnection(): Promise<void> {
     if (this.connection?.state === "Connected") return;
-    if (this.isConnecting) return;
+    if (this.isConnecting) {
+      // Wait for the ongoing connection attempt to finish
+      const deadline = Date.now() + 20_000;
+      while (this.isConnecting && Date.now() < deadline) {
+        await new Promise<void>((r) => setTimeout(r, 300));
+      }
+      return;
+    }
     this.isConnecting = true;
     try {
       this.connection = new HubConnectionBuilder()
@@ -234,14 +241,21 @@ export class RetabetScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    this.ensureConnection().catch(() => {});
+    await this.ensureConnection().catch(() => {});
+    // Give the hub time to push data after the initial invocations
+    if (this.connection?.state === "Connected" && this.receivedMessages.length === 0) {
+      await new Promise<void>((r) => setTimeout(r, 4_000));
+    }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...await this.scrapeOneSport(sport, true));
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    this.ensureConnection().catch(() => {});
+    await this.ensureConnection().catch(() => {});
+    if (this.connection?.state === "Connected" && this.receivedMessages.length === 0) {
+      await new Promise<void>((r) => setTimeout(r, 4_000));
+    }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...await this.scrapeOneSport(sport, false));
     return all;

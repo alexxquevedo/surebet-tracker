@@ -167,7 +167,8 @@ BOOKMAKERS: dict[str, dict] = {
     "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
     "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
     "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
-    "tonybet":     {"name": "TonyBet",       "emoji": "🎲", "url": "https://www.tonybet.es",          "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": False},
+    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": False},
+    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": False},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -191,9 +192,9 @@ DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKM
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "pokerstars", "casumo"},
+    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "pokerstars", "casumo", "marca", "kirolbet"},
     {"codere", "sportium"},
-    {"tonybet", "luckia"},  # Altenar
+    {"tonybet", "luckia", "casino-gran-madrid"},  # Altenar
 ]
 
 def son_casas_clon(bk1, bk2):

@@ -54,7 +54,7 @@ const scrapers: BaseScraper[] = [
   new PokerStarsScraper(),
   // Kambi B2B — 4 casas espanolas (requiere KAMBI_PROXY_URL)
   new KambiScraper("leovegas",   "leovegas"),
-  new KambiScraper("888sport",   "888"),
+  new KambiScraper("888sport",   "888sport"),
   new KambiScraper("casumo",     "casumo"),
   new KambiScraper("betsson_es", "betsson"),
   // Kambi ES — Unibet España usa "unibet_spain" como clientId (verificado vía CDN)

@@ -122,7 +122,7 @@ function parseKambiResponse(data: unknown, bookmaker: string, sport: Sport, isLi
 
 export class KambiScraper extends BaseScraper {
   readonly name: string;
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE"];
   private readonly clientId: string;
 
   constructor(bookmaker: string, clientId: string) {

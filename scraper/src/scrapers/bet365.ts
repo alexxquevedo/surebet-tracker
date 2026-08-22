@@ -422,7 +422,8 @@ export class Bet365Scraper extends BaseScraper {
         )
         .catch(() => []);
 
-      events.push(...domEvents);
+      // Recalculate eventKey server-side — page.evaluate has no access to buildEventKey
+      events.push(...domEvents.map(e => ({ ...e, eventKey: buildEventKey(e.sport as Sport, e.eventName) })));
 
       // Parse WebSocket pipe frames if DOM gave nothing
       if (events.length === 0 && wsFrames.length > 0) {

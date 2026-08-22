@@ -9,7 +9,7 @@
  */
 
 import { BaseScraper } from "./base";
-import { browserManager, dismissCookies, logPageState } from "./playwright-base";
+import { browserManager, dismissCookies, logPageState, getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
@@ -105,7 +105,7 @@ export class PokerStarsScraper extends BaseScraper {
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
   private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage();
+    const { page, ctx } = await browserManager.newPage(getProxyForScraper("pokerstars"));
 
     const kambiCaptures: Array<{ url: string; data: any }> = [];
     const allCaptures: Array<{ url: string; data: any }> = [];
