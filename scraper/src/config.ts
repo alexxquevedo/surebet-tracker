@@ -45,6 +45,7 @@ export const config = {
     betfair:     process.env.BETFAIR_PROXY_URL     ?? "",
     betsson:     process.env.BETSSON_PROXY_URL     ?? "",
     winamax:     process.env.WINAMAX_PROXY_URL     ?? "",
+    kambi:       process.env.KAMBI_PROXY_URL       ?? "",
   },
   scanner: {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),

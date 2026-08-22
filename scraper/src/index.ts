@@ -21,6 +21,7 @@ import { findArbs } from "./calculator";
 import { notifyArbs } from "./notifier";
 import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes } from "./types";
 import { BaseScraper } from "./scrapers/base";
+import { isScraperEnabled } from "./scrapers/scraperState";
 import { BetfairScraper } from "./scrapers/betfair";
 // MarathonbetScraper disabled: marathonbet.es/es/ only offers casino in Spain (exited sportsbook market)
 import { WinamaxScraper } from "./scrapers/winamax";
@@ -30,9 +31,12 @@ import { CodereScraper } from "./scrapers/codere";
 import { SportiumScraper } from "./scrapers/sportium";
 import { WilliamHillScraper } from "./scrapers/williamhill";
 import { DaznBetScraper } from "./scrapers/daznbet";
-// PokerStarsScraper excluded: PS Sports retirado del mercado español (redirige a .fr)
+import { PokerStarsScraper } from "./scrapers/pokerstars";
 import { Bet365Scraper } from "./scrapers/bet365";
 import { OddsApiScraper } from "./scrapers/oddsapi";
+import { KambiScraper } from "./scrapers/kambi";
+import { AltenarScraper } from "./scrapers/altenar";
+import { RetabetScraper } from "./scrapers/retabet";
 
 // ─── Scraper registry ─────────────────────────────────────────────────────────
 
@@ -47,7 +51,19 @@ const scrapers: BaseScraper[] = [
   new WilliamHillScraper(),
   new BetssonScraper(),
   new DaznBetScraper(),
-  // PokerStars excluded: retirado del mercado español
+  new PokerStarsScraper(),
+  // Kambi B2B — 4 casas espanolas (requiere KAMBI_PROXY_URL)
+  new KambiScraper("leovegas",   "leovegas"),
+  new KambiScraper("888sport",   "888"),
+  new KambiScraper("casumo",     "casumo"),
+  new KambiScraper("betsson_es", "betsson"),
+  // Kambi ES — verified smaller bookmakers (client IDs pending proxy test)
+  new KambiScraper("marca",    "marcaapuestas"),
+  new KambiScraper("kirolbet", "kirolbet"),
+  // Altenar B2B — casas espanolas (requiere ALTENAR_PROXY_URL)
+  new AltenarScraper("luckia",           "Luckia"),
+  new AltenarScraper("casino-gran-madrid","CasinoGranMadrid"),
+  new RetabetScraper(),
 ];
 
 // ─── DB persistence ───────────────────────────────────────────────────────────
@@ -210,6 +226,10 @@ async function sendAdminAlert(text: string): Promise<void> {
 const WORKING_SCRAPERS = ["betsson", "winamax", "codere", "oddsapi"]; // never use proxy
 let zeroCyclesLive = 0;
 let zeroCyclesPrematch = 0;
+// Rate-limit critical alerts: only send once per 30 min per mode to avoid spam
+const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+let lastAlertLive = 0;
+let lastAlertPrematch = 0;
 
 function isProxyIssue(resultsMap: Map<string, number>): boolean {
   // If ANY working scraper has events, the scanner core is fine — proxy issue only
@@ -223,7 +243,11 @@ async function pollCycle(isLive: boolean): Promise<void> {
 
   // 1. Scrape all bookmakers in parallel — each isolated, health-tracked
   const scrapeResults = await Promise.allSettled(
-    scrapers.map(async (s) => {
+    scrapers.filter(s => {
+      if (isScraperEnabled(s.name)) return true;
+      console.log("[orchestrator] scraper desactivado");
+      return false;
+    }).map(async (s) => {
       try {
         const events = await (isLive ? s.scrapeLive() : s.scrapePrematch());
         healthUpdate(s.name, isLive, events.length);
@@ -260,18 +284,28 @@ async function pollCycle(isLive: boolean): Promise<void> {
 
     if (counter >= 2 && !isProxyIssue(resultsMap)) {
       // Two consecutive all-zero cycles AND working scrapers are also 0 → real outage
-      const msg = `🚨 <b>CRITICAL — FidesBot Scanner</b>\n\n` +
-        `${label} llevan ${counter} ciclos sin eventos en NINGUNA casa.\n` +
-        `Scrapers activos: ${[...resultsMap.entries()].map(([k, v]) => `${k}=${v}`).join(", ") || "ninguno"}\n\n` +
-        `Revisar VPS: <code>pm2 logs fidesbot-scanner --lines 50</code>`;
-      await sendAdminAlert(msg);
+      const lastAlert = isLive ? lastAlertLive : lastAlertPrematch;
+      const now = Date.now();
+      if (now - lastAlert >= ALERT_COOLDOWN_MS) {
+        const msg = `🚨 <b>CRITICAL — FidesBot Scanner</b>\n\n` +
+          `${label} llevan ${counter} ciclos sin eventos en NINGUNA casa.\n` +
+          `Scrapers activos: ${[...resultsMap.entries()].map(([k, v]) => `${k}=${v}`).join(", ") || "ninguno"}\n\n` +
+          `Revisar VPS: <code>pm2 logs fidesbot-scanner --lines 50</code>`;
+        await sendAdminAlert(msg);
+        if (isLive) lastAlertLive = now;
+        else lastAlertPrematch = now;
+      }
     }
     return;
   }
 
-  // Reset counter on success
-  if (isLive) zeroCyclesLive = 0;
-  else zeroCyclesPrematch = 0;
+  // Reset counter on success; send recovery alert if we had sent a critical one
+  const wasDown = isLive ? lastAlertLive > 0 : lastAlertPrematch > 0;
+  if (isLive) { zeroCyclesLive = 0; lastAlertLive = 0; }
+  else { zeroCyclesPrematch = 0; lastAlertPrematch = 0; }
+  if (wasDown) {
+    await sendAdminAlert(`✅ <b>Recuperado — FidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
+  }
 
   // 2. Persist odds to DB
   await saveOdds(allEvents);

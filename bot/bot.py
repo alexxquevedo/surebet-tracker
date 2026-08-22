@@ -136,21 +136,27 @@ BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
 # ============================================================
 # Campos: name, emoji, url (None si no hay), region (ES/INT), status (para /casas admin)
 BOOKMAKERS: dict[str, dict] = {
-    "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando"},
-    "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando"},
-    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR"},
-    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": None,                               "region": "INT", "status": "⏸ Sin credenciales API"},
-    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy"},
-    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy"},
-    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy"},
-    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "🔄 Activo"},
-    "betsson":     {"name": "Betsson",       "emoji": "🃏", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright"},
-    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy"},
-    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES"},
-    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES"},
-    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES"},
-    "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES"},
-    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES"},
+    "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando",          "default": True},
+    "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando",          "default": True},
+    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR",              "default": True},
+    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": None,                               "region": "INT", "status": "⏸ Sin credenciales API", "default": True},
+    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy",        "default": True},
+    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
+    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
+    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "🔄 Activo",               "default": True},
+    "betsson":     {"name": "Betsson",       "emoji": "🃏", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright",           "default": True},
+    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
+    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": None,                               "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
+    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
+    # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
+    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": False},
+    "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
+    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
+    "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
+    "tonybet":     {"name": "TonyBet",       "emoji": "🎲", "url": "https://www.tonybet.es",          "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": False},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -168,13 +174,13 @@ SCRAPER_DISPLAY:  dict[str, tuple]     = {
     **{k: (v["emoji"], v["name"], v["status"]) for k, v in EXTRA_SCRAPERS.items()},
 }
 # Sync DEFAULT_USER_CONFIG.bookmakers con BOOKMAKERS (fuente única)
-DEFAULT_USER_CONFIG["bookmakers"] = {k: True for k in BOOKMAKERS}
+DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKMAKERS.items()}
 
 # DualStats odds endpoint (VPS scraper data via Supabase)
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "nordicbet", "unibet"},
+    {"kambi", "888sport", "leovegas", "betsson", "nordicbet", "unibet", "tonybet"},
     {"codere", "sportium"},
 ]
 
