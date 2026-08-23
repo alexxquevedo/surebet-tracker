@@ -484,7 +484,9 @@ async function waitForWsOrRest(
 
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL"];
+  // VOLLEYBALL removed: Winamax sport ID 11 confirmed = Automobile (not Volleyball)
+  // Real Volleyball ID TBD — will be visible in WS sport dump when the season is active
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
   // One page load per cycle: WS sends ALL sports data at once.
   // Live: load /paris-sportifs/live → WS sends all live matches.
