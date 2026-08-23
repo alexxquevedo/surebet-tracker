@@ -51,7 +51,7 @@ async function saveOdds(events: ScrapedEvent[]): Promise<void> {
       },
       create: {
         bookmaker: e.bookmaker,
-        sport: e.sport,
+        sport: e.sport as any,
         eventKey: e.eventKey,
         eventName: e.eventName,
         league: e.league ?? null,

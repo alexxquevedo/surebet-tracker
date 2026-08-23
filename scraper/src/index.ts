@@ -93,7 +93,7 @@ async function saveOdds(events: ScrapedEvent[]): Promise<void> {
       },
       create: {
         bookmaker: e.bookmaker,
-        sport: e.sport,
+        sport: e.sport as any,
         eventKey: e.eventKey,
         eventName: e.eventName,
         league: e.league ?? null,
@@ -170,7 +170,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       groupMap.set(key, {
         eventKey: row.eventKey,
         eventName: row.eventName,
-        sport: row.sport as Sport,
+        sport: row.sport as unknown as Sport,
         isLive: row.isLive,
         market: row.market,
         byBook: new Map(),
