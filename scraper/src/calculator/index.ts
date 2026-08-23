@@ -108,8 +108,9 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     type: "SUREBET",
     sport: market.sport,
     isLive: market.isLive,
+    startTime: market.startTime,
     eventName: market.eventName,
-    market: "Match Result",
+    market: market.market,
     profitPct,
     legs,
   };
@@ -155,9 +156,9 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
       const overSide = allLines[i];
       const underSide = allLines[j];
 
-      // Middle condition: we back Over X and Under Y where Y > X
+      // Middle condition: we back Over X and Under Y where Y > X, from DIFFERENT bookmakers
       if (underSide.line <= overSide.line) continue;
-      // Different bookmakers for legs (same book is fine too but less common)
+      if (overSide.bookmaker === underSide.bookmaker) continue;
 
       const overOdds = overSide.over;
       const underOdds = underSide.under;
@@ -170,18 +171,23 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
       // Worst case: min(s1*o1 - s2, s2*o2 - s1) (one leg loses, one wins)
       // For equal worst-case return: s1*o1 - s2 = s2*o2 - s1
       // s1*(o1+1) = s2*(o2+1)  → s1/s2 = (o2+1)/(o1+1)
-      const ratio = (underOdds + 1) / (overOdds + 1);
-      const s1 = ratio / (1 + ratio); // stake on Over
-      const s2 = 1 - s1;              // stake on Under
+      // Stake for equal profit in both miss scenarios:
+      // s1*(overOdds-1) - s2 = s2*(underOdds-1) - s1  →  s1/s2 = underOdds/overOdds
+      const s1 = underOdds / (overOdds + underOdds); // stake on Over
+      const s2 = 1 - s1;                              // stake on Under
 
-      // Worst-case payout (miss scenario): back one side wins, front loses
-      const missReturn = Math.min(s1 * overOdds - s2, s2 * underOdds - s1);
-      // If both miss (impossible in totals with 2 lines, can't both win)
-      // Middle hit return
+      // True net profit in each miss scenario (one leg wins, other loses):
+      const missOverWins  = s1 * (overOdds  - 1) - s2; // Over wins, Under loses
+      const missUnderWins = s2 * (underOdds - 1) - s1; // Under wins, Over loses
+      const worstMissProfit = Math.min(missOverWins, missUnderWins);
+
+      // A real middle has a LOSS if the window misses. If both miss scenarios
+      // are profitable it's a cross-line surebet (stale/suspended odds), not a middle.
+      if (worstMissProfit >= 0) continue;
+
       const hitReturn = s1 * overOdds + s2 * underOdds - 1;
-
-      const worstLoss = parseFloat((Math.min(0, missReturn) * 100).toFixed(2));
       const profitPct = parseFloat((hitReturn * 100).toFixed(2));
+      const worstLoss = parseFloat((worstMissProfit * 100).toFixed(2));
 
       // Only report if there's meaningful upside (middle profit > 5%)
       if (profitPct < 5) continue;
@@ -205,6 +211,7 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
         type: "MIDDLE",
         sport: market.sport,
         isLive: market.isLive,
+        startTime: market.startTime,
         eventName: market.eventName,
         market: `Totals ${overSide.line}/${underSide.line}`,
         profitPct,
@@ -261,6 +268,7 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
       type: "SUREBET",
       sport: market.sport,
       isLive: market.isLive,
+      startTime: market.startTime,
       eventName: market.eventName,
       market: "player_props",
       profitPct,
@@ -306,6 +314,7 @@ export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[
       type: "SUREBET",
       sport: market.sport,
       isLive: market.isLive,
+      startTime: market.startTime,
       eventName: market.eventName,
       market: `${market.market} O/U ${line}`,
       profitPct,

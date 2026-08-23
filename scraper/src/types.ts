@@ -1,6 +1,6 @@
 // ─── Raw odds structures ─────────────────────────────────────────────────────
 
-export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE" | "VOLLEYBALL"
+export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE" | "VOLLEYBALL" | "HANDBALL"
   // Legacy aliases used by some scrapers (backwards compat)
   | "HOCKEY" | "RUGBY";
 
@@ -53,6 +53,7 @@ export interface DetectedSurebet {
   type: "SUREBET";
   sport: Sport;
   isLive: boolean;
+  startTime?: Date;
   eventName: string;
   market: string;
   profitPct: number;
@@ -63,6 +64,7 @@ export interface DetectedMiddle {
   type: "MIDDLE";
   sport: Sport;
   isLive: boolean;
+  startTime?: Date;
   eventName: string;
   market: string;
   profitPct: number;    // profit if total falls in middle window
@@ -81,6 +83,7 @@ export interface GroupedMarket {
   eventName: string;
   sport: Sport;
   isLive: boolean;
+  startTime?: Date;
   market: string;  // "h2h" | "handicap" | "totals" | "player_props" | "corners" | "goals" | ...
   byBook: Map<string, MarketOutcomes>;
 }

@@ -1,7 +1,9 @@
 // Event name normalization for cross-bookmaker matching.
 // Goal: "Real Madrid vs FC Barcelona" and "R.Madrid - Barça" → same key.
 
-const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real)\b\.?/gi;
+const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca)\b\.?/gi;
+// City qualifiers that some books append but others omit (e.g. "Juventus Turin" vs "Juventus")
+const CITY_QUALIFIERS = /\b(turin|leeuwarden|goteborg|goteborg|göteborg|lubeck|dusseldorf|frankfurt|hamburg|hambourg|bochum|gelsenkirchen|hannover|braunschweig|nurnberg|bielefeld|magdeburg|halle|erfurt|rostock|dresden|chemnitz|cottbus|kiel|flensburg|mainz|kaiserslautern|saarbrucken|koeln|cologne|duisburg|wuppertal|paderborn|munster|ingolstadt|freiburg|augsburg|regensburg|wurzburg|erlangen|bamberg|bayreuth|schweinfurt)\b/gi;
 const DIACRITICS: Record<string, string> = {
   á: "a", é: "e", í: "i", ó: "o", ú: "u",
   à: "a", è: "e", ì: "i", ò: "o", ù: "u",
@@ -15,9 +17,27 @@ function stripDiacritics(s: string): string {
   return s.replace(/[áéíóúàèìòùâêîôûäëïöüãõñçýß]/gi, (c) => DIACRITICS[c.toLowerCase()] ?? c);
 }
 
+// Language variants for city names used by different books
+// "bruges" (French) = "brugge" (Dutch/Spanish); "liege" = "luik"; etc.
+const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
+  [/\bbruges\b/gi, "brugge"],
+  [/\bliege\b/gi, "luik"],
+  [/\bgeneve\b/gi, "geneva"],
+  [/\bgenf\b/gi, "geneva"],
+  [/\bmunich\b/gi, "munchen"],
+  [/\bmarseille\b/gi, "marseille"],
+  [/\bseville\b/gi, "sevilla"],
+  [/\bvalencia\b/gi, "valencia"],
+];
+
 function normalizeTeam(name: string): string {
-  return stripDiacritics(name)
-    .toLowerCase()
+  let s = stripDiacritics(name).toLowerCase();
+  // Normalize language city variants
+  for (const [re, replacement] of CITY_NORMALIZATIONS) {
+    s = s.replace(re, replacement);
+  }
+  return s
+    .replace(CITY_QUALIFIERS, " ")
     .replace(TEAM_SUFFIXES, " ")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")

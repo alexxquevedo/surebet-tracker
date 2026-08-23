@@ -18,14 +18,17 @@ import type { Page } from "playwright";
 const BASE_FR = "https://www.winamax.fr";
 
 // Confirmed from WS state sport dump (2026-08-23):
-// 1=Football, 2=Basketball, 3=Baseball, 4=Hockey sur glace, 5=Tennis, 11=Automobile
-// VOLLEYBALL ID unknown (not in current dump — off-season); AMERICANFOOTBALL/RUGBYLEAGUE TBD
+// 1=Football, 2=Basketball, 3=Baseball, 4=Hockey sur glace, 5=Tennis,
+// 6=Handball, 9=Golf, 10=Boxe, 11=Automobile, 12=Rugby à XV
+// VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not in WS dump (not offered or off-season)
 const SPORT_IDS: Partial<Record<Sport, number>> = {
-  FOOTBALL:  1,
-  TENNIS:    5,
+  FOOTBALL:   1,
+  TENNIS:     5,
   BASKETBALL: 2,
-  BASEBALL:  3,
-  ICEHOCKEY: 4,
+  BASEBALL:   3,
+  ICEHOCKEY:  4,
+  HANDBALL:   6,
+  RUGBY:      12, // Rugby à XV (Union) — closest match to RUGBYLEAGUE in Prisma
 };
 
 const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
@@ -34,6 +37,8 @@ const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
   BASKETBALL: ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
   BASEBALL:   ["/paris-sportifs/sports/3", "/paris-sportifs/sports/3/"],
   ICEHOCKEY:  ["/paris-sportifs/sports/4", "/paris-sportifs/sports/4/"],
+  HANDBALL:   ["/paris-sportifs/sports/6", "/paris-sportifs/sports/6/"],
+  RUGBY:      ["/paris-sportifs/sports/12", "/paris-sportifs/sports/12/"],
 };
 
 // Fallback text-based click labels (French site)
@@ -43,6 +48,8 @@ const SPORT_LINK_TEXTS: Partial<Record<Sport, string[]>> = {
   BASKETBALL: ["basket", "basketball"],
   BASEBALL:   ["baseball", "base-ball"],
   ICEHOCKEY:  ["hockey sur glace", "hockey glace", "hockey"],
+  HANDBALL:   ["handball"],
+  RUGBY:      ["rugby", "rugby à xv"],
 };
 
 function parseWinamaxData(raw: any, sport: Sport, isLive: boolean, srcUrl: string): ScrapedEvent[] {
@@ -155,13 +162,15 @@ function mergeWsMessage(state: Record<string, any>, msg: Record<string, any>): v
 // Maps French bet titles to canonical market keys
 const MARKET_CAT_MAP: Array<[RegExp, string]> = [
   // ── Handicap (must come before goals to avoid "buts handicap" matching goals) ──
-  [/handicap|hándicap/i,                                                            "handicap"],
+  [/handicap|hándicap|spread/i,                                                     "handicap"],
   // ── Corners ──
   [/corners?|coups?\s+de\s+coin/i,                                                 "corners"],
-  // ── Cards ──
+  // ── Cards (specific first, generic fallback last) ──
   [/cartons?\s+jaunes?/i,                                                           "yellow_cards"],
   [/cartons?\s+rouges?/i,                                                           "red_cards"],
-  [/cartons?\s+totaux|total\s+cartons?/i,                                           "cards"],
+  [/cartons?\s+totaux|total\s+cartons?|nombre\s+de\s+cartons?|\bcartons?\b/i,       "cards"],
+  // ── Shots on goal / tirs ──
+  [/tirs?\s+(?:cadr[eé]s?|au\s+but|totaux)|nombre\s+de\s+tirs?/i,                  "shots"],
   // ── Half goals ──
   [/(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)/i, "h1_goals"],
   [/(?:2[eè]me?|deuxi[eè]me?)\s*mi[\s-]?temps/i,                                  "h2_goals"],
@@ -173,11 +182,22 @@ const MARKET_CAT_MAP: Array<[RegExp, string]> = [
   [/nombre\s+de\s+jeux|total\s+jeux|\bjeux\b/i,                                    "games"],
   [/nombre\s+de\s+sets?|total\s+sets?|\bsets?\b/i,                                 "sets"],
   // ── Basketball (non-player totals) ──
-  [/nombre\s+de\s+points?|total\s+points?|points?\s+du\s+match/i,                  "match_points"],
+  [/nombre\s+de\s+points?|total\s+points?|points?\s+(?:du|dans\s+le)\s+match/i,    "match_points"],
+  // ── Baseball ──
+  [/nombre\s+de\s+home\s+runs?|home\s+runs?\s+totaux|home\s+runs?/i,               "home_runs"],
+  [/nombre\s+de\s+runs?|total\s+runs?|runs?\s+tota|\bruns?\b/i,                    "runs"],
+  // ── Rugby / American Football ──
+  [/nombre\s+d[e']?essais?|total\s+essais?|\bessais?\b/i,                           "tries"],
+  [/nombre\s+de\s+touchdowns?|touchdowns?\s+totaux|total\s+touchdowns?/i,           "touchdowns"],
+  // ── Ice Hockey ──
+  [/nombre\s+de\s+(?:tirs?|lancers?)|tirs?\s+hockey|but[s]?\s+(?:encaiss[eé]s?|marqu[eé]s?)/i, "shots"],
 ];
 
-function classifyBetTitle(title: string): string | null {
+const TENNIS_ONLY_CATS = new Set(["aces", "double_faults", "games", "sets"]);
+
+function classifyBetTitle(title: string, sport: string): string | null {
   for (const [re, cat] of MARKET_CAT_MAP) {
+    if (TENNIS_ONLY_CATS.has(cat) && sport !== "TENNIS") continue;
     if (re.test(title)) return cat;
   }
   return null;
@@ -242,12 +262,44 @@ function parseHandicapOutcomes(
 
 // Winamax FR bet titles for player props (French labels)
 const PROP_STAT_MAP: Array<[RegExp, string]> = [
-  [/passes?\s+d[ée]cisives?/i,                    "AST"],
-  [/paniers?\s+[àa]\s+3\s+points?/i,              "3PT"],
-  [/pra\b|points?\s*\+?\s*rebonds?\s*\+?\s*passes?/i, "PRA"],
-  [/rebonds?/i,                                    "REB"],
-  [/points?\s+marqu[ée]s?|points?\s*\(NBA\)/i,    "PTS"],
-  [/\bpoints?\b/i,                                 "PTS"],
+  // ── Basketball (specific combos first) ──
+  [/pra\b|points?\s*\+?\s*rebonds?\s*\+?\s*passes?/i,  "PRA"],
+  [/passes?\s+d[ée]cisives?/i,                          "AST"],
+  [/paniers?\s+[àa]\s+3\s+points?/i,                   "3PT"],
+  [/rebonds?/i,                                          "REB"],
+  [/points?\s+marqu[ée]s?|points?\s*\(NBA\)|points?\s+NBA/i, "PTS"],
+  // ── Football (soccer) ──
+  [/tirs?\s+(?:cadr[eé]s?|au\s+but)|tirs?\s+totaux/i,  "shots"],
+  [/\bbuts?\s*(?:marqu[eé]s?|du\s+joueur)?|\bbuteur/i,  "goals"],
+  [/passes?\s+(?:totales?|cl[ée]s?|d[eé]cisives?)/i,   "passes"],
+  [/cartons?\s*(?:du\s*joueur|jaunes?)?/i,              "player_cards"],
+  [/d[ée]gagements?|t[aê]tes?/i,                        "duels"],
+  // ── Tennis ──
+  [/\baces?\b/i,                                        "aces"],
+  [/doubles?\s*fautes?/i,                               "double_faults"],
+  [/jeux?\s+(?:gagn[eé]s?|remport[eé]s?)?/i,           "games_won"],
+  [/sets?\s+(?:gagn[eé]s?|remport[eé]s?)?/i,           "sets_won"],
+  // ── Baseball ──
+  [/home\s+runs?|jonrones?/i,                           "HR"],
+  [/bases?\s+vol[eé]es?|stolen\s+bases?/i,              "SB"],
+  [/retraits?\s+(?:au\s+bâton|sur\s+prises?)|strikeouts?/i, "K"],
+  [/\bhits?\b/i,                                        "H"],
+  [/points?\s+(?:produits?|impuls[eé]s?)|rbis?/i,       "RBI"],
+  [/\bruns?\b/i,                                        "runs"],
+  // ── American football ──
+  [/yardas?\s+(?:de\s+passe|passantes?|a[eé]riennes?)/i, "pass_yds"],
+  [/yardas?\s+(?:terrestres?|au\s+sol|courues?)/i,       "rush_yds"],
+  [/yardas?\s+(?:de\s+r[eé]ception|re[çc]ues?)/i,       "rec_yds"],
+  [/r[eé]ceptions?/i,                                    "REC"],
+  [/touchdowns?/i,                                       "TD"],
+  // ── Ice hockey ──
+  [/tirs?\s+(?:au\s+but|cadr[eé]s?)\s*(?:hockey)?|lancers?\s+(?:frapp[eé]s?|au\s+but)/i, "sog"],
+  [/points?\s*(?:hockey|\(NHL\))/i,                      "hockey_pts"],
+  // ── Rugby ──
+  [/essais?/i,                                           "tries"],
+  [/conversions?/i,                                      "conversions"],
+  // ── Generic fallback (must come last) ──
+  [/\bpoints?\b/i,                                       "PTS"],
 ];
 
 function parsePropStat(title: string): string | null {
@@ -332,6 +384,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       .join(", ");
     logger(`WS sports: ${sportsInfo}`);
   }
+
 
   for (const [, match] of Object.entries(matches)) {
     if (!match || typeof match !== "object") continue;
@@ -421,7 +474,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       }
 
       // 2. Classify by bet title (corners, cards, goals, handicap, tennis, etc.)
-      const cat = classifyBetTitle(betTitle);
+      const cat = classifyBetTitle(betTitle, sport);
       if (!cat) continue;
 
       if (cat === "handicap") {
@@ -448,9 +501,8 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       });
     }
 
-    if (secondaryBetIds.size > 0) {
-      const mkts = [...marketAcc.keys()].join(", ") || "none";
-      logger(`${title}: ${secondaryBetIds.size} secondary bets → markets: ${mkts}`);
+    if (secondaryBetIds.size > 0 && marketAcc.size > 0) {
+      logger(`${title}: secondary → ${[...marketAcc.keys()].join(", ")}`);
     }
   }
   return events;
@@ -481,15 +533,37 @@ async function waitForWsOrRest(
     if (page.isClosed()) return "timeout";
     await new Promise<void>((r) => setTimeout(r, 400));
   }
-  // Expiró el timeout — ¿al menos llegaron frames WS?
   return wsMessages.length > 0 ? "ws_empty" : "timeout";
+}
+
+/**
+ * Auto-scroll para activar lazy-loading de mercados secundarios en Winamax.
+ * El SPA suscribe al WS por tramos visibles — hacer scroll empuja corners/handicap/goles.
+ * Registra el bet count antes y después para detectar si el scroll trajo datos nuevos.
+ */
+async function autoScrollForSecondaryMarkets(
+  page: Page,
+  wsState: Record<string, any>,
+  logger: (msg: string) => void,
+  scrollSteps = 8,
+  stepPxs = 1200,
+  pauseMs = 2000,
+): Promise<void> {
+  const betsBefore = Object.keys(wsState.bets ?? {}).length;
+  for (let i = 0; i < scrollSteps; i++) {
+    if (page.isClosed()) break;
+    await page.evaluate((px: number) => window.scrollBy(0, px), stepPxs).catch(() => {});
+    await new Promise<void>((r) => setTimeout(r, pauseMs));
+  }
+  const betsAfter = Object.keys(wsState.bets ?? {}).length;
+  logger(`scroll: bets ${betsBefore} → ${betsAfter} (+${betsAfter - betsBefore})`);
 }
 
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
-  // Confirmed IDs: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5
-  // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE IDs TBD — not in current WS dump
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY"];
+  // Confirmed IDs: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5, Handball=6, Rugby à XV=12
+  // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not offered on Winamax FR (or off-season)
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "HANDBALL", "RUGBY"];
 
   // One page load per cycle: WS sends ALL sports data at once.
   // Live: load /paris-sportifs/live → WS sends all live matches.
@@ -510,8 +584,22 @@ export class WinamaxScraper extends BaseScraper {
       } catch { /* non-JSON or closed */ }
     });
 
+    // Inject before navigation: capture the uof-sports WS instance on window.__winamaxWS
+    await page.addInitScript(`
+      const _OrigWS = window.WebSocket;
+      window.WebSocket = function(url, proto) {
+        const ws = new _OrigWS(url, proto);
+        if (typeof url === 'string' && url.includes('uof-sports')) {
+          window.__winamaxWS = ws;
+        }
+        return ws;
+      };
+      window.WebSocket.prototype = _OrigWS.prototype;
+    `);
+
     const wsMessages: Array<{ url: string; payload: string }> = [];
     const wsState: Record<string, any> = {};
+    const sentFrames: string[] = [];
     page.on("websocket", (ws: any) => {
       ws.on("framereceived", (frame: any) => {
         const raw = frame.payload;
@@ -527,13 +615,18 @@ export class WinamaxScraper extends BaseScraper {
                 if (evtName === "m" && typeof arr[1] === "object" && arr[1] !== null) {
                   mergeWsMessage(wsState, arr[1]);
                 } else if (typeof arr[1] === "object" && arr[1] !== null) {
-                  // Named events: ["matches",{...}], ["bets",{...}], ["odds",{...}], etc.
                   wsState[evtName] = arr[1];
                 }
               }
             } catch { /* */ }
           }
         }
+      });
+      // Capture frames sent BY the browser → reveals subscription events
+      ws.on("framesent", (frame: any) => {
+        const raw = frame.payload;
+        const payload = typeof raw === "string" ? raw : (Buffer.isBuffer(raw) ? raw.toString("utf8") : "");
+        if (payload.length > 5) sentFrames.push(payload.slice(0, 300));
       });
     });
 
@@ -555,6 +648,41 @@ export class WinamaxScraper extends BaseScraper {
         this.warn(`${isLive ? "Live" : "Prematch"}: sin datos WS ni REST en 12s — posible bloqueo de Winamax`);
       } else if (waitResult === "ws_empty") {
         this.log(`${isLive ? "Live" : "Prematch"}: WS conectó pero sin partidos (estado legítimo)`);
+      }
+
+      // Subscribe to each match individually to load secondary markets (corners, goals, handicap)
+      // Each "route":"match:MATCHID" emit causes the server to push all bets for that match.
+      if (waitResult === "ws_data") {
+        const matchIds = Object.values(wsState.matches ?? {})
+          .filter((m: any) => m && typeof m === "object")
+          .map((m: any) => String(m.matchId ?? m.id ?? ""))
+          .filter(Boolean);
+
+        if (matchIds.length > 0) {
+          const betsBefore = Object.keys(wsState.bets ?? {}).length;
+          const nullBefore = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          this.log(`WS match subscription: subscribing to ${matchIds.length} matches for secondary markets`);
+
+          // Emit match route subscriptions in batches via the captured WS
+          const BATCH = 10;
+          for (let i = 0; i < matchIds.length; i += BATCH) {
+            const batch = matchIds.slice(i, i + BATCH);
+            await page.evaluate((ids: string[]) => {
+              const ws = (window as any).__winamaxWS as WebSocket | undefined;
+              if (!ws || ws.readyState !== 1) return;
+              for (const id of ids) {
+                ws.send(`42["m",{"route":"match:${id}"}]`);
+              }
+            }, batch).catch(() => {});
+            await new Promise<void>((r) => setTimeout(r, 1500));
+          }
+
+          // Wait for server to push all the secondary market data
+          await new Promise<void>((r) => setTimeout(r, 3000));
+          const betsAfter = Object.keys(wsState.bets ?? {}).length;
+          const nullAfter = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          this.log(`WS match subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
+        }
       }
 
       const wsStateKeys = Object.keys(wsState);
@@ -635,6 +763,18 @@ export class WinamaxScraper extends BaseScraper {
       } catch { /* */ }
     });
 
+    await page.addInitScript(`
+      const _OrigWS = window.WebSocket;
+      window.WebSocket = function(url, proto) {
+        const ws = new _OrigWS(url, proto);
+        if (typeof url === 'string' && url.includes('uof-sports')) {
+          window.__winamaxWS = ws;
+        }
+        return ws;
+      };
+      window.WebSocket.prototype = _OrigWS.prototype;
+    `);
+
     page.on("websocket", (ws: any) => {
       ws.on("framereceived", (frame: any) => {
         const raw = frame.payload;
@@ -669,6 +809,43 @@ export class WinamaxScraper extends BaseScraper {
       const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, 12_000);
       if (waitResult === "timeout") {
         this.warn(`Prematch ${sport}: sin datos WS ni REST en 12s — posible bloqueo`);
+      }
+
+      if (waitResult === "ws_data") {
+        const allMatchIds = Object.values(wsState.matches ?? {})
+          .filter((m: any) => m && typeof m === "object")
+          .map((m: any) => String(m.matchId ?? m.id ?? ""))
+          .filter(Boolean);
+
+        // Cap at 120 to avoid 100+ second blocking subscription loops that starve the LIVE cycle.
+        // 120 / 20 per batch × 1s delay = ~7s + 3s wait = ~10s per sport.
+        const MAX_PREMATCH_SUBS = 120;
+        const matchIds = allMatchIds.slice(0, MAX_PREMATCH_SUBS);
+
+        if (matchIds.length > 0) {
+          const betsBefore = Object.keys(wsState.bets ?? {}).length;
+          const nullBefore = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          const cappedNote = allMatchIds.length > MAX_PREMATCH_SUBS ? ` (capped from ${allMatchIds.length})` : "";
+          this.log(`WS prematch ${sport} subscription: ${matchIds.length} matches${cappedNote}`);
+
+          const BATCH = 20;
+          for (let i = 0; i < matchIds.length; i += BATCH) {
+            const batch = matchIds.slice(i, i + BATCH);
+            await page.evaluate((ids: string[]) => {
+              const ws = (window as any).__winamaxWS as WebSocket | undefined;
+              if (!ws || ws.readyState !== 1) return;
+              for (const id of ids) {
+                ws.send(`42["m",{"route":"match:${id}"}]`);
+              }
+            }, batch).catch(() => {});
+            await new Promise<void>((r) => setTimeout(r, 1000));
+          }
+
+          await new Promise<void>((r) => setTimeout(r, 3000));
+          const betsAfter = Object.keys(wsState.bets ?? {}).length;
+          const nullAfter = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          this.log(`WS prematch ${sport} subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
+        }
       }
 
       const wsStateKeys = Object.keys(wsState);

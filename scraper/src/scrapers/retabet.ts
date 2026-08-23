@@ -148,11 +148,19 @@ const RETABET_MARKET_MAP: Array<[RegExp, string]> = [
   [/tarjetas?\s+amarillas?|yellow\s+cards?/i, "yellow_cards"],
   [/tarjetas?\s+rojas?|red\s+cards?/i, "red_cards"],
   [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?|total\s+cards?/i, "cards"],
+  [/disparos?\s+(?:a\s+puerta|totales?)|tiros?\s+(?:a\s+puerta|totales?)|shots?\s+on\s+(?:target|goal)/i, "shots"],
   [/total\s+(?:de\s+)?juegos?|juegos?\s+totales?|total\s+games?/i, "games"],
   [/total\s+(?:de\s+)?sets?|sets?\s+totales?|total\s+sets?/i, "sets"],
   [/\baces?\b/i, "aces"],
   [/dobles?\s*faltas?|double\s+faults?/i, "double_faults"],
   [/total\s+(?:de\s+)?puntos?|puntos?\s+totales?|total\s+points?/i, "match_points"],
+  // Baseball
+  [/jonrones?|home\s*runs?/i, "home_runs"],
+  [/total\s+(?:de\s+)?carreras?|carreras?\s+totales?|total\s+runs?|\bcarreras?\b|\bruns?\b/i, "runs"],
+  // Rugby
+  [/ensayos?\s+totales?|total\s+(?:de\s+)?ensayos?|\bensayos?\b|total\s+tries?|\btries?\b/i, "tries"],
+  // American football
+  [/touchdowns?/i, "touchdowns"],
 ];
 
 function classifyRetabetMarket(name: string): string | null {

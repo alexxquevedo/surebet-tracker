@@ -30,7 +30,26 @@ const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
   ICEHOCKEY:        "2819844477",
   BASEBALL:         "2819833156",
   RUGBYLEAGUE:      "2819844959",
+  HANDBALL:         "2819843470",
 };
+
+// Secondary market gametypes per sport (semicolon-separated IDs for NavigationService)
+// Verified 2026-08-23 via sweep: 54=corners O/U, 59=corners par/impar, 62=cards O/U,
+// 77=red card, 133/134=team corners O/U, 4=handicap, 18=goals O/U, 31=BTTS, 12/24/27=half goals
+const SPORT_GAMETYPES: Partial<Record<Sport, string>> = {
+  FOOTBALL:         "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813",
+  TENNIS:           "4;18",
+  BASKETBALL:       "4;18",
+  ICEHOCKEY:        "4;18",
+  BASEBALL:         "4;18",
+  AMERICANFOOTBALL: "4;18",
+  RUGBYLEAGUE:      "4;18",
+  VOLLEYBALL:       "4;18",
+  HANDBALL:         "4;18",
+};
+
+// Live secondary gametypes (same IDs work on live endpoint)
+const LIVE_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813";
 
 const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   FOOTBALL:         "soccer",
@@ -41,6 +60,7 @@ const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   ICEHOCKEY:        "ice_hockey",
   BASEBALL:         "baseball",
   RUGBYLEAGUE:      "rugby_league",
+  HANDBALL:         "handball",
 };
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
@@ -178,20 +198,28 @@ function parsePlayerPropOutcomes(results: any[], player: string, stat: string): 
 const ES_MARKET_MAP: Array<[RegExp, string]> = [
   [/resultado\s*(final)?|ganador\s*del\s*partido|match\s*result|1\s*x\s*2/i, "h2h"],
   [/h[aá]ndicap(?:\s+asi[aá]tico)?|handicap/i, "handicap"],
-  [/(?:primer[ao]|1[aº])\s*mitad.*goles?|goles?.*(?:primer[ao]|1[aº])\s*mitad|ht\s*goals?/i, "h1_goals"],
-  [/(?:segund[ao]|2[aº])\s*mitad.*goles?|goles?.*(?:segund[ao]|2[aº])\s*mitad|2h\s*goals?/i, "h2_goals"],
+  // 1ª/Primera Parte goles — handles "1ª Parte - Total Goles" and "1ª Parte - Más/Menos Total Goles"
+  [/(?:primer[ao]|1[aªº°])\s*(?:mitad|parte).*goles?|goles?.*(?:primer[ao]|1[aªº°])\s*(?:mitad|parte)|ht\s*goals?/i, "h1_goals"],
+  [/(?:segund[ao]|2[aªº°])\s*(?:mitad|parte).*goles?|goles?.*(?:segund[ao]|2[aªº°])\s*(?:mitad|parte)|2h\s*goals?/i, "h2_goals"],
+  [/marcan\s+ambos\s+equipos|both\s+teams?\s+to\s+score|btts/i, "btts"],
   [/total\s+(?:de\s+)?goles?|goles?\s+totales?|m[aá]s\s*\/?\s*menos.*goles?|\bgoles?\b/i, "goals"],
-  [/c[oó]rners?|saques?\s+de\s+esquina/i, "corners"],
+  // Corners — "Total Córner Más/Menos", team-level "Total Córners Más/Menos SD Eibar"
+  [/c[oó]rne?rs?|saques?\s+de\s+esquina/i, "corners"],
+  // Cards — "Total Tarjetas Más/Menos", "¿Habrá Tarjeta Roja?"
   [/tarjetas?\s+amarillas?|yellow\s+cards?/i, "yellow_cards"],
-  [/tarjetas?\s+rojas?|red\s+cards?/i, "red_cards"],
-  [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?/i, "cards"],
+  [/tarjetas?\s+rojas?|red\s+cards?|\btar[jg]eta\s+roja\b/i, "red_cards"],
+  [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?|total\s+tarjetas?\s+m[aá]s/i, "cards"],
+  [/disparos?\s+(?:a\s+puerta|totales?)|tiros?\s+(?:a\s+puerta|totales?)/i, "shots"],
   [/total\s+(?:de\s+)?juegos?|juegos?\s+totales?/i, "games"],
   [/total\s+(?:de\s+)?sets?|sets?\s+totales?/i, "sets"],
   [/\baces?\b/i, "aces"],
   [/dobles?\s*faltas?/i, "double_faults"],
   [/total\s+(?:de\s+)?puntos?|puntos?\s+totales?/i, "match_points"],
   // Baseball
-  [/total\s+(?:de\s+)?carreras?|carreras?\s+totales?/i, "runs"],
+  [/jonrones?|home\s*runs?/i, "home_runs"],
+  [/total\s+(?:de\s+)?carreras?|carreras?\s+totales?|\bcarreras?\b/i, "runs"],
+  // Rugby
+  [/ensayos?\s+totales?|total\s+(?:de\s+)?ensayos?|\bensayos?\b/i, "tries"],
   // American football
   [/touchdowns?/i, "touchdowns"],
 ];
@@ -212,8 +240,8 @@ function parseCodereOverUnder(results: any[]): TotalsLine[] {
     const lineMatch = name.match(/(\d+[.,]\d+|\d+)/);
     if (!lineMatch) continue;
     const line = parseFloat(lineMatch[1].replace(",", "."));
-    const isOver  = /m[aá]s\s*de|over|plus/i.test(name);
-    const isUnder = /menos\s*de|under|minus/i.test(name);
+    const isOver  = /m[aá]s(?:\s+de)?\s|\bover\b|\bplus\b|\bsobre\b/i.test(name);
+    const isUnder = /menos(?:\s+de)?\s|\bunder\b|\bminus\b|\bbajo\b/i.test(name);
     if (!isOver && !isUnder) continue;
     const cur = byLine.get(line) ?? { over: 0, under: 0 };
     if (isOver  && odds > cur.over)  cur.over  = odds;
@@ -267,6 +295,13 @@ function processCodereGame(
     return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "handicap", outcomes };
   }
 
+  // Binary yes/no markets (btts, red_cards): use H2HOutcome with Sí/No labels
+  if (cat === "btts" || cat === "red_cards") {
+    const outcomes = parseCodereHandicap(results);
+    if (outcomes.length < 2) return null;
+    return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: cat, outcomes };
+  }
+
   const lines = parseCodereOverUnder(results);
   if (lines.length === 0) return null;
   return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: cat, outcomes: lines };
@@ -302,14 +337,22 @@ export class CodereScraper extends BaseScraper {
   readonly name = "codere";
   readonly sports: Sport[] = [
     "FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL",
-    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE",
+    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE", "HANDBALL",
   ];
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    // Primary call: gets h2h via DefaultGame for all sports
     const data = await codereGet("Event/GetLiveEventsAndSportsBySportHandle?gametypes=");
     if (!data?.Events?.length) {
       this.warn("Live: no data from NavigationService");
       return [];
+    }
+
+    // Secondary call: gets handicap, totals, BTTS, halftime markets via gametypes
+    const secData = await codereGet(`Event/GetLiveEventsAndSportsBySportHandle?gametypes=${LIVE_SECONDARY_GAMETYPES}`);
+    const secByNodeId = new Map<string, any[]>();
+    for (const e of (secData?.Events ?? [])) {
+      if (e.NodeId && e.Games?.length) secByNodeId.set(String(e.NodeId), e.Games);
     }
 
     const all: ScrapedEvent[] = [];
@@ -326,8 +369,14 @@ export class CodereScraper extends BaseScraper {
         const h2h = buildH2HEvent(e.DefaultGame?.Results ?? [], "codere", sport, name, startTime, true);
         if (h2h) { all.push(h2h); found++; }
 
-        // All other markets from Games[] (props, totals, handicap, etc.)
+        // Secondary markets from primary call Games[] (may be empty)
         for (const game of (e.Games ?? [])) {
+          const sec = processCodereGame(game, "codere", sport, name, startTime, true);
+          if (sec) all.push(sec);
+        }
+
+        // Secondary markets from dedicated gametypes call
+        for (const game of (secByNodeId.get(String(e.NodeId)) ?? [])) {
           const sec = processCodereGame(game, "codere", sport, name, startTime, true);
           if (sec) all.push(sec);
         }
@@ -343,6 +392,7 @@ export class CodereScraper extends BaseScraper {
 
     for (const sport of this.sports) {
       const nodeId = SPORT_NODEIDS[sport];
+      const gametypes = SPORT_GAMETYPES[sport] ?? "4;18";
 
       const menuData = await codereGet(`LeftMenu/GetCountriesAndHighlights?parentid=${nodeId}`);
       const highlights: any[] = menuData?.highlights ?? [];
@@ -353,33 +403,46 @@ export class CodereScraper extends BaseScraper {
       }
 
       let found = 0;
-      const leaguesToFetch = highlights.slice(0, 5);
+      const leaguesToFetch = highlights.slice(0, 8);
 
       for (const league of leaguesToFetch) {
         const leagueNodeId: string = String(league.NodeId ?? "");
         if (!leagueNodeId) continue;
+
+        // Primary call: h2h events (no gametypes = only 1X2 in Games[0])
         const events = await codereGet(`Event/GetEvents?parentid=${leagueNodeId}`);
         if (!Array.isArray(events)) continue;
+
+        // Secondary call: all other markets via gametypes
+        const secEvents = await codereGet(`Event/GetEvents?parentid=${leagueNodeId}&gametypes=${gametypes}`);
+        const secByNodeId = new Map<string, any[]>();
+        if (Array.isArray(secEvents)) {
+          for (const se of secEvents) {
+            if (se.NodeId && se.Games?.length) secByNodeId.set(String(se.NodeId), se.Games);
+          }
+        }
 
         for (const e of events) {
           const name: string = e.Name ?? `${e.ParticipantHome ?? ""} - ${e.ParticipantAway ?? ""}`.trim();
           if (!name) continue;
-          const games: any[] = e.Games ?? [];
           const startTime = parseCodereDate(e.StartDate);
           let hadH2H = false;
 
-          for (const game of games) {
+          // H2H from primary call Games[0]
+          for (const game of (e.Games ?? [])) {
             const gameName: string = game.Name ?? game.GameType ?? "";
             const cat = classifyCodereGame(gameName);
-
-            // First game or first "h2h"-classified game → main result market
             if (cat === "h2h" || (!cat && !hadH2H && !detectPlayerPropGame(gameName))) {
               const h2h = buildH2HEvent(game.Results ?? [], "codere", sport, name, startTime, false);
               if (h2h) { all.push(h2h); found++; hadH2H = true; }
               continue;
             }
+            const sec = processCodereGame(game, "codere", sport, name, startTime, false);
+            if (sec) all.push(sec);
+          }
 
-            // All secondary markets (props, totals, handicap)
+          // Secondary markets from gametypes call
+          for (const game of (secByNodeId.get(String(e.NodeId)) ?? [])) {
             const sec = processCodereGame(game, "codere", sport, name, startTime, false);
             if (sec) all.push(sec);
           }

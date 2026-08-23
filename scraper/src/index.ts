@@ -19,7 +19,7 @@ import prisma from "./db";
 import { healthUpdate, healthReport } from "./health/checker";
 import { findArbs } from "./calculator";
 import { notifyArbs } from "./notifier";
-import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes } from "./types";
+import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes, DetectedArb } from "./types";
 import { BaseScraper } from "./scrapers/base";
 import { isScraperEnabled } from "./scrapers/scraperState";
 import { BetfairScraper } from "./scrapers/betfair";
@@ -82,9 +82,21 @@ const SPORT_TO_PRISMA: Record<string, string> = {
   RUGBY:            "RUGBY",
   AMERICANFOOTBALL: "OTHER",
   VOLLEYBALL:       "OTHER",
+  HANDBALL:         "OTHER",
 };
 function toPrismaSport(sport: string): string {
   return SPORT_TO_PRISMA[sport] ?? "OTHER";
+}
+
+// ─── Arb deduplication (in-memory) ───────────────────────────────────────────
+// Prevents re-saving and re-notifying the same logical arb every 30s cycle.
+// Keyed by a fingerprint of (type, eventName, market, legs). Expires after ARB_DEDUP_MS.
+const arbDedup = new Map<string, number>();
+const ARB_DEDUP_MS = 10 * 60 * 1000;
+
+function arbFingerprint(arb: DetectedArb): string {
+  const legs = arb.legs.map((l) => `${l.bookmaker}:${l.selection}`).sort().join("|");
+  return `${arb.type}::${arb.eventName}::${arb.market}::${legs}`;
 }
 
 // ─── DB persistence ───────────────────────────────────────────────────────────
@@ -173,26 +185,43 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       eventKey: true,
       eventName: true,
       isLive: true,
+      startTime: true,
       market: true,
       outcomes: true,
     },
   });
 
-  // Group by eventKey + market
+  // Group by eventKey + market.
+  // Normalize eventKey by stripping the trailing date (:YYYY-MM-DD or :nodate) before grouping
+  // so that Codere (has real dates) and Winamax (has :nodate from WS) can be matched.
   const groupMap = new Map<string, GroupedMarket>();
+  const DATE_SUFFIX = /:[0-9]{4}-[0-9]{2}-[0-9]{2}$|:nodate$/;
 
   for (const row of rows) {
-    // Accept all market types: h2h, totals, player_props, corners, goals, yellow_cards, handicap, etc.
-    const key = `${row.eventKey}::${row.market}`;
+    const normalizedKey = row.eventKey.replace(DATE_SUFFIX, "");
+    // Include isLive in the key so live odds from one book never merge with prematch odds from
+    // another — prevents false arbs when one book still has stale prematch lines for a live event.
+    const key = `${normalizedKey}::${row.market}::${row.isLive ? "live" : "pre"}`;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         eventKey: row.eventKey,
         eventName: row.eventName,
         sport: row.sport as unknown as Sport,
         isLive: row.isLive,
+        startTime: row.startTime ?? undefined,
         market: row.market,
         byBook: new Map(),
       });
+    } else {
+      const existing = groupMap.get(key)!;
+      // Prefer real-date eventKey over :nodate
+      if (existing.eventKey.endsWith(":nodate") && !row.eventKey.endsWith(":nodate")) {
+        existing.eventKey = row.eventKey;
+      }
+      // Prefer non-null startTime
+      if (!existing.startTime && row.startTime) {
+        existing.startTime = row.startTime;
+      }
     }
     groupMap.get(key)!.byBook.set(row.bookmaker, row.outcomes as unknown as MarketOutcomes);
   }
@@ -319,10 +348,13 @@ async function pollCycle(isLive: boolean): Promise<void> {
     return;
   }
 
-  // Reset counter on success; send recovery alert if we had sent a critical one
+  // Reset counter on success; send recovery alert if we had sent a critical one.
+  // IMPORTANT: do NOT reset lastAlert to 0 on recovery — that removes the 30-min cooldown
+  // and causes a CRITICAL/RECOVERED spam loop. Instead, bump it to now so the next CRITICAL
+  // can only fire after another full ALERT_COOLDOWN_MS window.
   const wasDown = isLive ? lastAlertLive > 0 : lastAlertPrematch > 0;
-  if (isLive) { zeroCyclesLive = 0; lastAlertLive = 0; }
-  else { zeroCyclesPrematch = 0; lastAlertPrematch = 0; }
+  if (isLive) { zeroCyclesLive = 0; if (wasDown) lastAlertLive = Date.now(); }
+  else { zeroCyclesPrematch = 0; if (wasDown) lastAlertPrematch = Date.now(); }
   if (wasDown) {
     await sendAdminAlert(`✅ <b>Recuperado — FidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
   }
@@ -340,15 +372,32 @@ async function pollCycle(isLive: boolean): Promise<void> {
     return;
   }
 
-  console.log(`[orchestrator] ${label}: found ${arbs.length} arbs!`);
+  // Deduplicate: prune expired entries then filter out recently-seen arbs
+  const now = Date.now();
+  for (const [fp, ts] of arbDedup) {
+    if (now - ts > ARB_DEDUP_MS) arbDedup.delete(fp);
+  }
+  const newArbs = arbs.filter((arb) => {
+    const fp = arbFingerprint(arb);
+    if (arbDedup.has(fp)) return false;
+    arbDedup.set(fp, now);
+    return true;
+  });
 
-  // 4. Save new arbs to DB (parallel — each create is independent)
-  const savedArbs = await Promise.all(
-    arbs.map(async (arb) => {
+  console.log(`[orchestrator] ${label}: found ${arbs.length} arbs! (${newArbs.length} new)`);
+
+  if (!newArbs.length) return;
+
+  // 4. Save new arbs to DB (sequential to avoid exhausting the connection pool)
+  const savedArbs: Array<{ dbId: string; arb: DetectedArb }> = [];
+  for (const arb of newArbs) {
+    try {
       const dbId = await saveDetectedArb(arb);
-      return { dbId, arb };
-    }),
-  );
+      savedArbs.push({ dbId, arb });
+    } catch (err: any) {
+      console.warn(`[orchestrator] Failed to save arb for ${arb.eventName}:`, err?.message);
+    }
+  }
 
   // 5. Notify subscribers
   await notifyArbs(savedArbs);
