@@ -12,23 +12,26 @@
 import { BaseScraper } from "./base";
 import { browserManager, dismissCookies, captureJsonRequests, logPageState } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine, PlayerPropLine } from "../types";
 import type { Page } from "playwright";
 
 const BASE_FR = "https://www.winamax.fr";
 
 // Confirmed from DOM discovery (2026-07-29): 1=Football, 2=Basketball, 5=Tennis
 // Actual DOM hrefs: /paris-sportifs/sports/1 (Football), /paris-sportifs/sports/5 (Tennis)
+// Volleyball ID 11 unconfirmed — will be auto-discovered via WS state sport dump
 const SPORT_IDS: Partial<Record<Sport, number>> = {
   FOOTBALL: 1,
   TENNIS: 5,
   BASKETBALL: 2,
+  VOLLEYBALL: 11,
 };
 
 const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
   TENNIS:     ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
   BASKETBALL: ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
+  VOLLEYBALL: ["/paris-sportifs/sports/11", "/paris-sportifs/sports/11/"],
 };
 
 // Fallback text-based click labels (French site)
@@ -36,6 +39,7 @@ const SPORT_LINK_TEXTS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["football", "foot"],
   TENNIS:     ["tennis"],
   BASKETBALL: ["basket", "basketball"],
+  VOLLEYBALL: ["volleyball", "volley"],
 };
 
 function parseWinamaxData(raw: any, sport: Sport, isLive: boolean, srcUrl: string): ScrapedEvent[] {
@@ -143,6 +147,72 @@ function mergeWsMessage(state: Record<string, any>, msg: Record<string, any>): v
   }
 }
 
+// ─── Player prop parsing ──────────────────────────────────────────────────────
+
+// Winamax FR bet titles for player props (French labels)
+const PROP_STAT_MAP: Array<[RegExp, string]> = [
+  [/passes?\s+d[ée]cisives?/i,                    "AST"],
+  [/paniers?\s+[àa]\s+3\s+points?/i,              "3PT"],
+  [/pra\b|points?\s*\+?\s*rebonds?\s*\+?\s*passes?/i, "PRA"],
+  [/rebonds?/i,                                    "REB"],
+  [/points?\s+marqu[ée]s?|points?\s*\(NBA\)/i,    "PTS"],
+  [/\bpoints?\b/i,                                 "PTS"],
+];
+
+function parsePropStat(title: string): string | null {
+  for (const [re, stat] of PROP_STAT_MAP) {
+    if (re.test(title)) return stat;
+  }
+  return null;
+}
+
+/**
+ * Try to parse a non-main bet as a player prop Over/Under.
+ * Winamax bet title format: "Player Name - Stat" (FR)
+ * Outcome labels: "Plus de 19.5" (Over) / "Moins de 19.5" (Under)
+ */
+function parsePlayerPropBet(
+  betTitle: string,
+  outcomeIds: (number | string)[],
+  odds: Record<string, any>,
+  outcomesMeta: Record<string, any>,
+): PlayerPropLine | null {
+  // Title must contain " - " separating player from stat
+  const dashIdx = betTitle.indexOf(" - ");
+  if (dashIdx < 2) return null;
+
+  const playerName = betTitle.slice(0, dashIdx).trim();
+  const statPart   = betTitle.slice(dashIdx + 3).trim();
+  const stat = parsePropStat(statPart);
+  if (!stat || !playerName) return null;
+
+  let line: number | null = null;
+  let overOdds  = 0;
+  let underOdds = 0;
+
+  for (const oId of outcomeIds) {
+    const rawOdds = odds[String(oId)];
+    if (rawOdds == null) continue;
+    const oOdds = Number(rawOdds);
+    if (oOdds < 1.01) continue;
+
+    const label: string = (outcomesMeta[String(oId)]?.label ?? "").toLowerCase();
+    // Extract line value: "Plus de 19.5" → 19.5
+    const lineMatch = label.match(/(\d+[.,]\d+)/);
+    if (!lineMatch) continue;
+    const thisLine = parseFloat(lineMatch[1].replace(",", "."));
+
+    if (label.includes("plus") || label.includes("over") || label.includes("+") || label.includes("más") || label.includes("mais")) {
+      if (overOdds === 0 || oOdds > overOdds) { overOdds = oOdds; line = thisLine; }
+    } else if (label.includes("moins") || label.includes("under") || label.includes("menos")) {
+      if (underOdds === 0 || oOdds > underOdds) { underOdds = oOdds; }
+    }
+  }
+
+  if (!line || overOdds < 1.01 || underOdds < 1.01) return null;
+  return { player: playerName, stat, line, over: overOdds, under: underOdds };
+}
+
 /** Parse live/prematch events from the accumulated Winamax Socket.IO state */
 function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: boolean, logger: (msg: string) => void): ScrapedEvent[] {
   const events: ScrapedEvent[] = [];
@@ -152,6 +222,16 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   const bets: Record<string, any> = state.bets ?? {};
   const odds: Record<string, any> = state.odds ?? {};
   const outcomesMeta: Record<string, any> = state.outcomes ?? {};
+
+  // Pre-index bets by matchId so we can find all bets for a match
+  const betsByMatch = new Map<string, string[]>();
+  for (const [betId, bet] of Object.entries(bets)) {
+    const matchId = String(bet?.matchId ?? bet?.match_id ?? "");
+    if (!matchId) continue;
+    const list = betsByMatch.get(matchId) ?? [];
+    list.push(betId);
+    betsByMatch.set(matchId, list);
+  }
 
   // Log sport ID mapping from state.sports (first time only)
   if (state.sports && typeof state.sports === "object") {
@@ -203,14 +283,59 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       h2h.push({ name, odds: Number(oOdds) });
     }
 
+    const eventKey = buildEventKey(sport, title, undefined);
+    const tournamentId: number = match.tournamentId;
+    const league: string = tournamentId ? `tournament_${tournamentId}` : "";
+
     if (h2h.length >= 2) {
-      const eventKey = buildEventKey(sport, title, undefined);
-      const tournamentId: number = match.tournamentId;
-      const league: string = tournamentId ? `tournament_${tournamentId}` : "";
       events.push({
         bookmaker: "winamax", sport, eventKey, eventName: title,
         league, isLive, market: "h2h", outcomes: h2h,
       });
+    }
+
+    // ── Player props (basketball only) ───────────────────────────────────────
+    // Only parse player props for basketball — they're NBA/EuroLeague player stat markets
+    if (sport === "BASKETBALL") {
+      const matchId = String(match.matchId ?? match.id ?? "");
+      // All bet IDs for this match: explicit list OR match.bets array OR indexed by matchId
+      const allBetIds: string[] = [
+        ...((match.bets ?? match.betIds ?? []) as (number | string)[]).map(String),
+        ...(matchId ? betsByMatch.get(matchId) ?? [] : []),
+      ].filter((id) => id && id !== String(mainBetId));
+
+      if (allBetIds.length === 0 && matchId) {
+        // Fallback: scan ALL bets for those belonging to this match
+        for (const [betId, b] of Object.entries(bets)) {
+          if (String(b?.matchId ?? b?.match_id) === matchId && betId !== String(mainBetId)) {
+            allBetIds.push(betId);
+          }
+        }
+      }
+
+      const propLines: PlayerPropLine[] = [];
+      for (const betId of allBetIds) {
+        const propBet = bets[betId];
+        if (!propBet || !Array.isArray(propBet.outcomes)) continue;
+        const betTitle: string = propBet.betTitle ?? propBet.title ?? propBet.label ?? propBet.name ?? "";
+        if (!betTitle) continue;
+        const prop = parsePlayerPropBet(betTitle, propBet.outcomes, odds, outcomesMeta);
+        if (prop) propLines.push(prop);
+      }
+
+      if (propLines.length > 0) {
+        logger(`Props ${title}: ${propLines.length} player prop lines (${allBetIds.length} bets scanned)`);
+        events.push({
+          bookmaker: "winamax", sport, eventKey, eventName: title,
+          league, isLive, market: "player_props", outcomes: propLines,
+        });
+      } else if (allBetIds.length > 0) {
+        // Log a sample of bet titles to help debug when props are absent
+        const sample = allBetIds.slice(0, 5)
+          .map(id => bets[id]?.betTitle ?? bets[id]?.title ?? "?")
+          .join(" | ");
+        logger(`No props for ${title} (${allBetIds.length} bets, sample: ${sample.slice(0, 100)})`);
+      }
     }
   }
   return events;
@@ -247,7 +372,7 @@ async function waitForWsOrRest(
 
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL"];
 
   // One page load per cycle: WS sends ALL sports data at once.
   // Live: load /paris-sportifs/live → WS sends all live matches.

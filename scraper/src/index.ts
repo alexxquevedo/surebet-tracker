@@ -163,7 +163,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
   const groupMap = new Map<string, GroupedMarket>();
 
   for (const row of rows) {
-    if (row.market !== "h2h" && row.market !== "totals") continue;
+    if (row.market !== "h2h" && row.market !== "totals" && row.market !== "player_props") continue;
 
     const key = `${row.eventKey}::${row.market}`;
     if (!groupMap.has(key)) {

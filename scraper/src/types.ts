@@ -1,6 +1,6 @@
 // ─── Raw odds structures ─────────────────────────────────────────────────────
 
-export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE";
+export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE" | "VOLLEYBALL";
 
 export interface H2HOutcome {
   name: string; // "Home" | "Draw" | "Away" | team name
@@ -13,7 +13,16 @@ export interface TotalsLine {
   under: number;
 }
 
-export type MarketOutcomes = H2HOutcome[] | TotalsLine[];
+// Player prop Over/Under line (e.g. "Julian Champagnie +19.5 PRA")
+export interface PlayerPropLine {
+  player: string; // "Julian Champagnie"
+  stat:   string; // "PRA" | "PTS" | "REB" | "AST" | "3PT"
+  line:   number; // 19.5
+  over:   number; // odds for Over
+  under:  number; // odds for Under
+}
+
+export type MarketOutcomes = H2HOutcome[] | TotalsLine[] | PlayerPropLine[];
 
 export interface ScrapedEvent {
   bookmaker: string;
@@ -23,7 +32,7 @@ export interface ScrapedEvent {
   league?: string;
   startTime?: Date;
   isLive: boolean;
-  market: "h2h" | "totals" | "handicap";
+  market: "h2h" | "totals" | "handicap" | "player_props";
   outcomes: MarketOutcomes;
 }
 
@@ -69,7 +78,7 @@ export interface GroupedMarket {
   eventName: string;
   sport: Sport;
   isLive: boolean;
-  market: "h2h" | "totals";
+  market: "h2h" | "totals" | "player_props";
   // bookmaker → outcomes
   byBook: Map<string, MarketOutcomes>;
 }

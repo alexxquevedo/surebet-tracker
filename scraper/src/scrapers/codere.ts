@@ -23,16 +23,19 @@ import { saveFailedPayload } from "./playwright-base";
 const BASE = "https://m.apuestas.codere.es/NavigationService";
 
 // Sport NodeIds — from /NavigationService/LeftMenu/GetMenuLeft (static, verified 2026-07)
+// Volleyball nodeId/handle unconfirmed — will be verified when proxy is available
 const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
   FOOTBALL:   "9553177903",
   TENNIS:     "2819846742",
   BASKETBALL: "2819833466",
+  VOLLEYBALL: "2819833467",
 };
 
 const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   FOOTBALL:   "soccer",
   TENNIS:     "tennis",
   BASKETBALL: "basketball",
+  VOLLEYBALL: "volleyball",
 };
 
 // ─── HTTP helper ─────────────────────────────────────────────────────────────
@@ -96,7 +99,7 @@ function buildEvent(
 
 export class CodereScraper extends BaseScraper {
   readonly name = "codere";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL"];
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
     const data = await codereGet("Event/GetLiveEventsAndSportsBySportHandle?gametypes=");

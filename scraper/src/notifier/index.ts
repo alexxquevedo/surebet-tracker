@@ -23,11 +23,27 @@ async function sendMessage(chatId: string, text: string): Promise<void> {
   }
 }
 
+const SPORT_EMOJI: Record<string, string> = {
+  FOOTBALL: "⚽", TENNIS: "🎾", BASKETBALL: "🏀",
+  AMERICANFOOTBALL: "🏈", ICEHOCKEY: "🏒", BASEBALL: "⚾", RUGBYLEAGUE: "🏉",
+  VOLLEYBALL: "🏐",
+};
+
+const MARKET_LABEL: Record<string, string> = {
+  h2h: "1X2 / Ganador",
+  totals: "Totales",
+  player_props: "Props Jugador",
+};
+
 function formatSurebet(arb: DetectedSurebet): string {
-  const sportEmoji = arb.sport === "FOOTBALL" ? "⚽" : arb.sport === "TENNIS" ? "🎾" : "🏀";
+  const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
   const liveTag = arb.isLive ? "🔴 LIVE" : "📅 Pre-partido";
-  const header = `🤑 <b>SUREBET +${arb.profitPct.toFixed(2)}%</b> — ${sportEmoji} ${liveTag}`;
-  const event = `📋 <b>${arb.eventName}</b>\n💹 Mercado: ${arb.market}`;
+  const isProps = arb.market === "player_props";
+  const header = isProps
+    ? `🏀 <b>PLAYER PROP SUREBET +${arb.profitPct.toFixed(2)}%</b> — ${liveTag}`
+    : `🤑 <b>SUREBET +${arb.profitPct.toFixed(2)}%</b> — ${sportEmoji} ${liveTag}`;
+  const marketLabel = MARKET_LABEL[arb.market] ?? arb.market;
+  const event = `📋 <b>${arb.eventName}</b>\n💹 Mercado: ${marketLabel}`;
   const legs = arb.legs
     .map(
       (l) =>

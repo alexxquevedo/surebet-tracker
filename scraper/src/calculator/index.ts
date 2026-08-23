@@ -1,6 +1,7 @@
 import type {
   H2HOutcome,
   TotalsLine,
+  PlayerPropLine,
   MarketOutcomes,
   GroupedMarket,
   DetectedSurebet,
@@ -16,7 +17,11 @@ function isH2H(outcomes: MarketOutcomes): outcomes is H2HOutcome[] {
 }
 
 function isTotals(outcomes: MarketOutcomes): outcomes is TotalsLine[] {
-  return outcomes.length > 0 && "line" in outcomes[0];
+  return outcomes.length > 0 && "line" in outcomes[0] && !("player" in outcomes[0]);
+}
+
+function isPlayerProps(outcomes: MarketOutcomes): outcomes is PlayerPropLine[] {
+  return outcomes.length > 0 && "player" in outcomes[0];
 }
 
 /**
@@ -214,6 +219,61 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
   return middles;
 }
 
+// ─── Player props surebet detection ──────────────────────────────────────────
+
+/**
+ * Detects Over/Under surebets in player prop markets.
+ * Groups by (player, stat, line) — finds the best Over from any bookmaker
+ * and the best Under from any bookmaker, checks if combined implied prob < 1.
+ *
+ * Example: Winamax offers Champagnie +19.5 PRA @2.1, Bet365 offers -19.5 @2.05
+ * → implied = 1/2.1 + 1/2.05 = 0.476 + 0.488 = 0.964 → surebet 3.73%
+ */
+export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet[] {
+  if (market.market !== "player_props") return [];
+
+  // key = "player::stat::line" → best {over: {odds, book}, under: {odds, book}}
+  type Best = { odds: number; book: string };
+  const propMap = new Map<string, { over: Best | null; under: Best | null }>();
+
+  for (const [book, outcomes] of market.byBook) {
+    if (!isPlayerProps(outcomes)) continue;
+    for (const prop of outcomes) {
+      const key = `${prop.player}::${prop.stat}::${prop.line}`;
+      const cur = propMap.get(key) ?? { over: null, under: null };
+      if (prop.over  >= 1.01 && (!cur.over  || prop.over  > cur.over.odds))  cur.over  = { odds: prop.over,  book };
+      if (prop.under >= 1.01 && (!cur.under || prop.under > cur.under.odds)) cur.under = { odds: prop.under, book };
+      propMap.set(key, cur);
+    }
+  }
+
+  const surebets: DetectedSurebet[] = [];
+
+  for (const [key, { over, under }] of propMap) {
+    if (!over || !under || over.book === under.book) continue; // must be different bookmakers
+    const implied = 1 / over.odds + 1 / under.odds;
+    if (implied >= 1.0) continue;
+    const profitPct = parseFloat(((1 / implied - 1) * 100).toFixed(2));
+    const [player, stat, lineStr] = key.split("::");
+    const line = parseFloat(lineStr);
+    const stakes = distributeStakes([over.odds, under.odds]);
+    surebets.push({
+      type: "SUREBET",
+      sport: market.sport,
+      isLive: market.isLive,
+      eventName: market.eventName,
+      market: "player_props",
+      profitPct,
+      legs: [
+        { bookmaker: over.book,  selection: `${player} +${line} ${stat}`, odds: over.odds,  stake: stakes[0] },
+        { bookmaker: under.book, selection: `${player} -${line} ${stat}`, odds: under.odds, stake: stakes[1] },
+      ],
+    });
+  }
+
+  return surebets;
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export function findArbs(markets: GroupedMarket[], minProfitPct: number): DetectedArb[] {
@@ -226,6 +286,9 @@ export function findArbs(markets: GroupedMarket[], minProfitPct: number): Detect
     } else if (market.market === "totals") {
       const middles = detectMiddles(market);
       arbs.push(...middles.filter((m) => m.profitPct >= minProfitPct));
+    } else if (market.market === "player_props") {
+      const props = detectPlayerPropSurebets(market);
+      arbs.push(...props.filter((p) => p.profitPct >= minProfitPct));
     }
   }
 
