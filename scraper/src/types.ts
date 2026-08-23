@@ -1,6 +1,8 @@
 // ─── Raw odds structures ─────────────────────────────────────────────────────
 
-export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE" | "VOLLEYBALL";
+export type Sport = "FOOTBALL" | "TENNIS" | "BASKETBALL" | "AMERICANFOOTBALL" | "ICEHOCKEY" | "BASEBALL" | "RUGBYLEAGUE" | "VOLLEYBALL"
+  // Legacy aliases used by some scrapers (backwards compat)
+  | "HOCKEY" | "RUGBY";
 
 export interface H2HOutcome {
   name: string; // "Home" | "Draw" | "Away" | team name
