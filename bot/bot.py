@@ -2472,17 +2472,40 @@ async def menu_cfg_deportes(update, context):
 
 async def menu_cfg_casas(update, context):
     cfg = get_config(update.effective_user.id)
-    keyboard = [[InlineKeyboardButton(
-        ("✅ " if cfg["bookmakers"].get(k) else "❌ ") + n,
-        callback_data=f"book_{k}")] for k, n in BOOKMAKER_NAMES.items()]
-    keyboard.append([InlineKeyboardButton("✅ Todas",  callback_data="casas_todas"),
-                     InlineKeyboardButton("❌ Ninguna", callback_data="casas_ninguna")])
-    keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
+    activas = sum(cfg["bookmakers"].values())
+    casas_sel = [n for k, n in BOOKMAKER_NAMES.items() if cfg["bookmakers"].get(k)] or ["Ninguna"]
+    casas_lista = [f"• {n}" for n in casas_sel]
+    texto = (
+        f"🏠 *Configuración Casas:*\n"
+        f"📊 Estado: *{activas}/{len(BOOKMAKER_NAMES)}* casas activas\n\n"
+        f"✅ *Casas seleccionadas:*\n" + "\n".join(casas_lista) + "\n\n"
+        f"💡 *Información:*\n"
+        f"• Más casas → más apuestas.\n"
+        f"• Surebets y Middlebets: 2 casas mín.\n"
+        f"• Valuebets: 1 casa mín.\n\n"
+        f"_Toca cualquier casa para activarla o desactivarla._"
+    )
+    # Seleccionar/Deseleccionar todo primero
+    keyboard = [
+        [InlineKeyboardButton("✅ Seleccionar todo", callback_data="casas_todas"),
+         InlineKeyboardButton("🔴 Deseleccionar todo", callback_data="casas_ninguna")],
+    ]
+    # Botones de casas de 2 en 2
+    items = list(BOOKMAKER_NAMES.items())
+    for i in range(0, len(items), 2):
+        fila = [
+            InlineKeyboardButton(
+                ("✅ " if cfg["bookmakers"].get(k) else "❌ ") + n,
+                callback_data=f"book_{k}"
+            ) for k, n in items[i:i+2]
+        ]
+        keyboard.append(fila)
+    keyboard.append([
+        InlineKeyboardButton("💾 Guardar", callback_data="menu_config"),
+        InlineKeyboardButton("🔙 Retroceder", callback_data="menu_config"),
+    ])
     await update.callback_query.edit_message_text(
-        f"🏦 *Casas de apuestas ({sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])} activas)*\n"
-        f"Elige las casas de las que quieres recibir oportunidades. Solo verás alertas entre las casas activas.\n"
-        f"_Toca cualquier casa para activarla o desactivarla._",
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ============================================================
 # TECLADO NUMÉRICO
