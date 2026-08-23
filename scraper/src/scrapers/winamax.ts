@@ -17,21 +17,23 @@ import type { Page } from "playwright";
 
 const BASE_FR = "https://www.winamax.fr";
 
-// Confirmed from DOM discovery (2026-07-29): 1=Football, 2=Basketball, 5=Tennis
-// Actual DOM hrefs: /paris-sportifs/sports/1 (Football), /paris-sportifs/sports/5 (Tennis)
-// Volleyball ID 11 unconfirmed — will be auto-discovered via WS state sport dump
+// Confirmed from WS state sport dump (2026-08-23):
+// 1=Football, 2=Basketball, 3=Baseball, 4=Hockey sur glace, 5=Tennis, 11=Automobile
+// VOLLEYBALL ID unknown (not in current dump — off-season); AMERICANFOOTBALL/RUGBYLEAGUE TBD
 const SPORT_IDS: Partial<Record<Sport, number>> = {
-  FOOTBALL: 1,
-  TENNIS: 5,
+  FOOTBALL:  1,
+  TENNIS:    5,
   BASKETBALL: 2,
-  VOLLEYBALL: 11,
+  BASEBALL:  3,
+  ICEHOCKEY: 4,
 };
 
 const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
   TENNIS:     ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
   BASKETBALL: ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
-  VOLLEYBALL: ["/paris-sportifs/sports/11", "/paris-sportifs/sports/11/"],
+  BASEBALL:   ["/paris-sportifs/sports/3", "/paris-sportifs/sports/3/"],
+  ICEHOCKEY:  ["/paris-sportifs/sports/4", "/paris-sportifs/sports/4/"],
 };
 
 // Fallback text-based click labels (French site)
@@ -39,7 +41,8 @@ const SPORT_LINK_TEXTS: Partial<Record<Sport, string[]>> = {
   FOOTBALL:   ["football", "foot"],
   TENNIS:     ["tennis"],
   BASKETBALL: ["basket", "basketball"],
-  VOLLEYBALL: ["volleyball", "volley"],
+  BASEBALL:   ["baseball", "base-ball"],
+  ICEHOCKEY:  ["hockey sur glace", "hockey glace", "hockey"],
 };
 
 function parseWinamaxData(raw: any, sport: Sport, isLive: boolean, srcUrl: string): ScrapedEvent[] {
@@ -484,9 +487,9 @@ async function waitForWsOrRest(
 
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
-  // VOLLEYBALL removed: Winamax sport ID 11 confirmed = Automobile (not Volleyball)
-  // Real Volleyball ID TBD — will be visible in WS sport dump when the season is active
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  // Confirmed IDs: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5
+  // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE IDs TBD — not in current WS dump
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY"];
 
   // One page load per cycle: WS sends ALL sports data at once.
   // Live: load /paris-sportifs/live → WS sends all live matches.

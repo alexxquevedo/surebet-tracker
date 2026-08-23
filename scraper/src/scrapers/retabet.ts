@@ -12,7 +12,7 @@ import {
 } from "@microsoft/signalr";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine, PlayerPropLine } from "../types";
 
 const HUB_URL   = "https://rtds.retabet.es/realTimeDataHub";
 const REST_HOST  = "apuestas.retabet.es";
@@ -43,6 +43,73 @@ function jsonGet(path: string): Promise<any> {
     req.on("timeout", () => { req.destroy(); resolve(null); });
   });
 }
+
+// ─── Player prop helpers ──────────────────────────────────────────────────────
+
+const RETABET_PROP_STATS: Array<[RegExp, string]> = [
+  [/\bpuntos?\b/i,                            "PTS"],
+  [/\brebotes?\b/i,                           "REB"],
+  [/\basistencias?\b/i,                       "AST"],
+  [/\btriples?\b/i,                           "3PT"],
+  [/tapones?(?:\s*y\s*robos?)?/i,             "BLK"],
+  [/\brobos?\b/i,                             "STL"],
+  [/\bpra\b/i,                                "PRA"],
+  [/disparos?\s*(?:a\s*puerta)?/i,            "shots"],
+  [/goles?\s*(?:en\s*cualquier\s*momento)?/i, "goals"],
+  [/\baces?\b/i,                              "aces"],
+  [/dobles?\s*faltas?|double\s*faults?/i,     "double_faults"],
+  [/\bpoints?\b/i,                            "PTS"],
+  [/\brebound[s]?\b/i,                        "REB"],
+  [/\bassist[s]?\b/i,                         "AST"],
+  [/3-?pointer[s]?|three[s]?/i,              "3PT"],
+];
+
+function detectRetabetPlayerProp(mName: string): { player: string; stat: string } | null {
+  const parts = mName.split(/\s*[-–—]\s*/);
+  if (parts.length < 2) return null;
+
+  const lastPart = parts[parts.length - 1];
+  for (const [re, stat] of RETABET_PROP_STATS) {
+    if (re.test(lastPart)) {
+      const player = parts.slice(0, -1).join(" ").trim();
+      if (player.length >= 2) return { player, stat };
+    }
+  }
+
+  const firstPart = parts[0];
+  for (const [re, stat] of RETABET_PROP_STATS) {
+    if (re.test(firstPart)) {
+      const player = parts.slice(1).join(" ").trim();
+      if (player.length >= 2) return { player, stat };
+    }
+  }
+
+  return null;
+}
+
+function parseRetabetPlayerProp(sels: any[], player: string, stat: string): PlayerPropLine[] {
+  const byLine = new Map<number, { over: number; under: number }>();
+  for (const s of sels) {
+    const price = parseFloat(String(s?.price ?? s?.Price ?? s?.odds ?? s?.Odds ?? s?.odd ?? 0));
+    if (price < 1.01) continue;
+    const name: string = (s?.name ?? s?.Name ?? s?.label ?? s?.selectionName ?? "").toLowerCase();
+    const lineMatch = name.match(/(\d+[.,]\d+|\d+)/);
+    if (!lineMatch) continue;
+    const line = parseFloat(lineMatch[1].replace(",", "."));
+    const isOver  = /m[aá]s\s*de|over|\+/.test(name);
+    const isUnder = /menos\s*de|under/.test(name);
+    if (!isOver && !isUnder) continue;
+    const cur = byLine.get(line) ?? { over: 0, under: 0 };
+    if (isOver  && price > cur.over)  cur.over  = price;
+    if (isUnder && price > cur.under) cur.under = price;
+    byLine.set(line, cur);
+  }
+  return [...byLine.entries()]
+    .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+    .map(([line, { over, under }]) => ({ player, stat, line, over, under }));
+}
+
+// ─── Market classification ────────────────────────────────────────────────────
 
 const RETABET_MARKET_MAP: Array<[RegExp, string]> = [
   [/resultado\s*(final)?|ganador|match\s*result|full\s*time\s*result|1\s*x\s*2|ft\s*result|\bh2h\b|\bft\b/i, "h2h"],
@@ -118,13 +185,24 @@ function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEven
 
     for (const m of markets) {
       const mName = m?.name ?? m?.Name ?? m?.type ?? m?.marketType ?? "";
+      const sels: any[] = m?.selections ?? m?.Selections ?? m?.outcomes ?? m?.Runners ?? [];
+
+      // 1. Player prop detection (e.g. "LeBron James - Puntos")
+      const propMeta = detectRetabetPlayerProp(mName);
+      if (propMeta) {
+        const lines = parseRetabetPlayerProp(sels, propMeta.player, propMeta.stat);
+        if (lines.length > 0) {
+          events.push({ bookmaker: "retabet", sport, eventKey, eventName, startTime, isLive, market: "player_props", outcomes: lines });
+        }
+        continue;
+      }
+
+      // 2. Generic market classification
       const cat = classifyRetabetMarket(mName);
       if (!cat) continue;
 
-      const sels: any[] = m?.selections ?? m?.Selections ?? m?.outcomes ?? m?.Runners ?? [];
-
       if (cat === "h2h" || cat === "handicap") {
-        if (cat === "h2h" && emittedH2H) continue; // one H2H per event
+        if (cat === "h2h" && emittedH2H) continue;
         const outcomes: H2HOutcome[] = sels
           .map((s: any) => {
             const price = parseFloat(String(s?.price ?? s?.Price ?? s?.odds ?? s?.Odds ?? s?.odd ?? 0));
@@ -149,7 +227,10 @@ function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEven
 
 export class RetabetScraper extends BaseScraper {
   readonly name = "retabet";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL"];
+  readonly sports: Sport[] = [
+    "FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL",
+    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE",
+  ];
 
   private connection: HubConnection | null = null;
   private isConnecting = false;
@@ -252,7 +333,11 @@ export class RetabetScraper extends BaseScraper {
   }
 
   private async scrapeViaRest(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const sp = ({ FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto", VOLLEYBALL: "voleibol", ICEHOCKEY: "hockey", BASEBALL: "beisbol", RUGBYLEAGUE: "rugby-league", AMERICANFOOTBALL: "futbol-americano" } as Partial<Record<Sport, string>>)[sport];
+    const sp = ({
+      FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto",
+      VOLLEYBALL: "voleibol", ICEHOCKEY: "hockey-hielo", BASEBALL: "beisbol",
+      RUGBYLEAGUE: "rugby-league", AMERICANFOOTBALL: "futbol-americano",
+    } as Partial<Record<Sport, string>>)[sport];
     const paths = [
       `/api/render/LoadWidget?sport=${sp}&live=${isLive}&lang=es`,
       `/api/render/LoadWidget?sportId=1&live=${isLive}&locale=es-ES`,
