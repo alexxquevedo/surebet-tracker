@@ -12,7 +12,7 @@ import {
 } from "@microsoft/signalr";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
 const HUB_URL   = "https://rtds.retabet.es/realTimeDataHub";
 const REST_HOST  = "apuestas.retabet.es";
@@ -44,11 +44,50 @@ function jsonGet(path: string): Promise<any> {
   });
 }
 
-function isH2HMarket(name: string): boolean {
-  const n = name.toLowerCase();
-  return n.includes("1x2") || n.includes("resultado") || n.includes("match result") ||
-    n.includes("ganador") || n.includes("winner") || n.includes("full time") ||
-    n === "h2h" || n === "ft";
+const RETABET_MARKET_MAP: Array<[RegExp, string]> = [
+  [/resultado\s*(final)?|ganador|match\s*result|full\s*time\s*result|1\s*x\s*2|ft\s*result|\bh2h\b|\bft\b/i, "h2h"],
+  [/h[aá]ndicap(?:\s+asi[aá]tico)?|handicap|asian\s*handicap/i, "handicap"],
+  [/(?:primer[ao]|1[aº])\s*mitad.*goles?|goles?.*(?:primer[ao]|1[aº])\s*mitad|ht\s*goals?|1st\s*half.*goals?/i, "h1_goals"],
+  [/(?:segund[ao]|2[aº])\s*mitad.*goles?|goles?.*(?:segund[ao]|2[aº])\s*mitad|2nd\s*half.*goals?/i, "h2_goals"],
+  [/total\s+(?:de\s+)?goles?|goles?\s+totales?|m[aá]s\s*\/?\s*menos.*goles?|\bgoles?\b|total\s+goals?|over\s*\/?\s*under\s+goals?/i, "goals"],
+  [/c[oó]rners?|saques?\s+de\s+esquina|corner\s+kicks?/i, "corners"],
+  [/tarjetas?\s+amarillas?|yellow\s+cards?/i, "yellow_cards"],
+  [/tarjetas?\s+rojas?|red\s+cards?/i, "red_cards"],
+  [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?|total\s+cards?/i, "cards"],
+  [/total\s+(?:de\s+)?juegos?|juegos?\s+totales?|total\s+games?/i, "games"],
+  [/total\s+(?:de\s+)?sets?|sets?\s+totales?|total\s+sets?/i, "sets"],
+  [/\baces?\b/i, "aces"],
+  [/dobles?\s*faltas?|double\s+faults?/i, "double_faults"],
+  [/total\s+(?:de\s+)?puntos?|puntos?\s+totales?|total\s+points?/i, "match_points"],
+];
+
+function classifyRetabetMarket(name: string): string | null {
+  for (const [re, cat] of RETABET_MARKET_MAP) {
+    if (re.test(name)) return cat;
+  }
+  return null;
+}
+
+function parseRetabetOverUnder(sels: any[]): TotalsLine[] {
+  const byLine = new Map<number, { over: number; under: number }>();
+  for (const s of sels) {
+    const price = parseFloat(String(s?.price ?? s?.Price ?? s?.odds ?? s?.Odds ?? s?.odd ?? 0));
+    if (price < 1.01) continue;
+    const name: string = (s?.name ?? s?.Name ?? s?.label ?? s?.selectionName ?? "").toLowerCase();
+    const lineMatch = name.match(/(\d+[.,]\d+|\d+)/);
+    if (!lineMatch) continue;
+    const line = parseFloat(lineMatch[1].replace(",", "."));
+    const isOver  = /m[aá]s\s*de|over|plus|\+/.test(name);
+    const isUnder = /menos\s*de|under|minus/.test(name);
+    if (!isOver && !isUnder) continue;
+    const cur = byLine.get(line) ?? { over: 0, under: 0 };
+    if (isOver  && price > cur.over)  cur.over  = price;
+    if (isUnder && price > cur.under) cur.under = price;
+    byLine.set(line, cur);
+  }
+  return [...byLine.entries()]
+    .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+    .map(([line, { over, under }]) => ({ line, over, under }));
 }
 
 function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEvent[] {
@@ -75,19 +114,33 @@ function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEven
     const eventKey = buildEventKey(sport, eventName, startTime);
 
     const markets: any[] = ev?.markets ?? ev?.Markets ?? ev?.betOffers ?? ev?.offers ?? [];
+    let emittedH2H = false;
+
     for (const m of markets) {
-      if (!isH2HMarket(m?.name ?? m?.Name ?? m?.type ?? m?.marketType ?? "")) continue;
+      const mName = m?.name ?? m?.Name ?? m?.type ?? m?.marketType ?? "";
+      const cat = classifyRetabetMarket(mName);
+      if (!cat) continue;
+
       const sels: any[] = m?.selections ?? m?.Selections ?? m?.outcomes ?? m?.Runners ?? [];
-      const outcomes: H2HOutcome[] = sels
-        .map((s: any) => {
-          const price = parseFloat(String(s?.price ?? s?.Price ?? s?.odds ?? s?.Odds ?? s?.odd ?? 0));
-          const name: string = s?.name ?? s?.Name ?? s?.label ?? s?.selectionName ?? "";
-          return price >= 1.01 && name ? { name, odds: price } : null;
-        })
-        .filter(Boolean) as H2HOutcome[];
-      if (outcomes.length >= 2) {
-        events.push({ bookmaker: "retabet", sport, eventKey, eventName, startTime, isLive, market: "h2h", outcomes });
-        break;
+
+      if (cat === "h2h" || cat === "handicap") {
+        if (cat === "h2h" && emittedH2H) continue; // one H2H per event
+        const outcomes: H2HOutcome[] = sels
+          .map((s: any) => {
+            const price = parseFloat(String(s?.price ?? s?.Price ?? s?.odds ?? s?.Odds ?? s?.odd ?? 0));
+            const name: string = s?.name ?? s?.Name ?? s?.label ?? s?.selectionName ?? "";
+            return price >= 1.01 && name ? { name, odds: price } : null;
+          })
+          .filter(Boolean) as H2HOutcome[];
+        if (outcomes.length >= 2) {
+          events.push({ bookmaker: "retabet", sport, eventKey, eventName, startTime, isLive, market: cat, outcomes });
+          if (cat === "h2h") emittedH2H = true;
+        }
+      } else {
+        const lines = parseRetabetOverUnder(sels);
+        if (lines.length > 0) {
+          events.push({ bookmaker: "retabet", sport, eventKey, eventName, startTime, isLive, market: cat, outcomes: lines });
+        }
       }
     }
   }
@@ -96,7 +149,7 @@ function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEven
 
 export class RetabetScraper extends BaseScraper {
   readonly name = "retabet";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL"];
 
   private connection: HubConnection | null = null;
   private isConnecting = false;
@@ -199,7 +252,7 @@ export class RetabetScraper extends BaseScraper {
   }
 
   private async scrapeViaRest(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const sp = ({ FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto", ICEHOCKEY: "hockey", BASEBALL: "beisbol", RUGBYLEAGUE: "rugby-league", AMERICANFOOTBALL: "futbol-americano" } as Partial<Record<Sport, string>>)[sport];
+    const sp = ({ FOOTBALL: "futbol", TENNIS: "tenis", BASKETBALL: "baloncesto", VOLLEYBALL: "voleibol", ICEHOCKEY: "hockey", BASEBALL: "beisbol", RUGBYLEAGUE: "rugby-league", AMERICANFOOTBALL: "futbol-americano" } as Partial<Record<Sport, string>>)[sport];
     const paths = [
       `/api/render/LoadWidget?sport=${sp}&live=${isLive}&lang=es`,
       `/api/render/LoadWidget?sportId=1&live=${isLive}&locale=es-ES`,

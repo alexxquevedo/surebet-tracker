@@ -17,7 +17,7 @@
 import * as https from "https";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 import { saveFailedPayload } from "./playwright-base";
 
 const BASE = "https://m.apuestas.codere.es/NavigationService";
@@ -71,6 +71,93 @@ function parseCodereDate(raw: string | undefined): Date | undefined {
   return m ? new Date(parseInt(m[1])) : undefined;
 }
 
+// ─── Secondary market helpers ─────────────────────────────────────────────────
+
+const ES_MARKET_MAP: Array<[RegExp, string]> = [
+  // Skip H2H — handled via DefaultGame / Games[0]
+  [/resultado\s*(final)?|ganador\s*del\s*partido|match\s*result|1\s*x\s*2/i, "h2h"],
+  // Handicap
+  [/h[aá]ndicap(?:\s+asi[aá]tico)?|handicap/i, "handicap"],
+  // Goals by half
+  [/(?:primer[ao]|1[aº])\s*mitad.*goles?|goles?.*(?:primer[ao]|1[aº])\s*mitad|ht\s*goals?/i, "h1_goals"],
+  [/(?:segund[ao]|2[aº])\s*mitad.*goles?|goles?.*(?:segund[ao]|2[aº])\s*mitad|2h\s*goals?/i, "h2_goals"],
+  // Goals (total)
+  [/total\s+(?:de\s+)?goles?|goles?\s+totales?|m[aá]s\s*\/?\s*menos.*goles?|\bgoles?\b/i, "goals"],
+  // Corners
+  [/c[oó]rners?|saques?\s+de\s+esquina/i, "corners"],
+  // Cards
+  [/tarjetas?\s+amarillas?|yellow\s+cards?/i, "yellow_cards"],
+  [/tarjetas?\s+rojas?|red\s+cards?/i, "red_cards"],
+  [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?/i, "cards"],
+  // Tennis
+  [/total\s+(?:de\s+)?juegos?|juegos?\s+totales?/i, "games"],
+  [/total\s+(?:de\s+)?sets?|sets?\s+totales?/i, "sets"],
+  [/\baces?\b/i, "aces"],
+  [/dobles?\s*faltas?/i, "double_faults"],
+  // Basketball points
+  [/total\s+(?:de\s+)?puntos?|puntos?\s+totales?/i, "match_points"],
+];
+
+function classifyCodereGame(name: string): string | null {
+  for (const [re, cat] of ES_MARKET_MAP) {
+    if (re.test(name)) return cat;
+  }
+  return null;
+}
+
+function parseCodereOverUnder(results: any[]): TotalsLine[] {
+  const byLine = new Map<number, { over: number; under: number }>();
+  for (const r of results) {
+    const odds = parseFloat(String(r.Odd ?? 0));
+    if (odds < 1.01) continue;
+    const name: string = (r.Name ?? "").toLowerCase();
+    const lineMatch = name.match(/(\d+[.,]\d+|\d+)/);
+    if (!lineMatch) continue;
+    const line = parseFloat(lineMatch[1].replace(",", "."));
+    const isOver  = /m[aá]s\s*de|over|plus/i.test(name);
+    const isUnder = /menos\s*de|under|minus/i.test(name);
+    if (!isOver && !isUnder) continue;
+    const cur = byLine.get(line) ?? { over: 0, under: 0 };
+    if (isOver  && odds > cur.over)  cur.over  = odds;
+    if (isUnder && odds > cur.under) cur.under = odds;
+    byLine.set(line, cur);
+  }
+  return [...byLine.entries()]
+    .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+    .map(([line, { over, under }]) => ({ line, over, under }));
+}
+
+function parseCodereHandicap(results: any[]): H2HOutcome[] {
+  const out: H2HOutcome[] = [];
+  for (const r of results) {
+    const odds = parseFloat(String(r.Odd ?? 0));
+    if (odds < 1.01) continue;
+    const name: string = r.Name ?? "";
+    out.push({ name, odds });
+  }
+  return out;
+}
+
+function buildSecondaryEvent(
+  bookmaker: string,
+  sport: Sport,
+  eventName: string,
+  startTime: Date | undefined,
+  isLive: boolean,
+  marketCat: string,
+  results: any[],
+): ScrapedEvent | null {
+  const eventKey = buildEventKey(sport, eventName, startTime);
+  if (marketCat === "handicap") {
+    const outcomes = parseCodereHandicap(results);
+    if (outcomes.length < 2) return null;
+    return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "handicap", outcomes };
+  }
+  const lines = parseCodereOverUnder(results);
+  if (lines.length === 0) return null;
+  return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: marketCat, outcomes: lines };
+}
+
 // ─── Odds parser ─────────────────────────────────────────────────────────────
 
 function buildEvent(
@@ -115,10 +202,18 @@ export class CodereScraper extends BaseScraper {
       let found = 0;
       for (const e of sportEvents) {
         const name: string = e.Name ?? `${e.ParticipantHome ?? ""} - ${e.ParticipantAway ?? ""}`.trim();
-        const results: any[] = e.DefaultGame?.Results ?? [];
         const startTime = parseCodereDate(e.StartDate);
-        const ev = buildEvent(results, "codere", sport, name, startTime, true);
+        // H2H from DefaultGame
+        const defaultResults: any[] = e.DefaultGame?.Results ?? [];
+        const ev = buildEvent(defaultResults, "codere", sport, name, startTime, true);
         if (ev) { all.push(ev); found++; }
+        // Secondary markets from Games[]
+        for (const game of (e.Games ?? [])) {
+          const cat = classifyCodereGame(game.Name ?? game.GameType ?? "");
+          if (!cat || cat === "h2h") continue;
+          const sec = buildSecondaryEvent("codere", sport, name, startTime, true, cat, game.Results ?? []);
+          if (sec) all.push(sec);
+        }
       }
       if (sportEvents.length) this.log(`Live ${sport}: ${found}/${sportEvents.length} events with odds`);
     }
@@ -152,12 +247,21 @@ export class CodereScraper extends BaseScraper {
         for (const e of events) {
           const name: string = e.Name ?? `${e.ParticipantHome ?? ""} - ${e.ParticipantAway ?? ""}`.trim();
           if (!name) continue;
-          // Prematch events: odds in Games[0].Results (not DefaultGame)
           const games: any[] = e.Games ?? [];
-          const results: any[] = games[0]?.Results ?? [];
           const startTime = parseCodereDate(e.StartDate);
-          const ev = buildEvent(results, "codere", sport, name, startTime, false);
-          if (ev) { all.push(ev); found++; }
+          let hadH2H = false;
+          for (const game of games) {
+            const gameName: string = game.Name ?? game.GameType ?? "";
+            const cat = classifyCodereGame(gameName);
+            if (cat === "h2h" || (!cat && !hadH2H)) {
+              // First unclassified game is typically the main result market
+              const ev = buildEvent(game.Results ?? [], "codere", sport, name, startTime, false);
+              if (ev) { all.push(ev); found++; hadH2H = true; }
+            } else if (cat && cat !== "h2h") {
+              const sec = buildSecondaryEvent("codere", sport, name, startTime, false, cat, game.Results ?? []);
+              if (sec) all.push(sec);
+            }
+          }
         }
       }
       this.log(`Prematch ${sport}: ${found} events from ${leaguesToFetch.length} leagues`);
