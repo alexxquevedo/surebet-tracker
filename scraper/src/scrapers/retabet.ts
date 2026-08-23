@@ -47,21 +47,48 @@ function jsonGet(path: string): Promise<any> {
 // ─── Player prop helpers ──────────────────────────────────────────────────────
 
 const RETABET_PROP_STATS: Array<[RegExp, string]> = [
-  [/\bpuntos?\b/i,                            "PTS"],
-  [/\brebotes?\b/i,                           "REB"],
-  [/\basistencias?\b/i,                       "AST"],
-  [/\btriples?\b/i,                           "3PT"],
-  [/tapones?(?:\s*y\s*robos?)?/i,             "BLK"],
-  [/\brobos?\b/i,                             "STL"],
-  [/\bpra\b/i,                                "PRA"],
-  [/disparos?\s*(?:a\s*puerta)?/i,            "shots"],
-  [/goles?\s*(?:en\s*cualquier\s*momento)?/i, "goals"],
-  [/\baces?\b/i,                              "aces"],
-  [/dobles?\s*faltas?|double\s*faults?/i,     "double_faults"],
-  [/\bpoints?\b/i,                            "PTS"],
-  [/\brebound[s]?\b/i,                        "REB"],
-  [/\bassist[s]?\b/i,                         "AST"],
-  [/3-?pointer[s]?|three[s]?/i,              "3PT"],
+  // ── Basketball ──
+  [/\bpuntos?\b/i,                               "PTS"],
+  [/\brebotes?\b/i,                              "REB"],
+  [/\basistencias?\b/i,                          "AST"],
+  [/\btriples?\b/i,                              "3PT"],
+  [/tapones?(?:\s*y\s*robos?)?/i,                "BLK"],
+  [/\brobos?\b/i,                                "STL"],
+  [/\bpra\b/i,                                   "PRA"],
+  [/\bpoints?\b/i,                               "PTS"],
+  [/\brebound[s]?\b/i,                           "REB"],
+  [/\bassist[s]?\b/i,                            "AST"],
+  [/3-?pointer[s]?|\bthree[s]?\b/i,              "3PT"],
+  // ── Football (soccer) ──
+  [/goles?\s*(?:en\s*cualquier\s*momento|del\s*jugador)?/i, "goals"],
+  [/disparos?\s*(?:a\s*puerta|totales?)?/i,      "shots"],
+  [/pases?\s*(?:totales?|completados?)?/i,       "passes"],
+  [/regates?\s*(?:completados?)?/i,              "dribbles"],
+  [/duelos?\s*(?:ganados?|a[eé]reos?)?/i,        "duels"],
+  [/toques?\s*(?:al\s*bal[oó]n)?/i,              "touches"],
+  [/tarjetas?\s*(?:del\s*jugador|individuales?)?/i, "player_cards"],
+  // ── Tennis ──
+  [/\baces?\b/i,                                 "aces"],
+  [/dobles?\s*faltas?|double\s*faults?/i,        "double_faults"],
+  [/juegos?\s*(?:ganados?|del\s*jugador)?/i,     "games_won"],
+  [/sets?\s*(?:ganados?)?/i,                     "sets_won"],
+  // ── Baseball ──
+  [/jonrones?|home\s*runs?/i,                    "HR"],
+  [/bases?\s*robadas?|stolen\s*bases?/i,         "SB"],
+  [/ponches?|strikeouts?/i,                      "K"],
+  [/\bhits?\b/i,                                 "H"],
+  [/carreras?\s*(?:impulsadas?)?|rbis?/i,        "RBI"],
+  // ── American football ──
+  [/yardas?\s*(?:de\s*pase|pasantes?|aéreas?)/i, "pass_yds"],
+  [/yardas?\s*(?:terrestres?|corridas?)/i,       "rush_yds"],
+  [/yardas?\s*(?:de\s*recepci[oó]n|recibidas?)/i, "rec_yds"],
+  [/recepciones?|receptions?/i,                  "REC"],
+  [/touchdowns?|\btds?\b/i,                      "TD"],
+  // ── Ice hockey ──
+  [/disparos?\s*al\s*arco|shots?\s*on\s*goal/i,  "sog"],
+  // ── Rugby ──
+  [/ensayos?|tries?/i,                           "tries"],
+  [/conversiones?/i,                             "conversions"],
 ];
 
 function detectRetabetPlayerProp(mName: string): { player: string; stat: string } | null {
