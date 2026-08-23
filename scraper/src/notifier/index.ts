@@ -117,64 +117,74 @@ function resolveMarketLabel(market: string): string {
   return market;
 }
 
-function formatSurebet(arb: DetectedSurebet): string {
+function formatStake(stakePercent: number, bankrollEur?: number): string {
+  const pct = `${stakePercent.toFixed(2)}%`;
+  if (bankrollEur && bankrollEur > 0) {
+    const eur = ((stakePercent / 100) * bankrollEur).toFixed(2);
+    return `${pct} (€${eur})`;
+  }
+  return pct;
+}
+
+function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
   const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
   const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
-  const marketLabel = resolveMarketLabel(arb.market);
-  const isProps = arb.market === "player_props";
-
-  const header = `💎 <b>Profit: +${arb.profitPct.toFixed(2)}%</b>`;
-  const sportLine = `${sportEmoji} ${sportLabel}`;
-  const timeLine = datetimeLine;
-  const eventLine = `🏆 <b>${arb.eventName}</b>`;
-  const marketLine = isProps ? "" : `📊 ${marketLabel}`;
+  const liveTag = arb.isLive ? " 🎥 LIVE" : "";
 
   const legs = arb.legs
-    .map(
-      (l) =>
-        `📕 <b>${l.bookmaker.toUpperCase()}</b> 📍 ${translateSelection(l.selection)} 🎲 @${l.odds.toFixed(2)} 💰 ${l.stake.toFixed(1)}%`,
+    .map((l) =>
+      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateSelection(l.selection)} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
     )
     .join("\n");
 
-  const footer = `💵 <b>Beneficio garantizado: ${arb.profitPct.toFixed(2)}%</b>`;
-
-  const lines = [header, sportLine, timeLine, eventLine];
-  if (marketLine) lines.push(marketLine);
-  lines.push("", legs, "", footer);
-
-  return lines.join("\n");
+  return [
+    `💵 <b>Beneficio: +${arb.profitPct.toFixed(2)}%</b>`,
+    `📢 <b>Alerta Surebets!${liveTag}</b>`,
+    "",
+    `💎 Profit: +${arb.profitPct.toFixed(2)}%`,
+    `${sportEmoji} ${sportLabel}`,
+    datetimeLine,
+    `🏆 <b>${arb.eventName}</b>`,
+    legs,
+  ].join("\n");
 }
 
-function formatMiddle(arb: DetectedMiddle): string {
+function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
   const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
-  const marketLabel = resolveMarketLabel(arb.market);
-
-  const header = `🎯 <b>MIDDLE +${arb.profitPct.toFixed(2)}%</b>`;
-  const sportLine = `${sportEmoji} ${sportLabel}`;
-  const timeLine = datetimeLine;
-  const eventLine = `🏆 <b>${arb.eventName}</b>`;
-  const marketLine = `📊 ${marketLabel} | Ventana: ${arb.windowLow}–${arb.windowHigh}`;
+  const liveTag = arb.isLive ? " 🎥 LIVE" : "";
+  const probPct = (arb.middleProbability * 100).toFixed(2);
 
   const legs = arb.legs
-    .map(
-      (l) =>
-        `📕 <b>${l.bookmaker.toUpperCase()}</b> 📍 ${l.selection} 🎲 @${l.odds.toFixed(2)} 💰 ${l.stake.toFixed(1)}%`,
+    .map((l) =>
+      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateSelection(l.selection)} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
     )
     .join("\n");
 
-  const footer =
-    `💵 <b>Si acierta: +${arb.profitPct.toFixed(2)}% | Peor caso: ${arb.worstLoss < 0 ? arb.worstLoss.toFixed(2) : "+" + arb.worstLoss.toFixed(2)}%</b>`;
+  const marketLabel = resolveMarketLabel(arb.market);
 
-  return [header, sportLine, timeLine, eventLine, marketLine, "", legs, "", footer].join("\n");
+  return [
+    `👑 <b>Valor Esperado: +${arb.profitPct.toFixed(2)}% - +${arb.maxProfitPct.toFixed(2)}%</b>`,
+    `📢 <b>Alerta Middlebets!${liveTag}</b>`,
+    "",
+    `💎 Valor esperado: +${arb.profitPct.toFixed(2)}% (Sin riesgo)`,
+    `📉 Mín. ${arb.profitPct.toFixed(2)}% | 📈 Máx. ${arb.maxProfitPct.toFixed(2)}%`,
+    `🍀 Probabilidad middle: ${probPct}%`,
+    "",
+    `${sportEmoji} ${sportLabel}`,
+    datetimeLine,
+    `🏆 <b>${arb.eventName}</b>`,
+    `📊 ${marketLabel}`,
+    legs,
+  ].join("\n");
 }
 
-function formatArb(arb: DetectedArb): string {
+function formatArb(arb: DetectedArb, bankrollEur?: number): string {
   return arb.type === "SUREBET"
-    ? formatSurebet(arb as DetectedSurebet)
-    : formatMiddle(arb as DetectedMiddle);
+    ? formatSurebet(arb as DetectedSurebet, bankrollEur)
+    : formatMiddle(arb as DetectedMiddle, bankrollEur);
 }
 
 /**
@@ -283,10 +293,13 @@ export async function notifyArbs(
 
   let notified = 0;
   for (const { dbId, arb } of newArbs) {
-    const message = formatArb(arb);
-
     for (const sub of subscribers) {
       if (!matchesPrefs(arb, sub.config)) continue;
+
+      const bankrollEur: number | undefined = (sub.config as any)?.bankroll_eur > 0
+        ? Number((sub.config as any).bankroll_eur)
+        : undefined;
+      const message = formatArb(arb, bankrollEur);
 
       // Record first — the unique constraint on (arbId, telegramId) prevents duplicates
       // even under concurrent execution. If the insert fails with P2002, skip.

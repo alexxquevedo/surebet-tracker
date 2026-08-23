@@ -67,10 +67,16 @@ export interface DetectedMiddle {
   startTime?: Date;
   eventName: string;
   market: string;
-  profitPct: number;    // profit if total falls in middle window
-  worstLoss: number;    // loss % if middle misses
-  windowLow: number;    // total goals/points lower bound
-  windowHigh: number;   // total goals/points upper bound
+  /** Guaranteed minimum profit even if window misses (always ≥ 0 for risk-free middles) */
+  profitPct: number;
+  /** Maximum profit when window hits (both legs win) */
+  maxProfitPct: number;
+  /** Same as profitPct; kept for DB compat */
+  worstLoss: number;
+  windowLow: number;
+  windowHigh: number;
+  /** Estimated probability the window triggers (Poisson approximation, 0–1) */
+  middleProbability: number;
   legs: ArbLeg[];
 }
 

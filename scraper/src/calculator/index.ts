@@ -118,93 +118,93 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
 
 // ─── Middle detection (totals) ────────────────────────────────────────────────
 
+/** P(X = k) for a Poisson distribution with given lambda */
+function poissonPmf(lambda: number, k: number): number {
+  if (k < 0 || lambda <= 0) return 0;
+  // Use log-space to avoid overflow for large k
+  let logP = -lambda + k * Math.log(lambda);
+  for (let i = 1; i <= k; i++) logP -= Math.log(i);
+  return Math.exp(logP);
+}
+
 /**
- * Finds middles in totals markets.
- * A middle exists when:
- *   Book A offers Over X  (e.g. Over 2.5 at 1.90)
- *   Book B offers Under Y (e.g. Under 3.5 at 1.85)
- *   where Y > X  →  the "middle window" [X, Y] means BOTH bets win if result is in that range.
+ * Probability that result falls strictly inside (windowLow, windowHigh).
+ * Uses a Poisson approximation with λ = midpoint of the window.
+ * For a 1-unit window (e.g. 9.5–10.5) this gives ~P(X = 10).
+ */
+function approxMiddleProbability(windowLow: number, windowHigh: number): number {
+  const lambda = (windowLow + windowHigh) / 2;
+  const kMin = Math.floor(windowLow) + 1;
+  const kMax = Math.floor(windowHigh);
+  let prob = 0;
+  for (let k = kMin; k <= kMax; k++) prob += poissonPmf(lambda, k);
+  return parseFloat(Math.min(prob, 1).toFixed(4));
+}
+
+/**
+ * Finds RISK-FREE middles in totals markets.
  *
- * Profitability: stake both at equal amounts.
- * - If result is OUTSIDE the window: one bet wins, one loses → net = odds_winner - 1 (return on 1 unit each)
- * - If result is INSIDE window: both win → profit = (odds_over - 1) + (odds_under - 1)
+ * A risk-free middle exists when:
+ *   Book A: Over X @ o1   Book B: Under Y @ o2   (Y > X, different books)
+ *   AND (o1 − 1)(o2 − 1) > 1  ←→  1/o1 + 1/o2 < 1
+ *
+ * This means EVEN IF the window [X, Y] misses, one of the legs still
+ * returns a profit on the total stakes — so the worst case is ≥ 0%.
+ * If the result falls inside the window both legs win → maximum profit.
  */
 export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
-  // Works for any market whose outcomes are TotalsLine (goals, corners, cards, etc.)
-
   const middles: DetectedMiddle[] = [];
 
-  // Gather all (line, over, under, bookmaker) from all books
-  const allLines: Array<{
-    bookmaker: string;
-    line: number;
-    over: number;
-    under: number;
-  }> = [];
+  // Max plausible live odds for O/U markets — anything higher is a stale/suspended line
+  const MAX_LIVE_ODDS = 12.0;
 
+  // Gather all (line, over, under, bookmaker) from all books
+  const allLines: Array<{ bookmaker: string; line: number; over: number; under: number }> = [];
   for (const [book, outcomes] of market.byBook) {
     if (!isTotals(outcomes)) continue;
-    for (const t of outcomes) {
-      allLines.push({ bookmaker: book, line: t.line, over: t.over, under: t.under });
-    }
+    for (const t of outcomes) allLines.push({ bookmaker: book, line: t.line, over: t.over, under: t.under });
   }
 
-  // Check every pair (overLine from bookA) vs (underLine from bookB) where underLine > overLine
   for (let i = 0; i < allLines.length; i++) {
     for (let j = 0; j < allLines.length; j++) {
       if (i === j) continue;
-      const overSide = allLines[i];
+      const overSide  = allLines[i];
       const underSide = allLines[j];
 
-      // Middle condition: we back Over X and Under Y where Y > X, from DIFFERENT bookmakers
+      // Need: Over X from book A, Under Y from book B, with Y > X
       if (underSide.line <= overSide.line) continue;
       if (overSide.bookmaker === underSide.bookmaker) continue;
 
-      const overOdds = overSide.over;
+      const overOdds  = overSide.over;
       const underOdds = underSide.under;
 
-      // Worst case: middle misses → one wins one loses
-      // Best case: middle hits → both win
-      // Calculate stakes for equal worst-case loss
-      // Stake s1 on Over at odds o1, stake s2 on Under at odds o2 (total = 1 unit)
-      // s1 + s2 = 1
-      // Worst case: min(s1*o1 - s2, s2*o2 - s1) (one leg loses, one wins)
-      // For equal worst-case return: s1*o1 - s2 = s2*o2 - s1
-      // s1*(o1+1) = s2*(o2+1)  → s1/s2 = (o2+1)/(o1+1)
-      // Stake for equal profit in both miss scenarios:
-      // s1*(overOdds-1) - s2 = s2*(underOdds-1) - s1  →  s1/s2 = underOdds/overOdds
+      // Discard stale/suspended lines
+      if (market.isLive && (overOdds > MAX_LIVE_ODDS || underOdds > MAX_LIVE_ODDS)) continue;
+
+      // Stakes that equalise the two miss-case returns:
+      // s1*(overOdds−1) − s2 = s2*(underOdds−1) − s1  →  s1/s2 = underOdds/overOdds
       const s1 = underOdds / (overOdds + underOdds); // stake on Over
       const s2 = 1 - s1;                              // stake on Under
 
-      // True net profit in each miss scenario (one leg wins, other loses):
       const missOverWins  = s1 * (overOdds  - 1) - s2; // Over wins, Under loses
       const missUnderWins = s2 * (underOdds - 1) - s1; // Under wins, Over loses
       const worstMissProfit = Math.min(missOverWins, missUnderWins);
 
-      // A real middle has a LOSS if the window misses. If both miss scenarios
-      // are profitable it's a cross-line surebet (stale/suspended odds), not a middle.
-      if (worstMissProfit >= 0) continue;
+      // RISK-FREE condition: miss case must also be profitable (no money lost)
+      if (worstMissProfit < 0) continue;
 
-      const hitReturn = s1 * overOdds + s2 * underOdds - 1;
-      const profitPct = parseFloat((hitReturn * 100).toFixed(2));
-      const worstLoss = parseFloat((worstMissProfit * 100).toFixed(2));
+      const hitReturn  = s1 * overOdds + s2 * underOdds - 1;
+      const profitPct  = parseFloat((worstMissProfit * 100).toFixed(2)); // guaranteed min
+      const maxProfitPct = parseFloat((hitReturn * 100).toFixed(2));     // hit max
 
-      // Only report if there's meaningful upside (middle profit > 5%)
-      if (profitPct < 5) continue;
+      // Require meaningful upside when window hits
+      if (maxProfitPct < 5) continue;
+
+      const middleProbability = approxMiddleProbability(overSide.line, underSide.line);
 
       const legs: ArbLeg[] = [
-        {
-          bookmaker: overSide.bookmaker,
-          selection: `Over ${overSide.line}`,
-          odds: overOdds,
-          stake: parseFloat((s1 * 100).toFixed(2)),
-        },
-        {
-          bookmaker: underSide.bookmaker,
-          selection: `Under ${underSide.line}`,
-          odds: underOdds,
-          stake: parseFloat((s2 * 100).toFixed(2)),
-        },
+        { bookmaker: overSide.bookmaker,  selection: `Over ${overSide.line}`,  odds: overOdds,  stake: parseFloat((s1 * 100).toFixed(2)) },
+        { bookmaker: underSide.bookmaker, selection: `Under ${underSide.line}`, odds: underOdds, stake: parseFloat((s2 * 100).toFixed(2)) },
       ];
 
       middles.push({
@@ -213,11 +213,13 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
         isLive: market.isLive,
         startTime: market.startTime,
         eventName: market.eventName,
-        market: `Totals ${overSide.line}/${underSide.line}`,
-        profitPct,
-        worstLoss,
+        market: market.market,   // e.g. "goals", "corners" — window info is in the leg selections
+        profitPct,               // min guaranteed
+        maxProfitPct,            // max (when window hits)
+        worstLoss: profitPct,    // same as profitPct (no loss, kept for DB compat)
         windowLow: overSide.line,
         windowHigh: underSide.line,
+        middleProbability,
         legs,
       });
     }
@@ -347,9 +349,27 @@ export function findArbs(markets: GroupedMarket[], minProfitPct: number): Detect
       const surebets = detectOverUnderSurebets(market);
       arbs.push(...surebets.filter((s) => s.profitPct >= minProfitPct));
       const middles = detectMiddles(market);
-      arbs.push(...middles.filter((m) => m.profitPct >= minProfitPct));
+      arbs.push(...dedupeMiddles(middles.filter((m) => m.profitPct >= minProfitPct)));
     }
   }
 
   return arbs;
+}
+
+/**
+ * For the same event + same Over-leg (book + line), only keep the middle with the
+ * highest hit-profit. This prevents 9 separate notifications for the same Over 1.5
+ * paired against Under 2.5, 3.5, 4.5... 9.5 — a common live-football pattern.
+ */
+function dedupeMiddles(middles: DetectedMiddle[]): DetectedMiddle[] {
+  // key = "eventName::overBook::overLine"
+  const best = new Map<string, DetectedMiddle>();
+  for (const m of middles) {
+    const overLeg = m.legs.find((l) => l.selection.startsWith("Over "));
+    if (!overLeg) continue;
+    const key = `${m.eventName}::${overLeg.bookmaker}::${overLeg.selection}`;
+    const prev = best.get(key);
+    if (!prev || m.maxProfitPct > prev.maxProfitPct) best.set(key, m);
+  }
+  return [...best.values()];
 }
