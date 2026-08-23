@@ -32,26 +32,26 @@ export const config = {
     password: process.env.RESIDENTIAL_PROXY_PASS ?? "",
     enabled: Boolean(process.env.RESIDENTIAL_PROXY_URL),
   },
-  // Phase 3 — per-scraper proxy routing
+  // Per-scraper proxy routing.
   // Empty string → direct connection (no proxy).
-  // Betsson + Winamax intentionally left empty (work fine via OVH IP).
+  // Priority: scraper-specific var → ROUTER_PROXY_URL (router LTE tunnel) → ""
+  // On router day: just set ROUTER_PROXY_URL=socks5://user:pass@tunnel-ip:port
   scraperProxies: {
-    bwin:        process.env.BWIN_PROXY_URL        ?? "",
-    sportium:    process.env.SPORTIUM_PROXY_URL    ?? "",
+    bwin:        process.env.BWIN_PROXY_URL        ?? process.env.ROUTER_PROXY_URL ?? "",
+    sportium:    process.env.SPORTIUM_PROXY_URL    ?? process.env.ROUTER_PROXY_URL ?? "",
     codere:      process.env.CODERE_PROXY_URL      ?? "",
-    williamhill: process.env.WILLIAMHILL_PROXY_URL ?? "",
-    daznbet:     process.env.DAZNBET_PROXY_URL     ?? "",
-    bet365:      process.env.BET365_PROXY_URL      ?? "",
+    williamhill: process.env.WILLIAMHILL_PROXY_URL ?? process.env.ROUTER_PROXY_URL ?? "",
+    daznbet:     process.env.DAZNBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
+    bet365:      process.env.BET365_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
     betfair:     process.env.BETFAIR_PROXY_URL     ?? "",
-    betsson:     process.env.BETSSON_PROXY_URL     ?? "",
+    betsson:     process.env.BETSSON_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
     winamax:     process.env.WINAMAX_PROXY_URL     ?? "",
-    kambi:       process.env.KAMBI_PROXY_URL       ?? "",
-    // Nuevas casas — comparten KAMBI_PROXY_URL o una genérica
-    pokerstars:  process.env.POKERSTARS_PROXY_URL  ?? process.env.KAMBI_PROXY_URL ?? "",
-    betway:      process.env.BETWAY_PROXY_URL      ?? process.env.KAMBI_PROXY_URL ?? "",
-    interwetten: process.env.INTERWETTEN_PROXY_URL ?? "",
-    betano:      process.env.BETANO_PROXY_URL      ?? "",
-    altenar:     process.env.ALTENAR_PROXY_URL     ?? "",
+    kambi:       process.env.KAMBI_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
+    pokerstars:  process.env.POKERSTARS_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
+    betway:      process.env.BETWAY_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
+    interwetten: process.env.INTERWETTEN_PROXY_URL ?? process.env.ROUTER_PROXY_URL ?? "",
+    betano:      process.env.BETANO_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
+    altenar:     process.env.ALTENAR_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
   },
   scanner: {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),

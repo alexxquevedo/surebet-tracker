@@ -165,6 +165,7 @@ export class KambiScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!config.scraperProxies.kambi) { this.log("Sin KAMBI_PROXY_URL — necesita proxy ES"); return []; }
     const settled = await Promise.allSettled(
       this.sports.map(s => this.scrapeForSport(s, true))
     );
@@ -172,6 +173,7 @@ export class KambiScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!config.scraperProxies.kambi) { this.log("Sin KAMBI_PROXY_URL — necesita proxy ES"); return []; }
     const settled = await Promise.allSettled(
       this.sports.map(s => this.scrapeForSport(s, false))
     );

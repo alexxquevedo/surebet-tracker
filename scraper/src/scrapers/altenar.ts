@@ -205,6 +205,7 @@ export class AltenarScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!config.scraperProxies.altenar) { this.log("Sin ALTENAR_PROXY_URL — necesita proxy ES"); return []; }
     const settled = await Promise.allSettled(
       this.sports.map(s => this.scrapeForSport(s, true))
     );
@@ -212,6 +213,7 @@ export class AltenarScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!config.scraperProxies.altenar) { this.log("Sin ALTENAR_PROXY_URL — necesita proxy ES"); return []; }
     const settled = await Promise.allSettled(
       this.sports.map(s => this.scrapeForSport(s, false))
     );
