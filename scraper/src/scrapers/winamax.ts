@@ -147,6 +147,94 @@ function mergeWsMessage(state: Record<string, any>, msg: Record<string, any>): v
   }
 }
 
+// ─── Secondary market parsing (corners, cards, handicap, O/U goals, player props) ────
+
+// Maps French bet titles to canonical market keys
+const MARKET_CAT_MAP: Array<[RegExp, string]> = [
+  // ── Handicap (must come before goals to avoid "buts handicap" matching goals) ──
+  [/handicap|hándicap/i,                                                            "handicap"],
+  // ── Corners ──
+  [/corners?|coups?\s+de\s+coin/i,                                                 "corners"],
+  // ── Cards ──
+  [/cartons?\s+jaunes?/i,                                                           "yellow_cards"],
+  [/cartons?\s+rouges?/i,                                                           "red_cards"],
+  [/cartons?\s+totaux|total\s+cartons?/i,                                           "cards"],
+  // ── Half goals ──
+  [/(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)/i, "h1_goals"],
+  [/(?:2[eè]me?|deuxi[eè]me?)\s*mi[\s-]?temps/i,                                  "h2_goals"],
+  // ── Goals (full match) ──
+  [/nombre\s+de\s+buts?|total\s+buts?|\bbuts?\b/i,                                 "goals"],
+  // ── Tennis / Padel ──
+  [/\baces?\b/i,                                                                    "aces"],
+  [/double[s]?\s*faute[s]?/i,                                                      "double_faults"],
+  [/nombre\s+de\s+jeux|total\s+jeux|\bjeux\b/i,                                    "games"],
+  [/nombre\s+de\s+sets?|total\s+sets?|\bsets?\b/i,                                 "sets"],
+  // ── Basketball (non-player totals) ──
+  [/nombre\s+de\s+points?|total\s+points?|points?\s+du\s+match/i,                  "match_points"],
+];
+
+function classifyBetTitle(title: string): string | null {
+  for (const [re, cat] of MARKET_CAT_MAP) {
+    if (re.test(title)) return cat;
+  }
+  return null;
+}
+
+function parseOverUnderOutcomes(
+  outcomeIds: (number | string)[],
+  odds: Record<string, any>,
+  outcomesMeta: Record<string, any>,
+): TotalsLine[] {
+  const byLine = new Map<number, { over: number; under: number }>();
+  for (const oId of outcomeIds) {
+    const rawOdds = odds[String(oId)];
+    if (rawOdds == null) continue;
+    const oOdds = Number(rawOdds);
+    if (oOdds < 1.01) continue;
+    const label = (outcomesMeta[String(oId)]?.label ?? "").toLowerCase();
+    const lineMatch = label.match(/(\d+[.,]\d+|\d+)/);
+    if (!lineMatch) continue;
+    const line = parseFloat(lineMatch[1].replace(",", "."));
+    const isOver  = /plus\s*de|more\s*than|\bover\b|más\s*de|mais\s*de/i.test(label);
+    const isUnder = /moins\s*de|less\s*than|\bunder\b|menos\s*de/i.test(label);
+    if (!isOver && !isUnder) continue;
+    const cur = byLine.get(line) ?? { over: 0, under: 0 };
+    if (isOver  && oOdds > cur.over)  cur.over  = oOdds;
+    if (isUnder && oOdds > cur.under) cur.under = oOdds;
+    byLine.set(line, cur);
+  }
+  return [...byLine.entries()]
+    .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+    .map(([line, { over, under }]) => ({ line, over, under }));
+}
+
+function parseHandicapOutcomes(
+  outcomeIds: (number | string)[],
+  odds: Record<string, any>,
+  outcomesMeta: Record<string, any>,
+  homeName: string,
+  awayName: string,
+): H2HOutcome[] {
+  const out: H2HOutcome[] = [];
+  for (const oId of outcomeIds) {
+    const rawOdds = odds[String(oId)];
+    if (rawOdds == null) continue;
+    const oOdds = Number(rawOdds);
+    if (oOdds < 1.01) continue;
+    const label = outcomesMeta[String(oId)]?.label ?? "";
+    const hcapMatch = label.match(/([+-]\s*\d+[.,]?\d*)/);
+    if (!hcapMatch) continue;
+    const hcap = hcapMatch[1].replace(/\s/, "").replace(",", ".");
+    const isHome = /[eé]quipe\s*1|\bteam\s*1\b|\(1\)|\bhome\b/i.test(label)
+      || (homeName.length > 3 && label.toLowerCase().includes(homeName.slice(0, 4).toLowerCase()));
+    const isAway = /[eé]quipe\s*2|\bteam\s*2\b|\(2\)|\baway\b/i.test(label)
+      || (awayName.length > 3 && label.toLowerCase().includes(awayName.slice(0, 4).toLowerCase()));
+    if (isHome) out.push({ name: `Home (${hcap})`, odds: oOdds });
+    else if (isAway) out.push({ name: `Away (${hcap})`, odds: oOdds });
+  }
+  return out;
+}
+
 // ─── Player prop parsing ──────────────────────────────────────────────────────
 
 // Winamax FR bet titles for player props (French labels)
@@ -294,48 +382,72 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       });
     }
 
-    // ── Player props (basketball only) ───────────────────────────────────────
-    // Only parse player props for basketball — they're NBA/EuroLeague player stat markets
-    if (sport === "BASKETBALL") {
-      const matchId = String(match.matchId ?? match.id ?? "");
-      // All bet IDs for this match: explicit list OR match.bets array OR indexed by matchId
-      const allBetIds: string[] = [
-        ...((match.bets ?? match.betIds ?? []) as (number | string)[]).map(String),
-        ...(matchId ? betsByMatch.get(matchId) ?? [] : []),
-      ].filter((id) => id && id !== String(mainBetId));
+    // ── Secondary markets (ALL sports) ──────────────────────────────────────
+    // Corners, cards, handicap, O/U goals, player props — any bet that's not the main H2H
+    const matchId = String(match.matchId ?? match.id ?? "");
+    const secondaryBetIds = new Set<string>([
+      ...((match.bets ?? match.betIds ?? []) as (number | string)[]).map(String),
+      ...(matchId ? betsByMatch.get(matchId) ?? [] : []),
+    ]);
+    secondaryBetIds.delete(String(mainBetId));
 
-      if (allBetIds.length === 0 && matchId) {
-        // Fallback: scan ALL bets for those belonging to this match
-        for (const [betId, b] of Object.entries(bets)) {
-          if (String(b?.matchId ?? b?.match_id) === matchId && betId !== String(mainBetId)) {
-            allBetIds.push(betId);
-          }
+    // Fallback: scan all bets in state when match.bets is absent
+    if (secondaryBetIds.size === 0 && matchId) {
+      for (const [betId, b] of Object.entries(bets)) {
+        if (String(b?.matchId ?? b?.match_id) === matchId && betId !== String(mainBetId)) {
+          secondaryBetIds.add(betId);
         }
       }
+    }
 
-      const propLines: PlayerPropLine[] = [];
-      for (const betId of allBetIds) {
-        const propBet = bets[betId];
-        if (!propBet || !Array.isArray(propBet.outcomes)) continue;
-        const betTitle: string = propBet.betTitle ?? propBet.title ?? propBet.label ?? propBet.name ?? "";
-        if (!betTitle) continue;
-        const prop = parsePlayerPropBet(betTitle, propBet.outcomes, odds, outcomesMeta);
-        if (prop) propLines.push(prop);
+    // Accumulate parsed outcomes by market key
+    const marketAcc = new Map<string, TotalsLine[] | H2HOutcome[] | PlayerPropLine[]>();
+
+    for (const betId of secondaryBetIds) {
+      const b = bets[betId];
+      if (!b || !Array.isArray(b.outcomes) || b.outcomes.length < 2) continue;
+      const betTitle: string = b.betTitle ?? b.title ?? b.label ?? b.name ?? "";
+      if (!betTitle) continue;
+
+      // 1. Try player prop first ("Player Name - Stat" format, any sport)
+      const prop = parsePlayerPropBet(betTitle, b.outcomes, odds, outcomesMeta);
+      if (prop) {
+        if (!marketAcc.has("player_props")) marketAcc.set("player_props", []);
+        (marketAcc.get("player_props") as PlayerPropLine[]).push(prop);
+        continue;
       }
 
-      if (propLines.length > 0) {
-        logger(`Props ${title}: ${propLines.length} player prop lines (${allBetIds.length} bets scanned)`);
-        events.push({
-          bookmaker: "winamax", sport, eventKey, eventName: title,
-          league, isLive, market: "player_props", outcomes: propLines,
-        });
-      } else if (allBetIds.length > 0) {
-        // Log a sample of bet titles to help debug when props are absent
-        const sample = allBetIds.slice(0, 5)
-          .map(id => bets[id]?.betTitle ?? bets[id]?.title ?? "?")
-          .join(" | ");
-        logger(`No props for ${title} (${allBetIds.length} bets, sample: ${sample.slice(0, 100)})`);
+      // 2. Classify by bet title (corners, cards, goals, handicap, tennis, etc.)
+      const cat = classifyBetTitle(betTitle);
+      if (!cat) continue;
+
+      if (cat === "handicap") {
+        const hOuts = parseHandicapOutcomes(b.outcomes, odds, outcomesMeta, homeName, awayName);
+        if (hOuts.length >= 2) {
+          if (!marketAcc.has("handicap")) marketAcc.set("handicap", []);
+          (marketAcc.get("handicap") as H2HOutcome[]).push(...hOuts);
+        }
+      } else {
+        // Over/Under market
+        const lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta);
+        if (lines.length > 0) {
+          if (!marketAcc.has(cat)) marketAcc.set(cat, []);
+          (marketAcc.get(cat) as TotalsLine[]).push(...lines);
+        }
       }
+    }
+
+    // Emit one ScrapedEvent per market key
+    for (const [mkt, outs] of marketAcc) {
+      events.push({
+        bookmaker: "winamax", sport, eventKey, eventName: title,
+        league, isLive, market: mkt, outcomes: outs,
+      });
+    }
+
+    if (secondaryBetIds.size > 0) {
+      const mkts = [...marketAcc.keys()].join(", ") || "none";
+      logger(`${title}: ${secondaryBetIds.size} secondary bets → markets: ${mkts}`);
     }
   }
   return events;

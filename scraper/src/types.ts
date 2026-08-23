@@ -34,7 +34,8 @@ export interface ScrapedEvent {
   league?: string;
   startTime?: Date;
   isLive: boolean;
-  market: "h2h" | "totals" | "handicap" | "player_props";
+  // "h2h" | "totals" | "handicap" | "player_props" | "corners" | "goals" | "yellow_cards" | ...
+  market: string;
   outcomes: MarketOutcomes;
 }
 
@@ -80,7 +81,6 @@ export interface GroupedMarket {
   eventName: string;
   sport: Sport;
   isLive: boolean;
-  market: "h2h" | "totals" | "player_props";
-  // bookmaker → outcomes
+  market: string;  // "h2h" | "handicap" | "totals" | "player_props" | "corners" | "goals" | ...
   byBook: Map<string, MarketOutcomes>;
 }

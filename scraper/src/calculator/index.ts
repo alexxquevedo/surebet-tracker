@@ -60,7 +60,7 @@ function normalizeOutcomeName(name: string): string {
  * If sum of implied probs < 1 → surebet exists.
  */
 export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
-  if (market.market !== "h2h") return null;
+  if (market.market !== "h2h" && market.market !== "handicap") return null;
 
   // Collect all unique selection names across all bookmakers (normalized)
   const allNames = new Set<string>();
@@ -129,7 +129,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
  * - If result is INSIDE window: both win → profit = (odds_over - 1) + (odds_under - 1)
  */
 export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
-  if (market.market !== "totals") return [];
+  // Works for any market whose outcomes are TotalsLine (goals, corners, cards, etc.)
 
   const middles: DetectedMiddle[] = [];
 
@@ -274,21 +274,71 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
   return surebets;
 }
 
+// ─── Generic Over/Under surebet detection (corners, goals, cards, etc.) ──────
+
+/**
+ * For any over/under market (not player props): find same-line Over from book A
+ * and Under from book B where combined implied probability < 1.
+ * Works for corners, goals, yellow cards, aces, games, sets, etc.
+ */
+export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[] {
+  type Best = { odds: number; book: string };
+  const lineMap = new Map<number, { over: Best | null; under: Best | null }>();
+
+  for (const [book, outcomes] of market.byBook) {
+    if (!isTotals(outcomes)) continue;
+    for (const t of outcomes) {
+      const cur = lineMap.get(t.line) ?? { over: null, under: null };
+      if (t.over  >= 1.01 && (!cur.over  || t.over  > cur.over.odds))  cur.over  = { odds: t.over,  book };
+      if (t.under >= 1.01 && (!cur.under || t.under > cur.under.odds)) cur.under = { odds: t.under, book };
+      lineMap.set(t.line, cur);
+    }
+  }
+
+  const surebets: DetectedSurebet[] = [];
+  for (const [line, { over, under }] of lineMap) {
+    if (!over || !under || over.book === under.book) continue;
+    const implied = 1 / over.odds + 1 / under.odds;
+    if (implied >= 1.0) continue;
+    const profitPct = parseFloat(((1 / implied - 1) * 100).toFixed(2));
+    const stakes = distributeStakes([over.odds, under.odds]);
+    surebets.push({
+      type: "SUREBET",
+      sport: market.sport,
+      isLive: market.isLive,
+      eventName: market.eventName,
+      market: `${market.market} O/U ${line}`,
+      profitPct,
+      legs: [
+        { bookmaker: over.book,  selection: `Over ${line}`,  odds: over.odds,  stake: stakes[0] },
+        { bookmaker: under.book, selection: `Under ${line}`, odds: under.odds, stake: stakes[1] },
+      ],
+    });
+  }
+  return surebets;
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export function findArbs(markets: GroupedMarket[], minProfitPct: number): DetectedArb[] {
   const arbs: DetectedArb[] = [];
 
   for (const market of markets) {
-    if (market.market === "h2h") {
+    if (market.market === "h2h" || market.market === "handicap") {
       const arb = detectSurebet(market);
       if (arb && arb.profitPct >= minProfitPct) arbs.push(arb);
-    } else if (market.market === "totals") {
-      const middles = detectMiddles(market);
-      arbs.push(...middles.filter((m) => m.profitPct >= minProfitPct));
     } else if (market.market === "player_props") {
       const props = detectPlayerPropSurebets(market);
       arbs.push(...props.filter((p) => p.profitPct >= minProfitPct));
+    } else {
+      // Generic over/under market (corners, goals, cards, games, sets, etc.)
+      // Inspect outcome type to confirm TotalsLine before running detectors
+      const sampleOutcomes = [...market.byBook.values()][0];
+      if (!sampleOutcomes || !isTotals(sampleOutcomes)) continue;
+      const surebets = detectOverUnderSurebets(market);
+      arbs.push(...surebets.filter((s) => s.profitPct >= minProfitPct));
+      const middles = detectMiddles(market);
+      arbs.push(...middles.filter((m) => m.profitPct >= minProfitPct));
     }
   }
 
