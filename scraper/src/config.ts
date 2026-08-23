@@ -68,7 +68,7 @@ export const BOOKMAKERS = [
   "betfair", "winamax", "bet365", "codere", "sportium",
   "bwin", "williamhill", "betsson", "daznbet", "pokerstars",
   "leovegas", "888sport", "casumo", "luckia", "retabet",
-  "betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid",
+  "betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet",
 ] as const;
 
 export type BookmakerKey = (typeof BOOKMAKERS)[number];

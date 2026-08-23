@@ -62,7 +62,8 @@ DEFAULT_USER_CONFIG = {
     "block_draw_risk_surebets": False,
     "sports": {
         "soccer": True, "basketball": True,
-        "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
+        "tennis": True, "volleyball": True,
+        "americanfootball_nfl": True, "icehockey_nhl": True,
         "baseball_mlb": True, "rugbyleague": True,
     },
     "bookmakers": {},  # se sobreescribe abajo con {k: True for k in BOOKMAKERS}
@@ -115,6 +116,7 @@ SPORT_DISPLAY = {
     "soccer":               ("⚽", "Fútbol"),
     "basketball":           ("🏀", "Baloncesto"),
     "tennis":               ("🎾", "Tenis"),
+    "volleyball":           ("🏐", "Voleibol"),
     "americanfootball_nfl": ("🏈", "Fútbol Americano"),
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
     "baseball_mlb":         ("⚾", "Béisbol"),
@@ -169,6 +171,7 @@ BOOKMAKERS: dict[str, dict] = {
     "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
     "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": False},
     "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": False},
+    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -2485,12 +2488,8 @@ async def menu_cfg_casas(update, context):
         f"• Valuebets: 1 casa mín.\n\n"
         f"_Toca cualquier casa para activarla o desactivarla._"
     )
-    # Seleccionar/Deseleccionar todo primero
-    keyboard = [
-        [InlineKeyboardButton("✅ Seleccionar todo", callback_data="casas_todas"),
-         InlineKeyboardButton("🔴 Deseleccionar todo", callback_data="casas_ninguna")],
-    ]
     # Botones de casas de 2 en 2
+    keyboard = []
     items = list(BOOKMAKER_NAMES.items())
     for i in range(0, len(items), 2):
         fila = [
@@ -2501,9 +2500,10 @@ async def menu_cfg_casas(update, context):
         ]
         keyboard.append(fila)
     keyboard.append([
-        InlineKeyboardButton("💾 Guardar", callback_data="menu_config"),
-        InlineKeyboardButton("🔙 Retroceder", callback_data="menu_config"),
+        InlineKeyboardButton("✅ Seleccionar todo", callback_data="casas_todas"),
+        InlineKeyboardButton("🔴 Deseleccionar todo", callback_data="casas_ninguna"),
     ])
+    keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
         texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
