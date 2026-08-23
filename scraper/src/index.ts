@@ -68,6 +68,25 @@ const scrapers: BaseScraper[] = [
   new RetabetScraper(),
 ];
 
+// ─── Sport → Prisma enum mapping ─────────────────────────────────────────────
+// VPS Prisma SportType: FOOTBALL|TENNIS|BASKETBALL|BASEBALL|HOCKEY|CRICKET|RUGBY|GOLF|MMA|BOXING|OTHER
+// Our internal Sport type has more values — map to nearest Prisma equivalent.
+const SPORT_TO_PRISMA: Record<string, string> = {
+  FOOTBALL:         "FOOTBALL",
+  TENNIS:           "TENNIS",
+  BASKETBALL:       "BASKETBALL",
+  BASEBALL:         "BASEBALL",
+  ICEHOCKEY:        "HOCKEY",
+  HOCKEY:           "HOCKEY",
+  RUGBYLEAGUE:      "RUGBY",
+  RUGBY:            "RUGBY",
+  AMERICANFOOTBALL: "OTHER",
+  VOLLEYBALL:       "OTHER",
+};
+function toPrismaSport(sport: string): string {
+  return SPORT_TO_PRISMA[sport] ?? "OTHER";
+}
+
 // ─── DB persistence ───────────────────────────────────────────────────────────
 
 async function saveOdds(events: ScrapedEvent[]): Promise<void> {
@@ -93,7 +112,7 @@ async function saveOdds(events: ScrapedEvent[]): Promise<void> {
       },
       create: {
         bookmaker: e.bookmaker,
-        sport: e.sport as any,
+        sport: toPrismaSport(e.sport) as any,
         eventKey: e.eventKey,
         eventName: e.eventName,
         league: e.league ?? null,
@@ -114,7 +133,7 @@ async function saveDetectedArb(
   const record = await prisma.detectedArb.create({
     data: {
       type: arb.type,
-      sport: arb.sport as any,
+      sport: toPrismaSport(arb.sport) as any,
       isLive: arb.isLive,
       eventName: arb.eventName,
       market: arb.market,
