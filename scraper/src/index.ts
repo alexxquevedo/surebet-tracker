@@ -114,7 +114,7 @@ async function saveDetectedArb(
   const record = await prisma.detectedArb.create({
     data: {
       type: arb.type,
-      sport: arb.sport,
+      sport: arb.sport as any,
       isLive: arb.isLive,
       eventName: arb.eventName,
       market: arb.market,
