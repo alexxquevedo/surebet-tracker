@@ -166,13 +166,13 @@ BOOKMAKERS: dict[str, dict] = {
     "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
     # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
-    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": False},
-    "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
-    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": False},
-    "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
-    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": False},
-    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": False},
-    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": False},
+    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
+    "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
+    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
+    "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
+    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": True},
+    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
+    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -489,6 +489,10 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
         cfg.get("bookmakers", {}).pop("marathonbet", None)   # eliminada del mercado español
+        # Migrar casas nuevas que se añadieron con default=False por error — activarlas para usuarios existentes
+        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
+            if cfg.get("bookmakers", {}).get(_bk_new) is False:
+                cfg["bookmakers"][_bk_new] = True
         # Migrar min_profit_surebet de 3.0 (default antiguo) a 1.5 (más útil en la práctica)
         if cfg.get("min_profit_surebet") == 3.0:
             cfg["min_profit_surebet"] = 1.5
