@@ -131,9 +131,18 @@ function parseMatches(matches: any[], sport: Sport, isLive: boolean, league: str
           const lm = lbl.match(/(\d+[.,]\d+)/);
           if (!lm || odds < 1.01) continue;
           const line = parseFloat(lm[1].replace(",", "."));
+          const isOver  = lbl.includes("más") || lbl.includes("over")
+            || (lbl.includes("plus") && !lbl.includes("au plus"));   // "au plus" = at most = Under
+          const isUnder = lbl.includes("menos") || lbl.includes("under")
+            || (lbl.includes("moins") && !lbl.includes("au moins"))  // "au moins" = at least = Over
+            || lbl.includes("au plus");
+          // "+1.5" / "-1.5" notation when no keyword present — require explicit sign
+          const hasPlusSuffix  = !isOver && !isUnder && /^\+\d/.test(lbl.trim());
+          const hasMinusSuffix = !isOver && !isUnder && lbl.trim().startsWith("-");
           const entry = byLine.get(line) ?? { line, over: 0, under: 0 };
-          if (lbl.includes("más") || lbl.includes("over") || lbl.includes("+") || lbl.includes("plus")) entry.over = odds;
-          else entry.under = odds;
+          if (isOver  || hasPlusSuffix)  entry.over  = odds;
+          else if (isUnder || hasMinusSuffix) entry.under = odds;
+          // else: unrecognized label — skip rather than guessing
           byLine.set(line, entry);
         }
         const totals = [...byLine.values()].filter(t => t.over > 0 && t.under > 0);
@@ -207,6 +216,7 @@ function parseOverUnderOutcomes(
   outcomeIds: (number | string)[],
   odds: Record<string, any>,
   outcomesMeta: Record<string, any>,
+  debugTag?: string,
 ): TotalsLine[] {
   const byLine = new Map<number, { over: number; under: number }>();
   for (const oId of outcomeIds) {
@@ -214,12 +224,18 @@ function parseOverUnderOutcomes(
     if (rawOdds == null) continue;
     const oOdds = Number(rawOdds);
     if (oOdds < 1.01) continue;
-    const label = (outcomesMeta[String(oId)]?.label ?? "").toLowerCase();
+    const rawLabel: string = outcomesMeta[String(oId)]?.label ?? "";
+    const label = rawLabel.toLowerCase();
     const lineMatch = label.match(/(\d+[.,]\d+|\d+)/);
     if (!lineMatch) continue;
     const line = parseFloat(lineMatch[1].replace(",", "."));
-    const isOver  = /plus\s*de|more\s*than|\bover\b|más\s*de|mais\s*de/i.test(label);
-    const isUnder = /moins\s*de|less\s*than|\bunder\b|menos\s*de/i.test(label);
+    const isOver  = /plus\s*de|more\s*than|\bover\b|más\s*de|mais\s*de/i.test(label)
+      || (!(/moins\s*de|less\s*than|\bunder\b|menos\s*de/i.test(label)) && /^\+/.test(label.trim()));
+    const isUnder = /moins\s*de|less\s*than|\bunder\b|menos\s*de/i.test(label)
+      || (!(/plus\s*de|more\s*than|\bover\b|más\s*de|mais\s*de/i.test(label)) && /^-/.test(label.trim()));
+    if (debugTag) {
+      console.log(`[wm-ou-debug] ${debugTag} oId=${oId} label="${rawLabel}" odds=${oOdds} isOver=${isOver} isUnder=${isUnder}`);
+    }
     if (!isOver && !isUnder) continue;
     const cur = byLine.get(line) ?? { over: 0, under: 0 };
     if (isOver  && oOdds > cur.over)  cur.over  = oOdds;
@@ -415,12 +431,12 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
 
       const labelFromMeta: string = outcomesMeta[String(oId)]?.label ?? "";
       let name: string;
-      if (labelFromMeta) {
-        name = labelFromMeta;
-      } else if (template === "3way") {
+      if (template === "3way") {
         name = i === 0 ? homeName : i === 1 ? "X" : awayName;
       } else if (template === "2way") {
         name = i === 0 ? homeName : awayName;
+      } else if (labelFromMeta) {
+        name = labelFromMeta;
       } else {
         name = String(i + 1);
       }
@@ -429,7 +445,10 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
 
     const eventKey = buildEventKey(sport, title, undefined);
     const tournamentId: number = match.tournamentId;
-    const league: string = tournamentId ? `tournament_${tournamentId}` : "";
+    const tournaments: Record<string, any> = state.tournaments ?? state.competitions ?? {};
+    const league: string = tournaments[String(tournamentId)]?.name
+      ?? tournaments[String(tournamentId)]?.title
+      ?? "";
 
     if (h2h.length >= 2) {
       events.push({
@@ -440,6 +459,14 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
 
     // ── Secondary markets (ALL sports) ──────────────────────────────────────
     // Corners, cards, handicap, O/U goals, player props — any bet that's not the main H2H
+    //
+    // IMPORTANT: For LIVE games, the Winamax WS delivers secondary-market odds once
+    // at subscription time (triggered by scroll) — these are the PRE-MATCH values, not
+    // the current live prices. Relying on them produces wildly incorrect alerts
+    // (e.g. Under 4.5 @4.10 in a live game already at 1-1 where the real price is @1.05).
+    // Skip secondary markets for live games; live O/U/corners come from Codere instead.
+    if (isLive) continue;
+
     const matchId = String(match.matchId ?? match.id ?? "");
     const secondaryBetIds = new Set<string>([
       ...((match.bets ?? match.betIds ?? []) as (number | string)[]).map(String),
@@ -473,6 +500,21 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
         continue;
       }
 
+      // Skip combination bets (e.g. "Résultat et nombre de buts") — their outcomes mix
+      // team-win probability into the totals odds, producing wildly inflated values.
+      // Also skip per-team goal markets ("Nombre de buts de {Team}") to avoid confusing
+      // individual-team totals with whole-match totals.
+      const betTitleLow = betTitle.toLowerCase();
+      const SKIP_COMBO = /résultat\s+et\b|tiers[\s-]temps\s+avec|quart[\s-]temps\s+avec|mi[\s-]temps\s+avec\s+le?\s+plus/i;
+      if (SKIP_COMBO.test(betTitle)) continue;
+      const homeLow = homeName.toLowerCase();
+      const awayLow = awayName.toLowerCase();
+      // If bet title includes a significant portion of either team's name, it's per-team
+      const isPerTeam =
+        (homeLow.length > 4 && betTitleLow.includes(homeLow.slice(0, 5))) ||
+        (awayLow.length > 4 && betTitleLow.includes(awayLow.slice(0, 5)));
+      if (isPerTeam) continue;
+
       // 2. Classify by bet title (corners, cards, goals, handicap, tennis, etc.)
       const cat = classifyBetTitle(betTitle, sport);
       if (!cat) continue;
@@ -484,8 +526,9 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
           (marketAcc.get("handicap") as H2HOutcome[]).push(...hOuts);
         }
       } else {
-        // Over/Under market
-        const lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta);
+        // Over/Under market — debugTag only for non-obvious odds (temp diagnostic)
+        const debugTag: string | undefined = undefined; // set to `${title}|${betTitle}` to re-enable
+        const lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta, debugTag);
         if (lines.length > 0) {
           if (!marketAcc.has(cat)) marketAcc.set(cat, []);
           (marketAcc.get(cat) as TotalsLine[]).push(...lines);

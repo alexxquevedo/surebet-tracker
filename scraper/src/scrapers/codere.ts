@@ -319,13 +319,16 @@ function buildH2HEvent(
 ): ScrapedEvent | null {
   if (!results || results.length < 2) return null;
   const sorted = [...results].sort((a, b) => (a.SortOrder ?? 0) - (b.SortOrder ?? 0));
+  const NON_H2H = /\b(goles?|tarjetas?|c[oó]rner|sin\s+gol|btts|rojas?)\b/i;
   const outcomes: H2HOutcome[] = sorted
     .map((r: any) => {
       const odds = parseFloat(String(r.Odd ?? 0));
       const name: string = r.Name ?? "";
+      if (NON_H2H.test(name)) return null;
       return odds >= 1.01 && name ? { name, odds } : null;
     })
-    .filter(Boolean) as H2HOutcome[];
+    .filter(Boolean)
+    .slice(0, 3) as H2HOutcome[];  // 1X2 never exceeds 3 outcomes
   if (outcomes.length < 2) return null;
   const eventKey = buildEventKey(sport, eventName, startTime);
   return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "h2h", outcomes };

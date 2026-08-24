@@ -184,6 +184,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       sport: true,
       eventKey: true,
       eventName: true,
+      league: true,
       isLive: true,
       startTime: true,
       market: true,
@@ -206,6 +207,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       groupMap.set(key, {
         eventKey: row.eventKey,
         eventName: row.eventName,
+        league: row.league ?? undefined,
         sport: row.sport as unknown as Sport,
         isLive: row.isLive,
         startTime: row.startTime ?? undefined,
@@ -275,10 +277,12 @@ async function sendAdminAlert(text: string): Promise<void> {
 const WORKING_SCRAPERS = ["winamax", "codere"]; // never use proxy
 let zeroCyclesLive = 0;
 let zeroCyclesPrematch = 0;
-// Rate-limit critical alerts: only send once per 30 min per mode to avoid spam
+// Rate-limit alerts: only send once per 30 min per mode to avoid spam
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
 let lastAlertLive = 0;
 let lastAlertPrematch = 0;
+let lastRecoveredLive = 0;
+let lastRecoveredPrematch = 0;
 
 function isProxyIssue(resultsMap: Map<string, number>): boolean {
   // If ANY working scraper has events, the scanner core is fine — proxy issue only
@@ -356,7 +360,12 @@ async function pollCycle(isLive: boolean): Promise<void> {
   if (isLive) { zeroCyclesLive = 0; if (wasDown) lastAlertLive = Date.now(); }
   else { zeroCyclesPrematch = 0; if (wasDown) lastAlertPrematch = Date.now(); }
   if (wasDown) {
-    await sendAdminAlert(`✅ <b>Recuperado — FidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
+    const lastRec = isLive ? lastRecoveredLive : lastRecoveredPrematch;
+    if (Date.now() - lastRec >= ALERT_COOLDOWN_MS) {
+      await sendAdminAlert(`✅ <b>Recuperado — FidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
+      if (isLive) lastRecoveredLive = Date.now();
+      else lastRecoveredPrematch = Date.now();
+    }
   }
 
   // 2. Persist odds to DB

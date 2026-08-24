@@ -62,6 +62,9 @@ function normalizeOutcomeName(name: string): string {
 export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   if (market.market !== "h2h" && market.market !== "handicap") return null;
 
+  // Live h2h odds above this threshold are almost certainly stale/suspended prices
+  const MAX_LIVE_H2H_ODDS = 12.0;
+
   // Collect all unique selection names across all bookmakers (normalized)
   const allNames = new Set<string>();
   for (const outcomes of market.byBook.values()) {
@@ -91,6 +94,14 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
 
   if (bestPerSelection.length < 2) return null;
 
+  // Reject live arbs where any leg has suspiciously high odds — almost certainly stale
+  if (market.isLive && bestPerSelection.some((s) => s.odds > MAX_LIVE_H2H_ODDS)) return null;
+
+  // Each outcome must come from a different bookmaker — one bookie covering two legs
+  // of the same market is not a real surebet (requires 3+ bookmakers for 3-way markets)
+  const usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
+  if (usedBooks.size < bestPerSelection.length) return null;
+
   const impliedSum = bestPerSelection.reduce((sum, s) => sum + 1 / s.odds, 0);
   if (impliedSum >= 1) return null; // No arb
 
@@ -110,6 +121,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     isLive: market.isLive,
     startTime: market.startTime,
     eventName: market.eventName,
+    league: market.league,
     market: market.market,
     profitPct,
     legs,
@@ -213,6 +225,7 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
         isLive: market.isLive,
         startTime: market.startTime,
         eventName: market.eventName,
+        league: market.league,
         market: market.market,   // e.g. "goals", "corners" — window info is in the leg selections
         profitPct,               // min guaranteed
         maxProfitPct,            // max (when window hits)
@@ -245,9 +258,11 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
   type Best = { odds: number; book: string };
   const propMap = new Map<string, { over: Best | null; under: Best | null }>();
 
+  const MAX_LIVE_ODDS = 12.0;
   for (const [book, outcomes] of market.byBook) {
     if (!isPlayerProps(outcomes)) continue;
     for (const prop of outcomes) {
+      if (market.isLive && (prop.over > MAX_LIVE_ODDS || prop.under > MAX_LIVE_ODDS)) continue;
       const key = `${prop.player}::${prop.stat}::${prop.line}`;
       const cur = propMap.get(key) ?? { over: null, under: null };
       if (prop.over  >= 1.01 && (!cur.over  || prop.over  > cur.over.odds))  cur.over  = { odds: prop.over,  book };
@@ -272,6 +287,7 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
       isLive: market.isLive,
       startTime: market.startTime,
       eventName: market.eventName,
+      league: market.league,
       market: "player_props",
       profitPct,
       legs: [
@@ -292,12 +308,15 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
  * Works for corners, goals, yellow cards, aces, games, sets, etc.
  */
 export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[] {
+  const MAX_LIVE_ODDS = 12.0;
   type Best = { odds: number; book: string };
   const lineMap = new Map<number, { over: Best | null; under: Best | null }>();
 
   for (const [book, outcomes] of market.byBook) {
     if (!isTotals(outcomes)) continue;
     for (const t of outcomes) {
+      // Discard stale/suspended live lines
+      if (market.isLive && (t.over > MAX_LIVE_ODDS || t.under > MAX_LIVE_ODDS)) continue;
       const cur = lineMap.get(t.line) ?? { over: null, under: null };
       if (t.over  >= 1.01 && (!cur.over  || t.over  > cur.over.odds))  cur.over  = { odds: t.over,  book };
       if (t.under >= 1.01 && (!cur.under || t.under > cur.under.odds)) cur.under = { odds: t.under, book };
@@ -318,6 +337,7 @@ export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[
       isLive: market.isLive,
       startTime: market.startTime,
       eventName: market.eventName,
+      league: market.league,
       market: `${market.market} O/U ${line}`,
       profitPct,
       legs: [

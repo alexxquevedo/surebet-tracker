@@ -55,6 +55,7 @@ export interface DetectedSurebet {
   isLive: boolean;
   startTime?: Date;
   eventName: string;
+  league?: string;
   market: string;
   profitPct: number;
   legs: ArbLeg[];
@@ -66,6 +67,7 @@ export interface DetectedMiddle {
   isLive: boolean;
   startTime?: Date;
   eventName: string;
+  league?: string;
   market: string;
   /** Guaranteed minimum profit even if window misses (always ≥ 0 for risk-free middles) */
   profitPct: number;
@@ -87,6 +89,7 @@ export type DetectedArb = DetectedSurebet | DetectedMiddle;
 export interface GroupedMarket {
   eventKey: string;
   eventName: string;
+  league?: string;
   sport: Sport;
   isLive: boolean;
   startTime?: Date;

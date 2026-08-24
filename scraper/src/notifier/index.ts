@@ -10,16 +10,23 @@ import type { DetectedArb, DetectedSurebet, DetectedMiddle } from "../types";
 
 const TG_API = `https://api.telegram.org/bot${config.telegram.token}`;
 
-async function sendMessage(chatId: string, text: string): Promise<void> {
+async function sendMessage(
+  chatId: string,
+  text: string,
+  replyMarkup?: object,
+): Promise<number | undefined> {
   try {
-    await axios.post(`${TG_API}/sendMessage`, {
+    const res = await axios.post(`${TG_API}/sendMessage`, {
       chat_id: chatId,
       text,
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      ...(replyMarkup ? { reply_markup: JSON.stringify(replyMarkup) } : {}),
     });
+    return res.data?.result?.message_id;
   } catch (err: any) {
     console.warn(`[notifier] Failed to send to ${chatId}:`, err?.message);
+    return undefined;
   }
 }
 
@@ -37,7 +44,7 @@ const SPORT_LABEL: Record<string, string> = {
 };
 
 const MARKET_LABEL: Record<string, string> = {
-  h2h: "1X2 / Ganador",
+  h2h: "1X2",
   handicap: "Hándicap",
   totals: "Total",
   player_props: "Prop Jugador",
@@ -60,6 +67,39 @@ const MARKET_LABEL: Record<string, string> = {
   tries: "Ensayos",
   touchdowns: "Touchdowns",
 };
+
+// Sports where h2h draw is possible — filter out 2-leg surebets (draw not covered)
+const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY", "BASKETBALL"]);
+
+function resolveMarketLabelBySport(market: string, sport: string): string {
+  if (market === "h2h") {
+    if (THREE_WAY_SPORTS.has(sport)) return "1X2";
+    if (sport === "TENNIS") return "Gana el partido";
+    return "Ganador";
+  }
+  if (market === "sets") return "Gana el set";
+  if (market === "games") return "Gana el juego";
+  return resolveMarketLabel(market);
+}
+
+// Market → Spanish unit for O/U middle legs ("Over 1.5 goles", "Más 3.5 córners")
+const MARKET_UNIT: Record<string, string> = {
+  goals: "goles", h1_goals: "goles (1ª parte)", h2_goals: "goles (2ª parte)",
+  corners: "córners", yellow_cards: "amarillas", red_cards: "rojas", cards: "tarjetas",
+  shots: "disparos a puerta", games: "juegos", sets: "sets",
+  aces: "aces", double_faults: "dobles faltas", match_points: "puntos",
+  home_runs: "jonrones", runs: "carreras", tries: "ensayos", touchdowns: "touchdowns",
+  totals: "puntos",
+};
+
+/** Translates "Over 1.5" / "Under 3.5" to "Más 1.5 goles" / "Menos 3.5 goles" for a given market */
+function translateMiddleSelection(selection: string, market: string): string {
+  const unit = MARKET_UNIT[market] ?? market;
+  const m = selection.match(/^(Over|Under)\s+([\d.]+)$/i);
+  if (!m) return selection;
+  const dir = m[1].toLowerCase() === "over" ? "Más" : "Menos";
+  return `${dir} ${m[2]} ${unit}`;
+}
 
 // Stat code → Spanish description for player props
 const STAT_LABEL: Record<string, string> = {
@@ -105,6 +145,17 @@ function formatDatetime(d: Date | undefined, isLive: boolean): string {
   return `🗓️ ${dd}/${mm} ${hh}:${min}${liveTag}`;
 }
 
+function formatSentAt(): string {
+  const now = new Date();
+  // Use Spain local time (UTC+2 in summer, UTC+1 in winter)
+  const madridOffset = 2; // CEST; adjust to 1 in winter if needed
+  const local = new Date(now.getTime() + madridOffset * 3600_000);
+  const hh  = String(local.getUTCHours()).padStart(2, "0");
+  const min = String(local.getUTCMinutes()).padStart(2, "0");
+  const sec = String(local.getUTCSeconds()).padStart(2, "0");
+  return `⏱ Enviada a las ${hh}:${min}:${sec}`;
+}
+
 function resolveMarketLabel(market: string): string {
   if (MARKET_LABEL[market]) return MARKET_LABEL[market];
   // Handle patterns like "corners O/U 9.5", "goals O/U 2.5", "Totals 2.5/3.5"
@@ -132,10 +183,17 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
 
+  const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
+  // For O/U surebets (market = "goals O/U 4.5"), extract the base market key for translation
+  const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
+  const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
-    .map((l) =>
-      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateSelection(l.selection)} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
-    )
+    .map((l) => {
+      const sel = /^(Over|Under)\s+[\d.]+$/i.test(l.selection)
+        ? translateMiddleSelection(l.selection, baseMarket)
+        : translateSelection(l.selection);
+      return `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${sel} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`;
+    })
     .join("\n");
 
   return [
@@ -145,8 +203,10 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
     `💎 Profit: +${arb.profitPct.toFixed(2)}%`,
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `🏆 <b>${arb.eventName}</b>`,
+    `🏆 <b>${arb.eventName}</b>${leagueTag}`,
     legs,
+    ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
+    formatSentAt(),
   ].join("\n");
 }
 
@@ -157,13 +217,13 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
   const probPct = (arb.middleProbability * 100).toFixed(2);
 
+  const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
+  const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
     .map((l) =>
-      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateSelection(l.selection)} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
+      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateMiddleSelection(l.selection, arb.market)} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
     )
     .join("\n");
-
-  const marketLabel = resolveMarketLabel(arb.market);
 
   return [
     `👑 <b>Valor Esperado: +${arb.profitPct.toFixed(2)}% - +${arb.maxProfitPct.toFixed(2)}%</b>`,
@@ -175,9 +235,10 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
     "",
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `🏆 <b>${arb.eventName}</b>`,
-    `📊 ${marketLabel}`,
+    `🏆 <b>${arb.eventName}</b>${leagueTag}`,
     legs,
+    ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
+    formatSentAt(),
   ].join("\n");
 }
 
@@ -187,12 +248,55 @@ function formatArb(arb: DetectedArb, bankrollEur?: number): string {
     : formatMiddle(arb as DetectedMiddle, bankrollEur);
 }
 
+function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
+  // Sort highest profit first
+  const sorted = [...arbs].sort((a, b) => b.profitPct - a.profitPct);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const isLive = sorted.some((a) => a.isLive);
+  const liveTag = isLive ? " 🎥 LIVE" : "";
+  const typeLabel = first.type === "SUREBET" ? "Surebets" : "Middlebets";
+
+  const headerProfit = first.type === "SUREBET"
+    ? `💵 <b>Beneficio: ${first.profitPct.toFixed(2)}% - ${last.profitPct.toFixed(2)}%</b>`
+    : `👑 <b>Valor Esperado: ${first.profitPct.toFixed(2)}% - ${last.profitPct.toFixed(2)}%</b>`;
+
+  const lines: string[] = [headerProfit, `📢 <b>Alerta ${typeLabel}!${liveTag}</b>`];
+
+  for (const arb of sorted) {
+    const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
+    const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
+    const datetimeLine = formatDatetime((arb as any).startTime, arb.isLive);
+    const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
+
+    const profitLine = arb.type === "SUREBET"
+      ? `💎 Profit: +${arb.profitPct.toFixed(2)}%`
+      : `💎 Valor esperado: +${arb.profitPct.toFixed(2)}% ~ +${(arb as DetectedMiddle).maxProfitPct.toFixed(2)}%`;
+
+    const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
+    const legLines = arb.legs
+      .map((leg) => {
+        const bookmaker = leg.bookmaker.charAt(0).toUpperCase() + leg.bookmaker.slice(1);
+        const sel = /^(Over|Under)\s+[\d.]+$/i.test(leg.selection)
+          ? translateMiddleSelection(leg.selection, baseMarket)
+          : translateSelection(leg.selection);
+        return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
+      })
+      .join("\n");
+
+    lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `🏆 <b>${arb.eventName}</b>${leagueTag}`, legLines);
+  }
+
+  lines.push("", formatSentAt());
+  return lines.join("\n");
+}
+
 /**
  * Get all active bot subscribers that have the scanner feature enabled.
  * Each subscriber's config JSON may contain a "scanner" key with their preferences.
  */
 async function getActiveSubscribers(): Promise<
-  Array<{ telegramId: string; config: any }>
+  Array<{ telegramId: string; config: any; plan: string }>
 > {
   const now = new Date();
   const subs = await prisma.botSubscription.findMany({
@@ -202,7 +306,7 @@ async function getActiveSubscribers(): Promise<
         { expiresAt: { gt: now } },   // active subscription
       ],
     },
-    select: { telegramId: true, config: true },
+    select: { telegramId: true, config: true, plan: true },
   });
   // Support both the new `scanner.enabled` key and the old `surebets_on`/`middlebets_on` format
   return subs.filter((s: (typeof subs)[0]) => {
@@ -265,6 +369,18 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
   }
   if (!arb.isLive && sc.alertPrematch === false) return false;
 
+  // Skip pre-match alerts for games that have already started
+  if (!arb.isLive && arb.startTime && arb.startTime.getTime() < Date.now()) return false;
+
+  // Pre-match days-ahead filter: config field "max_days" (old format) or sc.max_days / sc.maxDaysAhead
+  if (!arb.isLive && arb.startTime) {
+    const maxDays = sc.max_days ?? sc.maxDaysAhead ?? old.max_days;
+    if (maxDays !== undefined) {
+      const msLimit = Number(maxDays) * 24 * 3600 * 1000;
+      if (arb.startTime.getTime() - Date.now() > msLimit) return false;
+    }
+  }
+
   // Bookmakers filter — new format: string[]; old format: {codere: true, bet365: false, ...}
   const arbBooks = arb.legs.map((l: any) => l.bookmaker);
   if (sc.bookmakers?.length) {
@@ -291,32 +407,62 @@ export async function notifyArbs(
   const subscribers = await getActiveSubscribers();
   if (!subscribers.length) return;
 
+  // Filter invalid arbs (h2h in 3-way sports)
+  const validArbs = newArbs.filter(({ arb }) =>
+    !(arb.type === "SUREBET" && arb.market === "h2h" && THREE_WAY_SPORTS.has(arb.sport))
+  );
+
   let notified = 0;
-  for (const { dbId, arb } of newArbs) {
-    for (const sub of subscribers) {
-      if (!matchesPrefs(arb, sub.config)) continue;
+  for (const sub of subscribers) {
+    const bankrollEur: number | undefined = (sub.config as any)?.stake > 0
+      ? Number((sub.config as any).stake) : undefined;
+    const hasTracker = sub.plan === "PRO_TRACKER" || sub.plan === "ENTERPRISE";
 
-      const bankrollEur: number | undefined = (sub.config as any)?.bankroll_eur > 0
-        ? Number((sub.config as any).bankroll_eur)
-        : undefined;
-      const message = formatArb(arb, bankrollEur);
+    // Only arbs matching this subscriber's preferences
+    const matching = validArbs.filter(({ arb }) => matchesPrefs(arb, sub.config));
+    if (!matching.length) continue;
 
-      // Record first — the unique constraint on (arbId, telegramId) prevents duplicates
-      // even under concurrent execution. If the insert fails with P2002, skip.
-      try {
-        await prisma.arbNotification.create({
-          data: { arbId: dbId, telegramId: sub.telegramId },
-        });
-      } catch (err: any) {
-        if (err.code === "P2002") continue; // already notified
-        throw err;
+    // Group by event+type so same match = one message
+    const groups = new Map<string, Array<{ dbId: string; arb: DetectedArb }>>();
+    for (const item of matching) {
+      const key = `${item.arb.sport}::${item.arb.eventName}::${item.arb.type}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
+
+    for (const group of groups.values()) {
+      // Record each arb — unique constraint prevents duplicates; skip already-notified ones
+      const toSend: Array<{ dbId: string; arb: DetectedArb }> = [];
+      for (const item of group) {
+        try {
+          await prisma.arbNotification.create({
+            data: { arbId: item.dbId, telegramId: sub.telegramId },
+          });
+          toSend.push(item);
+        } catch (err: any) {
+          if (err.code !== "P2002") throw err;
+        }
       }
+      if (!toSend.length) continue;
 
-      await sendMessage(sub.telegramId, message);
-      notified++;
+      if (toSend.length === 1) {
+        // Single arb: send individual message with ✅/❌ buttons
+        const { dbId, arb } = toSend[0];
+        const replyMarkup = {
+          inline_keyboard: [[
+            ...(hasTracker ? [{ text: "✅ Hecha", callback_data: `SCAN_AH_${sub.telegramId}_${dbId}` }] : []),
+            { text: "❌ No hecha", callback_data: `SCAN_ANH_${sub.telegramId}_${dbId}` },
+          ]],
+        };
+        await sendMessage(sub.telegramId, formatArb(arb, bankrollEur), replyMarkup);
+      } else {
+        // Multiple arbs same event: one grouped message (no per-arb buttons)
+        await sendMessage(sub.telegramId, formatGroupedArbs(toSend.map((i) => i.arb), bankrollEur));
+      }
+      notified += toSend.length;
     }
   }
   if (notified > 0) {
-    console.log(`[notifier] Sent ${notified} notifications for ${newArbs.length} new arbs`);
+    console.log(`[notifier] Sent notifications for ${notified} arbs`);
   }
 }

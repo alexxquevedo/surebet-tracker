@@ -19,6 +19,7 @@ const TARGET_SPORTS: { key: string; sport: Sport }[] = [
   { key: "tennis_atp",                   sport: "TENNIS"   },
   { key: "tennis_wta",                   sport: "TENNIS"   },
   { key: "basketball_nba",               sport: "BASKETBALL" },
+  { key: "basketball_wnba",             sport: "BASKETBALL" },
   { key: "basketball_euroleague",        sport: "BASKETBALL" },
   { key: "americanfootball_nfl",         sport: "AMERICANFOOTBALL" },
   { key: "icehockey_nhl",               sport: "ICEHOCKEY" },

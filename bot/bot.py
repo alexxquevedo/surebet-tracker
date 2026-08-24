@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import asyncpg
 import logging
 import json
 import os
@@ -123,7 +124,7 @@ SPORT_DISPLAY = {
     "rugbyleague":          ("🏉", "Rugby"),
 }
 SPORT_STATUS = {
-    "soccer":               "OddsAPI + Betsson/Winamax/Codere",
+    "soccer":               "Winamax + Codere (scraper directo) + OddsAPI",
     "basketball":           "OddsAPI (NBA/EuroLeague)",
     "tennis":               "OddsAPI (ATP/WTA)",
     "americanfootball_nfl": "OddsAPI — temporada oct-feb",
@@ -351,7 +352,7 @@ Envía /start para reiniciar la sesión. Si el problema persiste, escribe al adm
 NOVEDADES_HUB = (
     "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
     "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
-    "🕒 Última actualización: *21/08/2026*\n\n"
+    "🕒 Última actualización: *24/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
@@ -362,30 +363,31 @@ NOVEDADES_HUB = (
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕒 *Última actualización — 22/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "🕒 *Última actualización — 24/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
     "✅ *Activación automática* — tu suscripción se activa al instante "
     "tras el pago con Stripe, sin esperar confirmación manual\n"
     "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
     "web y registra apuestas directamente desde las alertas del bot\n"
-    "✅ Sistema de créditos y freebets — búsquedas gratuitas por invitar "
+    "✅ *Sistema de créditos y freebets* — búsquedas gratuitas por invitar "
     "amigos o renovar suscripción\n"
-    "✅ Alertas live mejoradas — cooldown inteligente (180s o +0.5pp "
-    "de profit) para evitar spam de cuotas fluctuantes\n"
-    "✅ Auto-registro aproximado — las apuestas pendientes de confirmar "
+    "✅ *Alertas live mejoradas* — cooldown inteligente para evitar "
+    "spam de cuotas fluctuantes\n"
+    "✅ *Auto-registro aproximado* — las apuestas pendientes de confirmar "
     "se registran solas a las 48h con aviso por Telegram\n"
-    "✅ Flujo de Apuestas Pendientes — acepta o rechaza cada alerta "
+    "✅ *Flujo de Apuestas Pendientes* — acepta o rechaza cada alerta "
     "antes de registrarla en DualStats\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
     "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 21/08/2026_\n\n"
-    "🔜 20 casas de apuestas — añadimos Betway, Interwetten, Paston, "
-    "AdmiralBet y TonyBet para más combinaciones de surebet\n"
-    "🔜 Más cobertura live — activamos scrapers adicionales para "
-    "detectar más surebets en tiempo real\n"
-    "🔜 Canal gratuito de Telegram — alertas de muestra para que "
-    "veas cómo funciona FidesBot antes de suscribirte\n"
+    "_Actualizado: 24/08/2026_\n\n"
+    "🔜 *Canal gratuito de Telegram* — alertas de muestra para que "
+    "compruebes cómo funciona FidesBot antes de suscribirte. "
+    "Lanzamiento inminente.\n"
+    "🔜 Más casas de apuestas — añadimos Bet365, Bwin, William Hill, "
+    "Betsson y más para ampliar las combinaciones disponibles\n"
+    "🔜 Más cobertura live — scrapers adicionales para detectar más "
+    "surebets en tiempo real\n"
     "🔜 Integración web completa — registra y gestiona todas tus "
     "apuestas directamente desde las alertas del bot\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
@@ -393,13 +395,14 @@ NOVEDADES_PROXIMAS = (
 )
 NOVEDADES_AVISOS = (
     "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 21/08/2026_\n\n"
-    "⚠️ *Cobertura de casas españolas limitada*\n"
-    "Las casas como Codere, Sportium, Bwin y William Hill España "
-    "requieren proxies residenciales para acceder a sus odds. "
-    "Estamos trabajando en activarlas próximamente.\n\n"
+    "_Actualizado: 24/08/2026_\n\n"
+    "✅ *Codere y Winamax activas con scraper directo*\n"
+    "Detectamos odds en tiempo real de Codere y Winamax sin necesidad de proxy. "
+    "Otras casas españolas (Sportium, Bwin, William Hill, Betsson...) "
+    "requieren proxy residencial y se activarán próximamente.\n\n"
     "ℹ️ *Fuente de datos*\n"
-    "Las surebets se detectan vía The Odds API (mercados internacionales). "
+    "Las surebets se detectan vía scrapers directos (Winamax, Codere) "
+    "y The Odds API para mercados internacionales. "
     "Cuantas más casas tengas activadas, más oportunidades verás.\n\n"
     "_Esta sección se actualiza con comunicados importantes "
     "sobre el servicio o cambios de precios._\n"
@@ -2139,6 +2142,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━{aviso}"
     )
     if update.callback_query:
+        await update.callback_query.answer()
         await update.callback_query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     else:
         await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -2146,6 +2150,31 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # PANELES ESTADÍSTICAS (sin cambios)
 # ============================================================
+EJEMPLO_SUREBET_MSG = (
+    "📊 *Ejemplo Surebet*\n\n"
+    "💵 *Beneficio: \\+6\\.12%*\n"
+    "📢 *Alerta Surebets\\!*\n\n"
+    "💎 Profit: \\+6\\.12%\n"
+    "⚽ Fútbol\n"
+    "🗓️ 12/04 21:00\n"
+    "🏆 *Real Madrid \\- Villarreal CF* \\(LaLiga\\)\n"
+    "🎯 Mercado: Prop Jugador\n"
+    "📕 *Winamax* 📍 Kylian Mbappé \\+1\\.5 remates a puerta 🎲 @2\\.20 💰 48\\.31%\n"
+    "📕 *Codere* 📍 Kylian Mbappé \\-1\\.5 remates a puerta 🎲 @2\\.05 💰 51\\.69%\n"
+    "⏱ Enviada a las 20:58:14\n\n"
+    "📚 *Explicación:*\n"
+    "• Profit \\(\\+6\\.12%\\): beneficio garantizado sea cual sea el resultado\\.\n"
+    "• Cada línea: casa de apuestas, selección, cuota \\(@\\) y stake \\(💰\\)\\.\n"
+    "• El stake indica cuánto apostar por cada 100€: 48\\.31€ en Winamax y 51\\.69€ en Codere\\.\n"
+    "• Ambas apuestas cubren resultados opuestos → ganas siempre\\.\n\n"
+    "💡 *Recomendación:*\n"
+    "• Apuesta cantidades sin decimales, idealmente múltiplos de 5€\\.\n"
+    "• Coloca primero la apuesta con mayor cuota\\.\n"
+    "• Verifica las cuotas antes de apostar — cambian rápido\\.\n\n"
+    "⚠️ *Atención:*\n"
+    "• Revisa cuotas y reglas antes de apostar\\. Puede haber errores\\."
+)
+
 async def panel_surebets(update, context):
     await update.callback_query.answer()
     ahora   = local_now()
@@ -2164,8 +2193,36 @@ async def panel_surebets(update, context):
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Buscar surebets ahora", callback_data="buscar_surebets")],
+            [InlineKeyboardButton("📖 Ejemplo Surebet",       callback_data="ejemplo_surebet")],
             [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
         ]), parse_mode="Markdown")
+
+EJEMPLO_MIDDLE_MSG = (
+    "📊 *Ejemplo Middlebet*\n\n"
+    "👑 *Valor Esperado: \\+2\\.78% \\- \\+105\\.58%*\n"
+    "📢 *Alerta Middlebets\\!*\n\n"
+    "💎 Valor esperado: \\+2\\.78% \\(Sin riesgo\\)\n"
+    "📉 Mín\\. 2\\.78% \\| 📈 Máx\\. 105\\.58%\n"
+    "🍀 Probabilidad middle: 22\\.40%\n\n"
+    "⚽ Fútbol\n"
+    "🗓️ 15/04 20:00\n"
+    "🏆 *Sevilla FC \\- Real Betis* \\(LaLiga\\)\n"
+    "🎯 Mercado: Total Goles \\+/\\- 2\\.0\n"
+    "📕 *Winamax* 📍 Más 1\\.5 goles 🎲 @1\\.70 💰 60\\.47%\n"
+    "📕 *Codere* 📍 Menos 2\\.5 goles 🎲 @2\\.60 💰 39\\.53%\n"
+    "⏱ Enviada a las 19:58:32\n\n"
+    "📚 *Explicación:*\n"
+    "• Una Middlebet cubre dos líneas que dejan una ventana de doble ganancia\\.\n"
+    "• Mín\\. \\(\\+2\\.78%\\): lo que ganas sí o sí, aunque solo caiga uno de los dos lados\\.\n"
+    "• Máx\\. \\(\\+105\\.58%\\): lo que ganas si hay exactamente 2 goles \\(ambas apuestas ganan\\)\\.\n"
+    "• Probabilidad middle \\(🍀 22\\.40%\\): estimación de que el resultado caiga en la ventana\\.\n\n"
+    "💡 *Recomendación:*\n"
+    "• Middlebets con mínimo ≥ 0% son sin riesgo — nunca pierdes aunque la ventana falle\\.\n"
+    "• Prioriza las que tienen mayor probabilidad de middle \\(\\>15%\\)\\.\n"
+    "• Coloca primero la apuesta con mayor cuota\\.\n\n"
+    "⚠️ *Atención:*\n"
+    "• Revisa cuotas y reglas antes de apostar\\. Puede haber errores\\."
+)
 
 async def panel_middles(update, context):
     await update.callback_query.answer()
@@ -2180,11 +2237,12 @@ async def panel_middles(update, context):
         f"━━━━━━━━━━━━━━━━━━\n"
         f"💡 *Información:*\n• Apuestas en dos casas con un rango de resultados ganador.\n"
         f"• Si el resultado cae en el middle, ganas las DOS apuestas.\n"
-        f"• Si no cae en el middle, la pérdida es mínima.\n\n"
+        f"• Si no cae en el middle, la pérdida es mínima o nula.\n\n"
         f"⚠️ *Atención:*\n• La probabilidad del middle es una estimación.\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Buscar middlebets ahora", callback_data="buscar_middles")],
+            [InlineKeyboardButton("📖 Ejemplo Middlebet",       callback_data="ejemplo_middle")],
             [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
@@ -2399,6 +2457,7 @@ async def mis_creditos(update, context):
 # MENÚ ALERTAS
 # ============================================================
 async def menu_alertas(update, context):
+    await update.callback_query.answer()
     uid = update.effective_user.id
     cfg = get_config(uid)
     s = cfg.get("surebets_on", True);  m = cfg.get("middlebets_on", False)
@@ -2437,6 +2496,7 @@ async def menu_alertas(update, context):
 # MENÚ CONFIGURACIÓN
 # ============================================================
 async def menu_config(update, context):
+    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
     await update.callback_query.edit_message_text(
         f"⚙️ *Configuración*\n━━━━━━━━━━━━━━━━━━\n"
@@ -3580,6 +3640,99 @@ async def mostrar_correccion_selector(query, context, p, flow):
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
+# ── Scanner SCAN_AH_ / SCAN_ANH_ — Hecha / No hecha desde el nuevo scanner ──
+
+SCANNER_DIRECT_URL = "postgresql://postgres.xqyvgursuilukvskrlps:4-jbfd9eiaCNVdR@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+
+async def _fetch_scanner_arb(arb_id: str) -> dict | None:
+    """Fetches arb + legs from detected_arbs / detected_arb_legs via asyncpg."""
+    import ssl as _ssl
+    _ssl_ctx = _ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = _ssl.CERT_NONE
+    conn = None
+    try:
+        logging.info(f"[scanner_arb] fetching arb_id={arb_id!r}")
+        conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
+        arb = await conn.fetchrow(
+            "SELECT id, type, sport, is_live, event_name, market, profit_pct, detected_at "
+            "FROM detected_arbs WHERE id = $1", arb_id)
+        if not arb:
+            logging.warning(f"[scanner_arb] no row found for arb_id={arb_id!r}")
+            return None
+        legs = await conn.fetch(
+            "SELECT bookmaker, selection, odds, stake FROM detected_arb_legs WHERE arb_id = $1 ORDER BY id", arb_id)
+        return {
+            "type":       arb["type"],
+            "sport":      arb["sport"],
+            "is_live":    arb["is_live"],
+            "event_name": arb["event_name"],
+            "market":     arb["market"],
+            "profit_pct": arb["profit_pct"],
+            "detected_at": arb["detected_at"],
+            "legs": [{"bookmaker": r["bookmaker"], "outcome": r["selection"],
+                      "odd": float(r["odds"]), "stake_pct": float(r["stake"] or 50.0)} for r in legs],
+        }
+    except Exception as e:
+        logging.error(f"[scanner_arb] DB fetch failed for arb_id={arb_id!r}: {e}", exc_info=True)
+        return None
+    finally:
+        if conn:
+            try: await conn.close()
+            except: pass
+
+async def handle_scanner_alerta_hecha(update, context, uid, arb_id):
+    """Handles ✅ Hecha button from scanner notifications (SCAN_AH_)."""
+    query = update.callback_query
+
+    if not tiene_suscripcion(uid):
+        await query.answer("Necesitas suscripción activa.", show_alert=True); return
+    if uid not in dualstats_vinculados:
+        await query.answer("Vincula tu cuenta DualStats primero.", show_alert=True); return
+    if not tiene_tracker(uid):
+        await query.answer("Tu plan PRO no incluye el Tracker. Actualiza a PRO+Tracker.", show_alert=True); return
+
+    arb = await _fetch_scanner_arb(arb_id)
+    if not arb:
+        await query.answer("⚠️ Alerta expirada o no encontrada.", show_alert=True); return
+
+    pid = uuid.uuid4().hex[:10]
+    pendiente = {
+        "id":        pid,
+        "ts":        local_now().isoformat(),
+        "evento":    arb["event_name"],
+        "sport_key": arb["sport"].lower(),
+        "liga":      "",
+        "legs":      arb["legs"],
+        "profit":    arb["profit_pct"],
+        "stake_sug": get_config(uid).get("stake", 100.0),
+        "tipo":      arb["type"].lower(),
+        "live":      arb["is_live"],
+        "time":      arb["detected_at"].isoformat() if arb["detected_at"] else "",
+        "estado":    "PENDIENTE",
+    }
+    agregar_pendiente(uid, pendiente)
+
+    try:
+        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
+    except: pass
+    await query.answer("✅ Guardada en pendientes")
+    await context.bot.send_message(
+        chat_id=uid,
+        text="✅ *Guardada en tus pendientes.*\n\nCompleta los detalles cuando acabes apostando.\n\n📋 /pendientes",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📋 Ir a pendientes", callback_data="DS_pendientes"),
+        ]]))
+
+async def handle_scanner_alerta_nohecha(update, context, uid, arb_id):
+    """Handles ❌ No hecha button from scanner notifications (SCAN_ANH_)."""
+    query = update.callback_query
+    try:
+        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
+    except: pass
+    await query.answer("❌ Registrado como no realizada")
+
 async def handle_alerta_hecha(update, context, uid, alert_id):
     """Usuario pulsó ✅ Hecha en una alerta."""
     query     = update.callback_query
@@ -4672,7 +4825,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Callbacks que gestionan su propio answer() con mensajes de error personalizados.
     # Si ya respondemos aquí con answer() vacío, su show_alert=True queda silenciado.
-    _OWN_ANSWER = ("NM|", "CSH|", "FKN|", "AH_", "ANH_", "RES_", "DS_resumen_", "FL_confirm_", "PEC_", "FL_sc_yes_")
+    _OWN_ANSWER = ("NM|", "CSH|", "FKN|", "AH_", "ANH_", "SCAN_AH_", "SCAN_ANH_", "RES_", "DS_resumen_", "FL_confirm_", "PEC_", "FL_sc_yes_")
     if not any(data.startswith(p) for p in _OWN_ANSWER):
         await query.answer()
 
@@ -4755,6 +4908,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if   data == "menu_principal":  await menu_principal(update, context)
     elif data == "panel_surebets":  await panel_surebets(update, context)
     elif data == "panel_middles":   await panel_middles(update, context)
+    elif data == "ejemplo_surebet":
+        await query.answer()
+        try:
+            await query.message.reply_text(EJEMPLO_SUREBET_MSG, parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_surebets")]]))
+        except Exception as e:
+            logger.error(f"ejemplo_surebet send error: {e}")
+            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
+    elif data == "ejemplo_middle":
+        await query.answer()
+        try:
+            await query.message.reply_text(EJEMPLO_MIDDLE_MSG, parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_middles")]]))
+        except Exception as e:
+            logger.error(f"ejemplo_middle send error: {e}")
+            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
+
     elif data == "menu_alertas":    await menu_alertas(update, context)
     elif data == "menu_config":     await menu_config(update, context)
     elif data == "cfg_deportes":    await menu_cfg_deportes(update, context)
@@ -4812,24 +4982,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_numerico(update, context, parts[1], parts[2])
     elif data == "escanear_ahora":
         ultimo_scan_manual[user_id] = datetime.now()
-        creditos_aviso = f"\n\n💳 API: {api_credits_remaining} créditos restantes." if api_credits_remaining is not None and api_credits_remaining < 500 else ""
         await query.edit_message_text("🔍 Escaneando apuestas... espera un momento.")
         total_pre  = await escanear_y_alertar(context.application, live=False, user_ids=[user_id])
         total_live = await escanear_y_alertar(context.application, live=True,  user_ids=[user_id])
         total = total_pre + total_live
         ultimo_escaneo[user_id] = datetime.now()
         if total == 0:
-            sin_creditos = api_credits_remaining is not None and api_credits_remaining <= 0
-            motivo = ("⚠️ *Sin créditos de API.* El bot no puede obtener datos hasta la recarga mensual."
-                      if sin_creditos else
-                      "❌ No se han encontrado apuestas con tu configuración.\n\n"
-                      "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.")
             await query.edit_message_text(
-                f"🔍 *Escaneo completado*\n\n{motivo}{creditos_aviso}",
+                "🔍 *Escaneo completado*\n\n"
+                "❌ No se han encontrado apuestas con tu configuración.\n\n"
+                "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.",
                 parse_mode="Markdown")
         else:
             await query.edit_message_text(
-                f"✅ *{total} apuesta(s) encontradas y enviadas.*{creditos_aviso}",
+                f"✅ *{total} apuesta(s) encontradas y enviadas.*",
                 parse_mode="Markdown")
         await asyncio.sleep(3)
         await menu_principal(update, context)
@@ -4903,6 +5069,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_", 2)
         if len(parts) == 3 and int(parts[1]) == user_id:
             await handle_alerta_nohecha(update, context, user_id, parts[2])
+
+    # ── Scanner alerts (SCAN_AH_ / SCAN_ANH_) ─────────────
+    elif data.startswith("SCAN_AH_"):
+        parts = data.split("_", 3)  # ["SCAN", "AH", uid, arbId]
+        if len(parts) == 4 and int(parts[2]) == user_id:
+            await handle_scanner_alerta_hecha(update, context, user_id, parts[3])
+    elif data.startswith("SCAN_ANH_"):
+        parts = data.split("_", 3)  # ["SCAN", "ANH", uid, arbId]
+        if len(parts) == 4 and int(parts[2]) == user_id:
+            await handle_scanner_alerta_nohecha(update, context, user_id, parts[3])
 
     # ── Completar pendiente ────────────────────────────────
     elif data.startswith("PC_"):
@@ -5750,6 +5926,82 @@ async def cmd_tutorial(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown")
 
 # ============================================================
+# HISTORIAL DE ALERTAS
+# ============================================================
+SPORT_EMOJI_HIST = {
+    "FOOTBALL": "⚽", "TENNIS": "🎾", "BASKETBALL": "🏀",
+    "AMERICANFOOTBALL": "🏈", "ICEHOCKEY": "🏒", "BASEBALL": "⚾",
+    "RUGBYLEAGUE": "🏉", "VOLLEYBALL": "🏐", "HANDBALL": "🤾",
+}
+
+async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        _auto_delete(context, update.message.chat_id, update.message.message_id)
+    user_id = update.effective_user.id
+    if not tiene_suscripcion(user_id):
+        await update.message.reply_text(BLOQUEADO_MSG); return
+
+    import ssl as _ssl
+    _ssl_ctx = _ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = _ssl.CERT_NONE
+    conn = None
+    try:
+        conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
+        rows = await conn.fetch(
+            """
+            SELECT a.type, a.sport, a.is_live, a.event_name, a.market, a.profit_pct, a.detected_at
+            FROM arb_notifications n
+            JOIN detected_arbs a ON a.id = n.arb_id
+            WHERE n.telegram_id = $1
+            ORDER BY a.detected_at DESC
+            LIMIT 10
+            """,
+            str(user_id)
+        )
+    except Exception as e:
+        logging.error(f"[historial] DB error: {e}")
+        await update.message.reply_text("⚠️ No se pudo cargar el historial. Inténtalo más tarde.")
+        return
+    finally:
+        if conn:
+            try: await conn.close()
+            except: pass
+
+    if not rows:
+        await update.message.reply_text(
+            "📜 *Historial de alertas*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "Aún no has recibido ninguna alerta del scanner.",
+            parse_mode="Markdown")
+        return
+
+    texto = "📜 *Últimas alertas recibidas*\n━━━━━━━━━━━━━━━━━━\n\n"
+    for r in rows:
+        emoji   = SPORT_EMOJI_HIST.get(r["sport"], "🏅")
+        tipo    = "🎯 Middle" if r["type"] == "MIDDLE" else "⚡ Surebet"
+        live    = " 🎥 LIVE" if r["is_live"] else ""
+        profit  = f"+{float(r['profit_pct']):.2f}%"
+        mercado = r["market"] or "h2h"
+        evento  = r["event_name"] or "?"
+        ts      = r["detected_at"]
+        hora    = ""
+        if ts:
+            try:
+                if ts.tzinfo:
+                    import datetime as _dt
+                    ts_mad = ts.astimezone(_TZ_MAD) if hasattr(_TZ_MAD, 'key') else ts + _dt.timedelta(hours=2)
+                else:
+                    ts_mad = ts + timedelta(hours=2)
+                hora = ts_mad.strftime("%d/%m %H:%M")
+            except:
+                hora = str(ts)[:16]
+        texto += f"{emoji} {tipo}{live} — *{profit}*\n🏆 {evento}\n🎯 {mercado} · 🗓 {hora}\n\n"
+
+    texto += "_Solo se muestran las últimas 10 alertas._"
+    await update.message.reply_text(texto, parse_mode="Markdown")
+
+
+# ============================================================
 # MAIN
 # ============================================================
 async def main():
@@ -5773,6 +6025,7 @@ async def main():
     app.add_handler(CommandHandler("resetstats",    cmd_resetstats))
     app.add_handler(CommandHandler("resumen",       cmd_resumen))
     app.add_handler(CommandHandler("diagnostico",   cmd_diagnostico))
+    app.add_handler(CommandHandler("historial",     cmd_historial))
 
     # Comandos de ban (admin)
     app.add_handler(CommandHandler("ban",       cmd_ban))
