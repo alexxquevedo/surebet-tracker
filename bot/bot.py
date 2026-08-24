@@ -2250,6 +2250,32 @@ async def panel_middles(update, context):
             [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
+EJEMPLO_VALUE_MSG = (
+    "📊 *Ejemplo Valuebet*\n\n"
+    "💎 *Valor esperado: \\+7\\.50%*\n"
+    "🍀 Probabilidad real: 50\\.0%\n"
+    "🏀 Baloncesto\n"
+    "🗓️ 10/04 00:40\n"
+    "🏆 *WAS Wizards \\– NY Knicks* \\(NBA\\)\n"
+    "📕 *Sportium* 📍 Rudy Gobert \\-9\\.5 rebotes \\(Prop jugador\\) 🎲 @2\\.15\n"
+    "⏱ Enviada a las 00:38:11\n\n"
+    "📚 *Explicación:*\n"
+    "• Una Valuebet es una apuesta donde la cuota pagada supera la cuota justa del mercado\\.\n"
+    "• La cuota justa para probabilidad 50% es @2\\.00\\.\n"
+    "• Sportium paga @2\\.15 → hay sobrevalor de \\+7\\.50%\\.\n"
+    "• A largo plazo y con volumen suficiente, esto genera beneficio consistente\\.\n\n"
+    "📐 *Cálculo:*\n"
+    "• EV \\= \\(prob\\.ganar × beneficio neto\\) \\- \\(prob\\.perder × pérdida\\)\n"
+    "• EV \\= \\(50% × 1\\.15€\\) \\- \\(50% × 1€\\) \\= \\+0\\.075€ por euro apostado\n\n"
+    "💡 *Recomendación:*\n"
+    "• Comprueba que la cuota sigue siendo ≥ @2\\.15 antes de apostar\\.\n"
+    "• No apuestes más del 2\\-3% de tu bankroll por valuebet\\.\n"
+    "• Necesitas volumen — mínimo 50 valuebets para que el EV se materialice\\.\n\n"
+    "⚠️ *Atención:*\n"
+    "• No garantiza ganancia inmediata — cada apuesta individual puede perderse\\.\n"
+    "• Revisa cuotas, jugadores y reglas antes de apostar\\. Puede haber errores\\."
+)
+
 async def panel_valuebets(update, context):
     await update.callback_query.answer()
     ahora   = local_now()
@@ -2258,15 +2284,19 @@ async def panel_valuebets(update, context):
     volver  = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
     await update.callback_query.edit_message_text(
         f"📊 *Panel Valuebets*\n━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ Actualizado cada ~{BOT_CONFIG['scan_prematch_interval']//60} min\n\n"
         f"📊 Nº Valuebets: *{stats['valuebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Información:*\n• Apuestas con valor esperado positivo a largo plazo.\n"
+        f"💡 *Información:*\n• Apuestas con valor esperado \\(EV\\) positivo a largo plazo.\n"
         f"• No garantizan ganancia en cada apuesta individual.\n"
         f"• Requieren volumen para ver beneficio consistente.\n\n"
         f"⚠️ *Próximamente disponible.*\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📖 Ejemplo Valuebet", callback_data="ejemplo_valuebet")],
+            [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
+        ]),
         parse_mode="Markdown")
 
 async def panel_freebets(update, context):
@@ -4927,6 +4957,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_middles")]]))
         except Exception as e:
             logger.error(f"ejemplo_middle send error: {e}")
+            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
+
+    elif data == "ejemplo_valuebet":
+        await query.answer()
+        try:
+            await query.message.reply_text(EJEMPLO_VALUE_MSG, parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_valuebets")]]))
+        except Exception as e:
+            logger.error(f"ejemplo_valuebet send error: {e}")
             await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
 
     elif data == "menu_alertas":    await menu_alertas(update, context)
