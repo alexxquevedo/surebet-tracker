@@ -73,7 +73,7 @@ DEFAULT_USER_CONFIG = {
 
 BOT_CONFIG = {
     "scan_prematch_interval": 300,  # 5 min — prematch opportunities last hours
-    "scan_live_interval":     120,  # 2 min — default when live games active
+    "scan_live_interval":     30,   # 30s — default when live games active
     "scan_live_backoff":      600,  # 10 min — when 3+ consecutive live scans return 0 events
 }
 
