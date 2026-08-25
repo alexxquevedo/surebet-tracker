@@ -600,6 +600,9 @@ async def cargar_db():
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
                         cfg.get("bookmakers", {}).pop("marathonbet", None)
+                        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
+                            if cfg.get("bookmakers", {}).get(_bk_new) is False:
+                                cfg["bookmakers"][_bk_new] = True
                         if cfg.get("min_profit_surebet") == 3.0:
                             cfg["min_profit_surebet"] = 1.5
                         # Migrar basketball_nba/euroleague -> basketball
@@ -678,6 +681,9 @@ async def cargar_db():
             logger.info(f"[DB] Fichero migrado → {DB_FILE}.migrated")
         except Exception as e:
             logger.error(f"[DB] No se pudo renombrar el fichero: {e}")
+
+    # Marcar dirty para persistir migraciones (casas nuevas, sports limpiados)
+    guardar_db()
 
 # ============================================================
 # BAN DE USUARIOS
