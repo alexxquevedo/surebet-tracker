@@ -12,6 +12,7 @@
 
 import dotenv from "dotenv";
 import path from "path";
+import * as fs from "fs";
 // Load .env from scraper/ regardless of where node is invoked from
 dotenv.config({ path: path.join(__dirname, "../.env") });
 import { config } from "./config";
@@ -465,6 +466,13 @@ process.on("SIGINT", async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+// Clean up stale Playwright profile dirs left by previous crashes
+try {
+  const stale = fs.readdirSync("/tmp").filter(e => e.startsWith("playwright_chromiumdev_profile-"));
+  for (const dir of stale) fs.rmSync(path.join("/tmp", dir), { recursive: true, force: true });
+  if (stale.length > 0) console.log(`[scanner] Cleaned ${stale.length} stale Playwright dirs`);
+} catch { /* non-fatal */ }
 
 console.log("[scanner] FidesBot Scanner starting...");
 console.log(`[scanner] Live poll: ${config.scanner.livePollMs / 1000}s`);
