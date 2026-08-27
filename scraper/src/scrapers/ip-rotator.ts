@@ -18,6 +18,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { logger } from "../logger";
+import { sendAlert } from "../health/checker";
 
 const execAsync = promisify(exec);
 
@@ -72,6 +73,11 @@ export async function preflightCheck(): Promise<{ ok: boolean; wgStatus: "up" | 
   const result = await _checkWireguard();
   if (result.wgStatus === "down") {
     logger.warn("preflight.wg_down", { ...result });
+    void sendAlert(
+      "CRITICAL",
+      "WireGuard <b>DOWN</b> — túnel caído antes de ciclo de scraping.\nScrapers proxy saltados hasta que el túnel se recupere.",
+      "preflight_wg_down",
+    );
   } else {
     logger.info("preflight.wg_ok", { ...result });
   }
@@ -141,10 +147,13 @@ async function _triggerRotation(trigger: string): Promise<void> {
       stderr: stderr.trim().slice(0, 200) || undefined,
     });
   } catch (err: any) {
-    logger.error("ip_rotator.ssh_failed", {
-      rotationN: _rotationN,
-      error: String(err?.message ?? err).slice(0, 300),
-    });
+    const errMsg = String(err?.message ?? err).slice(0, 300);
+    logger.error("ip_rotator.ssh_failed", { rotationN: _rotationN, error: errMsg });
+    void sendAlert(
+      "CRITICAL",
+      `SSH rotation FAILED (attempt ${_rotationN}/${MAX_ROTATIONS})\n<code>${errMsg}</code>\nScrapers continúan con IP actual.`,
+      `ssh_failed:${_rotationN}`,
+    );
     // SSH failure — clear block count so we don't retry every poll cycle
     _blockCount = 0;
     _rotating = false;
@@ -170,6 +179,17 @@ async function _triggerRotation(trigger: string): Promise<void> {
       pauseUntil: new Date(_pauseUntil).toISOString(),
       pauseMinutes: FLAPPING_PAUSE_MS / 60_000,
     });
+    void sendAlert(
+      "CRITICAL",
+      `IP flapping: ${MAX_ROTATIONS} rotaciones consecutivas sin recuperación.\nScrapers proxy pausados 45 min hasta ${new Date(_pauseUntil).toLocaleTimeString("es-ES")}.`,
+      "flapping_pause",
+    );
+  } else if (wg.wgStatus === "down") {
+    void sendAlert(
+      "WARNING",
+      `WireGuard <b>DOWN</b> tras rotación SSH.\nTúnel no recuperado en ${WG_RECONNECT_WAIT_MS / 1000}s. Proxies pueden fallar.`,
+      "wg_down_after_rotation",
+    );
   }
 }
 

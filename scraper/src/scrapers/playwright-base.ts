@@ -10,6 +10,7 @@ import { config } from "../config";
 import { randomUA, jitterDelay } from "./ua-pool";
 import { reportBlock, reportSuccess } from "./ip-rotator";
 import { logger } from "../logger";
+import { sendAlert } from "../health/checker";
 
 const CTX_BASE_OPTIONS = {
   locale: "es-ES",
@@ -43,6 +44,14 @@ export function setScraperCooldown(scraperName: string): void {
   const duration = backoffDuration(consecutive);
   scraperCooldowns.set(scraperName, { until: Date.now() + duration, consecutive });
   logger.warn("circuit_breaker.cooldown", { bookmaker: scraperName, consecutive, cooldownMs: duration });
+  // Alert when backoff hits the cap — scraper is stuck for 60 min
+  if (duration === BACKOFF_MAX_MS) {
+    void sendAlert(
+      "CRITICAL",
+      `Circuit breaker <b>${scraperName.toUpperCase()}</b> en cooldown máximo (60 min).\n${consecutive} bloqueos consecutivos. Posible geo-bloqueo permanente o cambio de API.`,
+      `cb_max:${scraperName}`,
+    );
+  }
 }
 
 /** Reset backoff counter when a scraper returns events after a cooldown period. */
@@ -150,7 +159,20 @@ class BrowserManager {
   // Residential proxy browser — launched with proxy at browser level (Chromium requires this;
   // context-level proxy auth is not supported and throws ERR_PROXY_AUTH_UNSUPPORTED).
   private async getResidentialBrowser(proxy: { server: string; username?: string; password?: string }): Promise<Browser> {
-    if (!this.proxyBrowser?.isConnected()) {
+    if (this.proxyBrowser) {
+      if (!this.proxyBrowser.isConnected()) {
+        await this.proxyBrowser.close().catch(() => {});
+        this.proxyBrowser = null;
+      } else {
+        const alive = await this.pingBrowser(this.proxyBrowser);
+        if (!alive) {
+          console.warn("[BrowserManager] Zombie proxy browser detectado — shutdown forzado");
+          await this.proxyBrowser.close().catch(() => {});
+          this.proxyBrowser = null;
+        }
+      }
+    }
+    if (!this.proxyBrowser) {
       this.proxyBrowser = await this.launchChromium(proxy);
     }
     return this.proxyBrowser;

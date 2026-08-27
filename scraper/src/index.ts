@@ -93,6 +93,70 @@ function toPrismaSport(sport: string): string {
   return SPORT_TO_PRISMA[sport] ?? "OTHER";
 }
 
+// ─── DIAGNOSE mode ───────────────────────────────────────────────────────────
+// Run: DIAGNOSE=true node dist/index.js
+// Checks env vars + SSH/WireGuard connectivity, prints a report, then exits.
+// Never starts the scraping loop.
+
+if (process.env.DIAGNOSE === "true") {
+  void (async () => {
+    console.log("\n═══════════════════════════════════════");
+    console.log("  FidesBot Scanner — DIAGNOSE MODE");
+    console.log("═══════════════════════════════════════\n");
+
+    const required = ["DATABASE_URL", "TELEGRAM_TOKEN"];
+    const optional = [
+      "ROUTER_SSH_HOST", "ROUTER_SSH_USER", "ROUTER_SSH_KEY",
+      "ROUTER_PROXY_URL", "DRY_RUN", "HEALTH_FILE",
+    ];
+
+    let allOk = true;
+    console.log("[ ENV VARS ]");
+    for (const v of required) {
+      const ok = !!process.env[v];
+      if (!ok) allOk = false;
+      console.log(`  ${ok ? "✅" : "❌"} ${v}: ${ok ? "(set)" : "MISSING — required"}`);
+    }
+    for (const v of optional) {
+      const val = process.env[v];
+      console.log(`  ${val ? "✅" : "➖"} ${v}: ${val ? `"${val.slice(0, 40)}"` : "(not set)"}`);
+    }
+
+    console.log("\n[ WireGuard / SSH ]");
+    const hasRouter = !!(process.env.ROUTER_SSH_HOST || process.env.ROUTER_PROXY_URL);
+    if (!hasRouter) {
+      console.log("  ➖ Router not configured — skipping preflight (direct scrapers only)");
+    } else {
+      const pf = await preflightCheck();
+      console.log(`  ${pf.ok ? "✅" : "❌"} WireGuard: ${pf.wgStatus}${pf.wgLatencyMs != null ? ` (${pf.wgLatencyMs}ms)` : ""}`);
+      if (!pf.ok) allOk = false;
+    }
+
+    console.log("\n[ DB ]");
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      console.log("  ✅ PostgreSQL: connected");
+    } catch (e: any) {
+      console.log(`  ❌ PostgreSQL: ${String(e?.message ?? e).slice(0, 80)}`);
+      allOk = false;
+    }
+
+    console.log("\n[ SCRAPERS ]");
+    const proxyScrapers = scrapers.filter(s => (s as any).proxyUrl || (s as any).requiresProxy);
+    const directScrapers = scrapers.filter(s => !proxyScrapers.includes(s));
+    console.log(`  Direct:  ${directScrapers.map(s => s.name).join(", ") || "(none)"}`);
+    console.log(`  Proxy:   ${proxyScrapers.map(s => s.name).join(", ") || "(none)"}`);
+    console.log(`  Total:   ${scrapers.length}`);
+
+    console.log(`\n═══════════════════════════════════════`);
+    console.log(`  Result: ${allOk ? "✅ READY TO RUN" : "❌ FIX ISSUES ABOVE"}`);
+    console.log(`═══════════════════════════════════════\n`);
+
+    await prisma.$disconnect();
+    process.exit(allOk ? 0 : 1);
+  })();
+} else {
+
 // ─── DRY_RUN mock data ────────────────────────────────────────────────────────
 // Injects fake events with guaranteed-arb odds so the full pipeline runs without
 // real HTTP requests. Enable with DRY_RUN=true in .env.
@@ -542,3 +606,5 @@ console.log(`[scanner] Min profit: ${config.scanner.minProfitPct}%`);
 runLive();
 setTimeout(runPrematch, 5000);
 setTimeout(runCleanup, 30 * 60 * 1000); // first cleanup after 30min
+
+} // end DIAGNOSE else block

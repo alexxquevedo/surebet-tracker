@@ -75,6 +75,31 @@ async function sendCritical(bookmaker: string, isLive: boolean, zeros: number): 
     `Posible causa: URL rota, geo-bloqueo o cambio de API.`;
 
   console.error(`[health] CRITICAL: ${bookmaker} ${isLive ? "live" : "prematch"} → ${zeros} consecutive zero cycles`);
+  await sendAlert("CRITICAL", msg);
+}
+
+// Dedup: avoid spamming the same alert within 10 minutes.
+const _alertSentAt = new Map<string, number>();
+const ALERT_DEDUP_MS = 10 * 60 * 1000;
+
+/**
+ * Send a free-form Telegram alert to all admins.
+ * Deduplicates by key — same key sent within 10 min is silently dropped.
+ * key defaults to the first 80 chars of message if not provided.
+ */
+export async function sendAlert(
+  level: "CRITICAL" | "WARNING",
+  message: string,
+  dedupKey?: string,
+): Promise<void> {
+  const key = dedupKey ?? message.slice(0, 80);
+  const last = _alertSentAt.get(key) ?? 0;
+  if (Date.now() - last < ALERT_DEDUP_MS) return; // deduplicated
+  _alertSentAt.set(key, Date.now());
+
+  const emoji = level === "CRITICAL" ? "🚨" : "⚠️";
+  const text = message.startsWith("<") ? message : `${emoji} <b>${level} — FidesBot Scanner</b>\n${message}`;
+  console.error(`[health] ${level}: ${message.slice(0, 120)}`);
 
   if (!TELEGRAM_TOKEN) return;
   for (const chatId of ADMIN_IDS) {
@@ -82,7 +107,7 @@ async function sendCritical(bookmaker: string, isLive: boolean, zeros: number): 
       const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML" }),
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
         signal: AbortSignal.timeout(6_000),
       });
       if (!res.ok) console.warn(`[health] TG alert failed: ${res.status}`);
