@@ -37,6 +37,8 @@ import { Bet365Scraper } from "./scrapers/bet365";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
 import { RetabetScraper } from "./scrapers/retabet";
+import { isProxyPaused, getPauseInfo } from "./scrapers/ip-rotator";
+import { logger } from "./logger";
 
 // ─── Scraper registry ─────────────────────────────────────────────────────────
 
@@ -296,11 +298,29 @@ async function pollCycle(isLive: boolean): Promise<void> {
   const label = isLive ? "LIVE" : "PREMATCH";
 
   // 1. Scrape all bookmakers in parallel — each isolated, health-tracked
+  const proxyPaused = isProxyPaused();
+  if (proxyPaused) {
+    const info = getPauseInfo();
+    logger.warn("orchestrator.proxy_pause_active", {
+      pauseUntil: info?.until.toISOString(),
+      remainingMs: info?.remainingMs,
+    });
+  }
+
+  // scraperProxies keys are all proxy-dependent scrapers; direct scrapers (winamax, codere, betfair) are absent
+  const proxyScrapers = new Set(Object.keys(config.scraperProxies).filter(k => (config.scraperProxies as Record<string, string>)[k]));
+
   const scrapeResults = await Promise.allSettled(
     scrapers.filter(s => {
-      if (isScraperEnabled(s.name)) return true;
-      console.log("[orchestrator] scraper desactivado");
-      return false;
+      if (!isScraperEnabled(s.name)) {
+        console.log("[orchestrator] scraper desactivado");
+        return false;
+      }
+      if (proxyPaused && proxyScrapers.has(s.name)) {
+        logger.warn("orchestrator.scraper_skipped_pause", { bookmaker: s.name });
+        return false;
+      }
+      return true;
     }).map(async (s) => {
       try {
         const events = await (isLive ? s.scrapeLive() : s.scrapePrematch());

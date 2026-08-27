@@ -7,9 +7,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { chromium, Browser, BrowserContext, CDPSession, Page } from "playwright";
 import { config } from "../config";
+import { randomUA, jitterDelay } from "./ua-pool";
+import { reportBlock, reportSuccess } from "./ip-rotator";
+import { logger } from "../logger";
 
-const CTX_OPTIONS = {
-  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+const CTX_BASE_OPTIONS = {
   locale: "es-ES",
   timezoneId: "Europe/Madrid",
   viewport: { width: 1920, height: 1080 },
@@ -25,7 +27,14 @@ const SCRAPER_COOLDOWN_MS = 180_000;
 
 export function setScraperCooldown(scraperName: string): void {
   scraperCooldowns.set(scraperName, Date.now());
-  console.warn(`[CircuitBreaker] ${scraperName} en cooldown 3 min`);
+  logger.warn("circuit_breaker.cooldown", { bookmaker: scraperName, cooldownMs: SCRAPER_COOLDOWN_MS });
+}
+
+/** Convenience: set cooldown + feed IP rotator in one call (for Playwright scrapers). */
+export function trigger403Block(scraperName: string, httpStatus: number): void {
+  setScraperCooldown(scraperName);
+  logger.warn("scraper.blocked", { bookmaker: scraperName, httpStatus });
+  void reportBlock(scraperName, httpStatus);
 }
 
 export function isScraperInCooldown(scraperName: string): boolean {
@@ -122,7 +131,8 @@ class BrowserManager {
         ? await this.getResidentialBrowser(proxyHint)
         : await this.getBrowser();
       const ctx = await browser.newContext({
-        ...CTX_OPTIONS,
+        ...CTX_BASE_OPTIONS,
+        userAgent: randomUA(), // rotate UA per browser context
         // Q2: disabling strict cert checks for proxied contexts prevents MITM TLS errors
         ...(proxyHint ? { ignoreHTTPSErrors: true } : {}),
       });
@@ -152,10 +162,32 @@ class BrowserManager {
 
   // proxyHint truthy → route through residential proxy browser.
   // Pass result of getProxyForScraper(name) — returns undefined for direct scrapers.
-  async newPage(proxyHint?: { server: string; username?: string; password?: string }): Promise<{ page: Page; ctx: BrowserContext }> {
+  async newPage(
+    proxyHint?: { server: string; username?: string; password?: string },
+    scraperName?: string,
+  ): Promise<{ page: Page; ctx: BrowserContext }> {
     const ctx = await this.createContext(proxyHint);
     try {
       const page = await ctx.newPage();
+
+      // Jitter before first navigation (proxy contexts only — mimics human think-time)
+      if (proxyHint) await jitterDelay();
+
+      // Detect 403/429 in any response and feed the IP rotator
+      if (proxyHint) {
+        page.on("response", (res: any) => {
+          const status: number = res.status();
+          if (status === 403 || status === 429) {
+            const name = scraperName ?? "playwright";
+            logger.warn("playwright.blocked", { bookmaker: name, httpStatus: status, url: String(res.url()).slice(0, 120) });
+            if (scraperName) setScraperCooldown(scraperName);
+            void reportBlock(name, status);
+          } else if (status < 400 && scraperName) {
+            reportSuccess(scraperName);
+          }
+        });
+      }
+
       // Block media that wastes RAM (images, fonts, video) — speeds up load, reduces OOM risk
       await page.route("**/*", (route: any) => {
         const t: string = route.request().resourceType();

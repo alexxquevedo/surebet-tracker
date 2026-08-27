@@ -1,6 +1,10 @@
 import axios, { AxiosInstance } from "axios";
 import { config } from "../config";
 import type { ScrapedEvent, Sport } from "../types";
+import { randomUA, jitterDelay } from "./ua-pool";
+import { setScraperCooldown } from "./playwright-base";
+import { reportBlock, reportSuccess } from "./ip-rotator";
+import { logger } from "../logger";
 
 export abstract class BaseScraper {
   abstract readonly name: string;
@@ -25,13 +29,36 @@ export abstract class BaseScraper {
     this.http = axios.create({
       timeout: 20_000,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": randomUA(),
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         Accept: "application/json, text/html, */*",
       },
       ...proxyConfig,
     });
+
+    // Rotate UA per request; add jitter when going through a proxy
+    this.http.interceptors.request.use(async (cfg) => {
+      cfg.headers["User-Agent"] = randomUA();
+      if (config.proxy.enabled) await jitterDelay();
+      return cfg;
+    });
+
+    // Feed 403/429 into the circuit breaker + IP rotator
+    this.http.interceptors.response.use(
+      (res) => {
+        if (config.proxy.enabled) reportSuccess(this.name);
+        return res;
+      },
+      (err) => {
+        const status: number = err?.response?.status ?? 0;
+        if ((status === 403 || status === 429) && config.proxy.enabled) {
+          logger.warn("scraper.blocked", { bookmaker: this.name, httpStatus: status });
+          setScraperCooldown(this.name);
+          void reportBlock(this.name, status);
+        }
+        throw err;
+      },
+    );
   }
 
   /** Scrape live events for all configured sports. */
