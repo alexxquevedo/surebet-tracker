@@ -48,6 +48,36 @@ export function getPauseInfo(): { until: Date; remainingMs: number } | null {
   return { until: new Date(_pauseUntil), remainingMs: _pauseUntil - Date.now() };
 }
 
+/** Snapshot for health file. */
+export function getRotatorStats() {
+  return {
+    blockCount: _blockCount,
+    rotationN: _rotationN,
+    proxyPaused: isProxyPaused(),
+    pauseUntil: _pauseUntil > 0 ? new Date(_pauseUntil).toISOString() : null,
+    rotating: _rotating,
+  };
+}
+
+/**
+ * Pre-flight check before proxy-routed scraping cycles.
+ * Returns ok=true if WireGuard tunnel is up or no router is configured.
+ * Call this before each poll cycle; skip proxy scrapers if ok=false.
+ */
+export async function preflightCheck(): Promise<{ ok: boolean; wgStatus: "up" | "down" | "degraded" | "unconfigured"; wgLatencyMs: number | null }> {
+  // No router configured → direct connection scrapers only, no tunnel to check
+  if (!process.env.ROUTER_SSH_HOST && !process.env.ROUTER_PROXY_URL) {
+    return { ok: true, wgStatus: "unconfigured", wgLatencyMs: null };
+  }
+  const result = await _checkWireguard();
+  if (result.wgStatus === "down") {
+    logger.warn("preflight.wg_down", { ...result });
+  } else {
+    logger.info("preflight.wg_ok", { ...result });
+  }
+  return { ok: result.wgStatus !== "down", ...result };
+}
+
 /**
  * Called by proxy-routed scrapers on every 403 / 429 response.
  * Accumulates block count; triggers SSH rotation at threshold.

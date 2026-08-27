@@ -20,7 +20,7 @@ import prisma from "./db";
 import { healthUpdate, healthReport } from "./health/checker";
 import { findArbs } from "./calculator";
 import { notifyArbs } from "./notifier";
-import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes, DetectedArb } from "./types";
+import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes, H2HOutcome, DetectedArb } from "./types";
 import { BaseScraper } from "./scrapers/base";
 import { isScraperEnabled } from "./scrapers/scraperState";
 import { BetfairScraper } from "./scrapers/betfair";
@@ -37,7 +37,9 @@ import { Bet365Scraper } from "./scrapers/bet365";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
 import { RetabetScraper } from "./scrapers/retabet";
-import { isProxyPaused, getPauseInfo } from "./scrapers/ip-rotator";
+import { isProxyPaused, getPauseInfo, preflightCheck } from "./scrapers/ip-rotator";
+import { resetScraperCooldown } from "./scrapers/playwright-base";
+import { recordCycle, writeHealthFile } from "./health-file";
 import { logger } from "./logger";
 
 // ─── Scraper registry ─────────────────────────────────────────────────────────
@@ -89,6 +91,35 @@ const SPORT_TO_PRISMA: Record<string, string> = {
 };
 function toPrismaSport(sport: string): string {
   return SPORT_TO_PRISMA[sport] ?? "OTHER";
+}
+
+// ─── DRY_RUN mock data ────────────────────────────────────────────────────────
+// Injects fake events with guaranteed-arb odds so the full pipeline runs without
+// real HTTP requests. Enable with DRY_RUN=true in .env.
+
+const DRY_RUN = process.env.DRY_RUN === "true";
+
+if (DRY_RUN) {
+  console.warn("[scanner] ⚠️  DRY_RUN=true — no real HTTP requests will be made");
+}
+
+function mockEvents(scraperName: string, isLive: boolean): ScrapedEvent[] {
+  const startTime = new Date(Date.now() + 60 * 60 * 1000);
+  const oddsMap = scraperName === "winamax"
+    ? { "Real Madrid": 2.50, "Draw": 4.20, "Barcelona": 2.70 }
+    : { "Real Madrid": 2.10, "Draw": 4.10, "Barcelona": 3.10 };
+  const outcomes: H2HOutcome[] = Object.entries(oddsMap).map(([name, odds]) => ({ name, odds }));
+  return [{
+    bookmaker: scraperName,
+    sport: "FOOTBALL" as Sport,
+    eventKey: `dry-run-real-madrid-barcelona:${new Date().toISOString().slice(0, 10)}`,
+    eventName: "[DRY_RUN] Real Madrid - Barcelona",
+    league: "LaLiga",
+    isLive,
+    startTime,
+    market: "h2h",
+    outcomes,
+  }];
 }
 
 // ─── Arb deduplication (in-memory) ───────────────────────────────────────────
@@ -297,17 +328,16 @@ function isProxyIssue(resultsMap: Map<string, number>): boolean {
 async function pollCycle(isLive: boolean): Promise<void> {
   const label = isLive ? "LIVE" : "PREMATCH";
 
-  // 1. Scrape all bookmakers in parallel — each isolated, health-tracked
+  // 1. Pre-flight: check WireGuard tunnel before wasting a cycle on proxy scrapers
+  const preflight = await preflightCheck();
   const proxyPaused = isProxyPaused();
+
   if (proxyPaused) {
     const info = getPauseInfo();
-    logger.warn("orchestrator.proxy_pause_active", {
-      pauseUntil: info?.until.toISOString(),
-      remainingMs: info?.remainingMs,
-    });
+    logger.warn("orchestrator.proxy_pause_active", { pauseUntil: info?.until.toISOString(), remainingMs: info?.remainingMs });
   }
 
-  // scraperProxies keys are all proxy-dependent scrapers; direct scrapers (winamax, codere, betfair) are absent
+  // scraperProxies keys: all proxy-dependent scrapers; direct scrapers (winamax, codere, betfair) are absent
   const proxyScrapers = new Set(Object.keys(config.scraperProxies).filter(k => (config.scraperProxies as Record<string, string>)[k]));
 
   const scrapeResults = await Promise.allSettled(
@@ -316,15 +346,19 @@ async function pollCycle(isLive: boolean): Promise<void> {
         console.log("[orchestrator] scraper desactivado");
         return false;
       }
-      if (proxyPaused && proxyScrapers.has(s.name)) {
-        logger.warn("orchestrator.scraper_skipped_pause", { bookmaker: s.name });
-        return false;
+      if (proxyScrapers.has(s.name)) {
+        if (proxyPaused) { logger.warn("orchestrator.scraper_skipped_pause", { bookmaker: s.name }); return false; }
+        if (!preflight.ok) { logger.warn("orchestrator.scraper_skipped_wg_down", { bookmaker: s.name }); return false; }
       }
       return true;
     }).map(async (s) => {
       try {
-        const events = await (isLive ? s.scrapeLive() : s.scrapePrematch());
+        const events = DRY_RUN
+          ? mockEvents(s.name, isLive)
+          : await (isLive ? s.scrapeLive() : s.scrapePrematch());
         healthUpdate(s.name, isLive, events.length);
+        // Reset exponential backoff counter on success
+        if (events.length > 0) resetScraperCooldown(s.name);
         return { name: s.name, events };
       } catch (err) {
         healthUpdate(s.name, isLive, 0);
@@ -350,6 +384,9 @@ async function pollCycle(isLive: boolean): Promise<void> {
   if (perBook.length > 0) {
     console.log(`[orchestrator] ${label}: ${perBook.join(", ")}`);
   }
+
+  // Record cycle stats for health file (always, even on zero-event cycles)
+  recordCycle(isLive, allEvents.length);
 
   // Zero-cycle detection: track consecutive cycles with 0 total events
   if (!allEvents.length) {
@@ -445,6 +482,7 @@ async function runLive() {
   } catch (err) {
     console.error("[orchestrator] Live cycle error:", err);
   } finally {
+    writeHealthFile();
     liveTimer = setTimeout(runLive, config.scanner.livePollMs);
   }
 }
@@ -455,6 +493,7 @@ async function runPrematch() {
   } catch (err) {
     console.error("[orchestrator] Prematch cycle error:", err);
   } finally {
+    writeHealthFile();
     prematchTimer = setTimeout(runPrematch, config.scanner.prematchPollMs);
   }
 }

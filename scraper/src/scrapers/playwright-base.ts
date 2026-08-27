@@ -22,12 +22,36 @@ const CTX_BASE_OPTIONS = {
 // Prevents a failing scraper from repeatedly hammering the semaphore.
 // On failure → 3-min cooldown; caller checks isScraperInCooldown() before acquiring.
 
-const scraperCooldowns = new Map<string, number>();
-const SCRAPER_COOLDOWN_MS = 180_000;
+interface CooldownState {
+  until: number;       // epoch ms when cooldown expires
+  consecutive: number; // consecutive 403/crash count — drives backoff exponent
+}
+
+const scraperCooldowns = new Map<string, CooldownState>();
+
+// Exponential backoff: 3min → 6min → 12min → 24min → 60min (cap)
+const BACKOFF_BASE_MS = 3 * 60 * 1000;
+const BACKOFF_MAX_MS  = 60 * 60 * 1000;
+
+function backoffDuration(consecutive: number): number {
+  return Math.min(BACKOFF_BASE_MS * Math.pow(2, consecutive - 1), BACKOFF_MAX_MS);
+}
 
 export function setScraperCooldown(scraperName: string): void {
-  scraperCooldowns.set(scraperName, Date.now());
-  logger.warn("circuit_breaker.cooldown", { bookmaker: scraperName, cooldownMs: SCRAPER_COOLDOWN_MS });
+  const prev = scraperCooldowns.get(scraperName);
+  const consecutive = (prev?.consecutive ?? 0) + 1;
+  const duration = backoffDuration(consecutive);
+  scraperCooldowns.set(scraperName, { until: Date.now() + duration, consecutive });
+  logger.warn("circuit_breaker.cooldown", { bookmaker: scraperName, consecutive, cooldownMs: duration });
+}
+
+/** Reset backoff counter when a scraper returns events after a cooldown period. */
+export function resetScraperCooldown(scraperName: string): void {
+  const prev = scraperCooldowns.get(scraperName);
+  if (prev && prev.consecutive > 0) {
+    scraperCooldowns.set(scraperName, { until: 0, consecutive: 0 });
+    logger.info("circuit_breaker.recovered", { bookmaker: scraperName, prevConsecutive: prev.consecutive });
+  }
 }
 
 /** Convenience: set cooldown + feed IP rotator in one call (for Playwright scrapers). */
@@ -38,8 +62,18 @@ export function trigger403Block(scraperName: string, httpStatus: number): void {
 }
 
 export function isScraperInCooldown(scraperName: string): boolean {
-  const last = scraperCooldowns.get(scraperName) ?? 0;
-  return (Date.now() - last) < SCRAPER_COOLDOWN_MS;
+  const state = scraperCooldowns.get(scraperName);
+  return state ? Date.now() < state.until : false;
+}
+
+/** Snapshot of all cooldown states — used by the health file writer. */
+export function getScraperCooldownStates(): Record<string, { inCooldown: boolean; consecutive: number; cooldownUntil?: string }> {
+  const out: Record<string, { inCooldown: boolean; consecutive: number; cooldownUntil?: string }> = {};
+  for (const [name, state] of scraperCooldowns) {
+    const inCooldown = Date.now() < state.until;
+    out[name] = { inCooldown, consecutive: state.consecutive, ...(inCooldown ? { cooldownUntil: new Date(state.until).toISOString() } : {}) };
+  }
+  return out;
 }
 
 // ─── Proxy URL parser (shared by scrapers that launch their own browser) ─────
