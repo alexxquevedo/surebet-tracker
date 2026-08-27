@@ -953,6 +953,15 @@ async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
                     existing["expires"] = expires
                     existing["is_trial"] = False
                     existing.get("config", {}).pop("_is_trial", None)
+                    try:
+                        nl = "\n"
+                        exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
+                        name = existing.get("name") or str(uid)
+                        msg_r = f"🔄 *Renovación*{nl}{name} (`{uid}`){nl}⏰ Nueva exp: {exp_s}"
+                        await context.bot.send_message(chat_id=ADMIN_ID, text=msg_r, parse_mode="Markdown")
+                        await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_r, parse_mode="Markdown")
+                    except Exception:
+                        pass
             else:
                 # New subscription — add to in-memory dict (Stripe payment just processed)
                 cfg = sub.get("config") or deepcopy(DEFAULT_USER_CONFIG)
@@ -972,6 +981,15 @@ async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
                 }
                 creditos[uid] = sub.get("credits") or creditos.get(uid, 0)
                 logger.info(f"[sync] Suscripción nueva cargada desde API: {uid}")
+                try:
+                    nl = "\n"
+                    exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
+                    name = sub.get("telegramName") or str(uid)
+                    msg_n = f"💳 *Nuevo pago*{nl}{name} (`{uid}`){nl}⏰ Expira: {exp_s}"
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=msg_n, parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_n, parse_mode="Markdown")
+                except Exception:
+                    pass
 
         for u in api_data.get("linkedUsers", []):
             uid = int(u["telegramId"])
@@ -2021,12 +2039,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         guardar_db()
         try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(f"🆕 *Nuevo usuario en prueba*\n"
-                      f"{user.full_name} (`{user_id}`)\n"
-                      f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"),
-                parse_mode="Markdown")
+            nl = "\n"
+            msg_prueba = (
+                f"🆕 *Nuevo usuario en prueba*{nl}"
+                f"{user.full_name} (`{user_id}`){nl}"
+                f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"
+            )
+            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_prueba, parse_mode="Markdown")
+            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_prueba, parse_mode="Markdown")
         except Exception:
             pass
         await update.message.reply_text(
@@ -3405,6 +3425,13 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         guardar_db()
         # Refrescar caché de suscripción desde la API
         await refrescar_suscripcion(user_id)
+        try:
+            nl = "\n"
+            msg_v = f"🔗 *Vinculación DualStats*{nl}{user.full_name} (`{user_id}`){nl}Plan web: {plan_web or 'FREE'}"
+            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_v, parse_mode="Markdown")
+            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_v, parse_mode="Markdown")
+        except Exception:
+            pass
         try: await msg.delete()
         except Exception as e: logger.debug("Delete msg ignored: %s", e)
         plan_badge = " (PRO+Tracker ✨)" if plan_web in ("PRO_TRACKER", "ENTERPRISE") else ""
