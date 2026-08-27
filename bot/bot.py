@@ -11,6 +11,17 @@ from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+
+# ── Cargar .env local si existe (secretos fuera del repo) ──
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 # Zona horaria local (España)
 try:
     from zoneinfo import ZoneInfo as _ZI
@@ -22,15 +33,20 @@ except Exception:
         return datetime.now() + timedelta(hours=2)
 
 
-
 # ============================================================
 # CONFIGURACIÓN PRINCIPAL
 # ============================================================
-TELEGRAM_TOKEN   = "8467505098:AAEQfDx-TnSSitjVQwDbGHH8EdnPKajwyus"
+def _require_env(key: str) -> str:
+    val = os.environ.get(key)
+    if not val:
+        raise RuntimeError(f"Variable de entorno requerida no encontrada: {key}")
+    return val
+
+TELEGRAM_TOKEN   = _require_env("TELEGRAM_TOKEN")
 ADMIN_ID         = 1207554638
 ADMIN_IDS        = {1207554638, 2051653218}  # Todos los admins
 PAGOS_GROUP_ID   = -5254902973
-ODDS_API_KEY     = "250616a989efee88a4f31af49784c07e"
+ODDS_API_KEY     = _require_env("ODDS_API_KEY")
 ODDS_API_BASE    = "https://api.the-odds-api.com/v4"
 DB_FILE          = "/content/drive/MyDrive/fidesbot/bot_db.json"
 ALERTS_CACHE_FILE = "bot_alerts_cache.json"
@@ -38,7 +54,7 @@ BOT_USERNAME     = "perpleSurebetBot"
 
 # ── DualStats Tracker ──────────────────────────────────────
 DUALSTATS_API_URL = "https://dualstats-tracker.vercel.app/api/bot"
-DUALSTATS_API_KEY = "f8c22003d898614fd5fe4df311785bd7e16b75599f30ec4d2f08416919ad13c0"
+DUALSTATS_API_KEY = _require_env("DUALSTATS_API_KEY")
 DUALSTATS_WEB_URL = "https://dualstats-tracker.vercel.app"
 ADMIN_USERNAME    = "alescuge"          # usuario de Telegram de soporte
 COMUNIDAD_URL     = ""                  # ← link a tu grupo/canal (vacío = botón oculto)
