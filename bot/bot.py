@@ -1001,7 +1001,8 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                              f"{expires.strftime('%d/%m/%Y')}.\n\n"
                              f"👉 /start → 🔄 Renovar suscripción",
                         parse_mode="Markdown")
-        except: pass
+        except Exception as e:
+            logger.debug("Reminder send ignored (user may have blocked bot): %s", e)
     guardar_db()
 
 # ============================================================
@@ -1985,7 +1986,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=ADMIN_ID,
                         text=f"🔗 *Nuevo referido*\n{user.full_name} (ID: `{user_id}`) por ID `{ref_id}`",
                         parse_mode="Markdown")
-                except: pass
+                except Exception as e:
+                    logger.debug("Referral notify ignored: %s", e)
 
     if user_id not in creditos:
         creditos[user_id] = CREDITOS_INICIALES
@@ -3113,10 +3115,10 @@ async def cmd_scanner_config(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if len(args) >= 2 and args[0].isdigit():
         uid = int(args[0])
         try: profit = float(args[1].replace(",", "."))
-        except: pass
+        except (ValueError, TypeError): pass
     elif args:
         try: profit = float(args[0].replace(",", "."))
-        except: pass
+        except (ValueError, TypeError): pass
     if profit is not None:
         _set_scanner_cfg(uid, minProfitPct=profit)
     sc = _get_scanner_cfg(uid)
@@ -3388,7 +3390,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         # Refrescar caché de suscripción desde la API
         await refrescar_suscripcion(user_id)
         try: await msg.delete()
-        except: pass
+        except Exception as e: logger.debug("Delete msg ignored: %s", e)
         plan_badge = " (PRO+Tracker ✨)" if plan_web in ("PRO_TRACKER", "ENTERPRISE") else ""
         await update.message.reply_text(
             f"✅ *¡Cuenta vinculada con éxito!{plan_badge}*\n\n"
@@ -3405,7 +3407,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         dualstats_vinculados.add(user_id)
         guardar_db()
         try: await msg.delete()
-        except: pass
+        except Exception as e: logger.debug("Delete msg ignored: %s", e)
         await update.message.reply_text(
             "✅ *Vinculación registrada (modo desarrollo)*\n\n"
             "La API de DualStats aún no está configurada, pero tu cuenta "
@@ -3416,7 +3418,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
             ]]))
     else:
         try: await msg.delete()
-        except: pass
+        except Exception as e: logger.debug("Delete msg ignored: %s", e)
         await update.message.reply_text(
             "❌ *El enlace de vinculación no es válido o ha expirado.*\n\n"
             "Ve a DualStats Tracker → Configuración → Conectar FidesBot "
@@ -3719,7 +3721,7 @@ async def _fetch_scanner_arb(arb_id: str) -> dict | None:
     finally:
         if conn:
             try: await conn.close()
-            except: pass
+            except Exception: pass
 
 async def handle_scanner_alerta_hecha(update, context, uid, arb_id):
     """Handles ✅ Hecha button from scanner notifications (SCAN_AH_)."""
@@ -3755,7 +3757,8 @@ async def handle_scanner_alerta_hecha(update, context, uid, arb_id):
 
     try:
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
-    except: pass
+    except Exception as e:
+        logger.debug("Edit reply markup ignored: %s", e)
     await query.answer("✅ Guardada en pendientes")
     await context.bot.send_message(
         chat_id=uid,
@@ -3770,7 +3773,8 @@ async def handle_scanner_alerta_nohecha(update, context, uid, arb_id):
     query = update.callback_query
     try:
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
-    except: pass
+    except Exception as e:
+        logger.debug("Edit reply markup ignored: %s", e)
     await query.answer("❌ Registrado como no realizada")
 
 async def handle_alerta_hecha(update, context, uid, alert_id):
@@ -3816,7 +3820,8 @@ async def handle_alerta_hecha(update, context, uid, alert_id):
             text=datos["mensaje"] + "\n\n✅ *Hecha · Pendiente de registrar*\nUsa /pendientes cuando puedas.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([]))
-    except: pass
+    except Exception as e:
+        logger.debug("Edit message text ignored: %s", e)
 
     await query.answer("✅ Guardada en pendientes")
 
@@ -3845,7 +3850,8 @@ async def handle_alerta_nohecha(update, context, uid, alert_id):
                 text=datos["mensaje"] + "\n\n❌ *No realizada*",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([]))
-        except: pass
+        except Exception as e:
+            logger.debug("Edit message text ignored: %s", e)
 
     await query.answer("❌ Registrado como no realizada")
 
@@ -4699,7 +4705,8 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("🏆 Ver resultados", callback_data="DS_resultados"),
                         ]]))
-                except: pass
+                except Exception as e:
+                    logger.debug("Recordatorio auto-registro ignored: %s", e)
 
             # Recordatorio 24h
             elif horas >= 24 and not recordatorio_24:
@@ -4714,7 +4721,8 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("✏️ Completar ahora", callback_data=f"PC_{p['id']}"),
                         ]]))
-                except: pass
+                except Exception as e:
+                    logger.debug("Recordatorio 24h ignored: %s", e)
                 guardar_db()
 
             # Recordatorio 12h
@@ -4730,7 +4738,8 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("✏️ Ir a pendientes", callback_data="DS_pendientes"),
                         ]]))
-                except: pass
+                except Exception as e:
+                    logger.debug("Recordatorio 12h ignored: %s", e)
                 guardar_db()
 
 # ── Desvincular cuenta ────────────────────────────────────
@@ -4887,7 +4896,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                      f"Tienes *{dias_activar} días* de acceso.\n\nEscribe /start para acceder.",
                 parse_mode="Markdown")
-        except: pass
+        except Exception as e:
+            logger.debug("Activation notify ignored: %s", e)
         return
 
     # ── Admin ──────────────────────────────────────────────
@@ -5301,7 +5311,8 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                              f"Tienes *{dias} días* de acceso.\n\nEscribe /start para acceder.",
                         parse_mode="Markdown")
-                except: pass
+                except Exception as e:
+                    logger.debug("Activation notify ignored: %s", e)
             except:
                 await update.message.reply_text(
                     "❌ Formato:\n`activar ID DIAS` — PRO\n`activar ID DIAS T` — PRO+Tracker",
@@ -5336,7 +5347,8 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=uid,
                         text=f"🎁 *¡Has recibido {cantidad} créditos!*\n\nTotal: *{get_creditos(uid)} créditos*.",
                         parse_mode="Markdown")
-                except: pass
+                except Exception as e:
+                    logger.debug("Credits notify ignored: %s", e)
             except:
                 await update.message.reply_text("❌ Formato: `creditos ID CANTIDAD`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
@@ -5351,7 +5363,8 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text=f"📢 *Mensaje del administrador:*\n\n{text}", parse_mode="Markdown")
                     enviados += 1
                     await asyncio.sleep(0.1)
-                except: pass
+                except Exception as e:
+                    logger.debug("Broadcast to %s ignored: %s", uid, e)
         await update.message.reply_text(f"✅ Enviado a *{enviados}* usuarios.", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -6015,7 +6028,7 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if conn:
             try: await conn.close()
-            except: pass
+            except Exception: pass
 
     if not rows:
         await update.message.reply_text(
