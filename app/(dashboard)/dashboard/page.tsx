@@ -16,6 +16,8 @@ import type {
   BetRecordListItem,
   BetType,
   BetStatus,
+  StreakMetrics,
+  WindowMetrics,
 } from '@/types/domain'
 
 export const metadata: Metadata = { title: 'Dashboard — DualStats Tracker' }
@@ -72,8 +74,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const now         = new Date()
   const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+  const todayStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-  const [metrics, recentRecords, openBets, bankrolls, setupData, settingsRow, monthlyPnlRaw] = await Promise.all([
+  const [metrics, recentRecords, openBets, bankrolls, setupData, settingsRow, monthlyPnlRaw, todayRaw] = await Promise.all([
     getDashboardMetrics(userId, bankrollId),
     getRecentBetRecords(userId, 5),
     getOpenBets(userId),
@@ -106,6 +109,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       },
       _sum: { grossProfit: true },
     }),
+    prisma.betRecord.aggregate({
+      where: {
+        userId,
+        deletedAt: null,
+        status:      { in: ['WON', 'LOST', 'CASHOUT', 'VOID', 'PARTIAL_WIN'] },
+        dateSettled: { gte: todayStart },
+      },
+      _sum:   { grossProfit: true },
+      _count: { id: true },
+    }),
   ])
 
   const setupStep1 = (setupData?.bookmakers.length ?? 0) > 0
@@ -121,6 +134,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const monthlyPnl = monthlyPnlRaw._sum.grossProfit
     ? parseFloat(monthlyPnlRaw._sum.grossProfit.toString())
     : 0
+
+  const todayPnl = todayRaw._sum.grossProfit
+    ? parseFloat(todayRaw._sum.grossProfit.toString())
+    : 0
+  const todayOps = todayRaw._count.id
 
   return (
     <div className="space-y-8">
@@ -186,6 +204,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <MonthlyGoalWidget target={monthlyTarget} current={monthlyPnl} />
       )}
 
+      {/* ── Resumen rápido + racha ──────────────────────────────────────── */}
+      <QuickSummaryWidget
+        streaks={advanced.streaks}
+        todayPnl={todayPnl}
+        todayOps={todayOps}
+        last7={advanced.last7}
+        last30={advanced.last30}
+      />
+
       {/* ── S1: Bankroll Global ─────────────────────────────────────────── */}
       <section>
         <SectionHeading>Bankroll Global</SectionHeading>
@@ -230,6 +257,71 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <RecentRecordsSection records={recentRecords} />
       </section>
 
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RESUMEN RÁPIDO — hoy, racha, últimos 7 / 30 días
+// ════════════════════════════════════════════════════════════════════════════
+
+function QuickSummaryWidget({
+  streaks,
+  todayPnl,
+  todayOps,
+  last7,
+  last30,
+}: {
+  streaks:  StreakMetrics
+  todayPnl: number
+  todayOps: number
+  last7:    WindowMetrics
+  last30:   WindowMetrics
+}) {
+  const winActive  = streaks.currentWin  > 0
+  const lossActive = streaks.currentLoss > 0
+  const streakLabel = winActive
+    ? `${streaks.currentWin} victorias`
+    : lossActive
+    ? `${streaks.currentLoss} pérdidas`
+    : '—'
+  const streakCls = winActive ? 'text-green-600' : lossActive ? 'text-red-600' : 'text-muted-foreground'
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Racha actual</p>
+        <p className={`text-xl font-bold mt-1.5 tabular-nums ${streakCls}`}>{streakLabel}</p>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          Máx. {streaks.maxWin} ganan. / {streaks.maxLoss} perd.
+        </p>
+      </div>
+
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">P&L hoy</p>
+        <p className={`text-xl font-bold mt-1.5 tabular-nums ${profitCls(todayPnl)}`}>
+          {formatProfit(todayPnl)}
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          {todayOps} {todayOps === 1 ? 'op.' : 'ops.'} liquidadas
+        </p>
+      </div>
+
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Últimos 7 días</p>
+        <p className={`text-xl font-bold mt-1.5 tabular-nums ${profitCls(last7.profit)}`}>
+          {formatProfit(last7.profit)}
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-1">{last7.operations} ops.</p>
+      </div>
+
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Últimos 30 días</p>
+        <p className={`text-xl font-bold mt-1.5 tabular-nums ${profitCls(last30.profit)}`}>
+          {formatProfit(last30.profit)}
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-1">{last30.operations} ops.</p>
+      </div>
     </div>
   )
 }

@@ -38,7 +38,9 @@ const NAV_LINKS = [
   { href: '/dashboard',   label: 'Dashboard',          icon: '📊',  proOnly: false },
   { href: '/bookmakers',  label: 'Casas de apuestas',  icon: '🏦',  proOnly: false },
   { href: '/records',     label: 'Operaciones',        icon: '📋',  proOnly: false },
+  { href: '/calculator',  label: 'Calculadora',        icon: '🧮',  proOnly: false },
   { href: '/stats',       label: 'Estadísticas',       icon: '📈',  proOnly: true  },
+  { href: '/scanner',     label: 'Scanner',            icon: '🔍',  proOnly: true  },
   { href: '/settings',    label: 'Configuración',      icon: '⚙️',  proOnly: false },
 ] as const
 

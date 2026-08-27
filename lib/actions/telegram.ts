@@ -44,7 +44,7 @@ export async function generateLinkTokenAction(): Promise<GenerateLinkResult> {
     data: { userId, token, expiresAt },
   })
 
-  const botName  = process.env.TELEGRAM_BOT_NAME ?? 'perpleSurebetBot'
+  const botName  = process.env.TELEGRAM_BOT_NAME ?? 'FiidesBot'
   const deepLink = `https://t.me/${botName}?start=CONNECT_${token}`
 
   return {
