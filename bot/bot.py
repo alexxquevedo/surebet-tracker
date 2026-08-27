@@ -1664,7 +1664,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
-    except: fecha_str = "??/??"
+    except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
     def _leg_line(l):
         region_tag = f" [{l['region']}]" if l.get("region") else ""
         return (f"📕 {l['bookmaker']}{region_tag} 📍 {formatear_outcome(l)} "
@@ -1687,7 +1687,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
-    except: fecha_str = "??/??"
+    except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
     lineas = "".join([
         f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
         f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
@@ -1739,7 +1739,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         events = _merge_cross_source_events(events, live)
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
-            except: commence = None
+            except (ValueError, KeyError): commence = None
             # Pre-match: skip event when commence is unparseable
             if not live and commence is None: continue
             # Live: skip events con hora desconocida o que aún no han empezado (>5 min en el futuro)
@@ -3327,7 +3327,7 @@ def _tiempo_relativo(ts_str: str) -> str:
         horas = mins // 60
         if horas < 24: return f"hace {horas}h"
         return f"hace {horas//24}d"
-    except:
+    except (ValueError, TypeError):
         return ""
 
 # ── Llamada a la API de DualStats ─────────────────────────
@@ -4645,7 +4645,7 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
             try:
                 ts    = datetime.fromisoformat(p["ts"])
                 horas = (ahora - ts).total_seconds() / 3600
-            except:
+            except (ValueError, KeyError):
                 continue
 
             recordatorio_12 = p.get("rec_12", False)
@@ -4932,7 +4932,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "soporte_faq":         await mostrar_soporte(update, context, page=0); return
     if data.startswith("soporte_p"):
         try: page = int(data[len("soporte_p"):])
-        except: page = 0
+        except (ValueError, IndexError): page = 0
         await mostrar_soporte(update, context, page=page); return
     if data == "novedades":           await mostrar_novedades(update, context); return
     if data == "novedades_ultima":    await novedades_subpagina(update, context, NOVEDADES_ULTIMA); return
@@ -5089,13 +5089,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page = 0
         if data.startswith("DS_pendientes_p"):
             try: page = int(data[len("DS_pendientes_p"):])
-            except: page = 0
+            except (ValueError, IndexError): page = 0
         await mostrar_pendientes(update, context, page=page)
     elif data == "DS_resultados" or data.startswith("DS_resultados_p"):
         page = 0
         if data.startswith("DS_resultados_p"):
             try: page = int(data[len("DS_resultados_p"):])
-            except: page = 0
+            except (ValueError, IndexError): page = 0
         await mostrar_resultados(update, context, page=page)
     elif data == "DS_desvincular":     await handle_desvincular(update, context)
     elif data.startswith("DS_resumen_"):
@@ -5313,7 +5313,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="Markdown")
                 except Exception as e:
                     logger.debug("Activation notify ignored: %s", e)
-            except:
+            except (ValueError, IndexError):
                 await update.message.reply_text(
                     "❌ Formato:\n`activar ID DIAS` — PRO\n`activar ID DIAS T` — PRO+Tracker",
                     parse_mode="Markdown")
@@ -5330,7 +5330,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 uid = int(parts[1])
                 desactivar_usuario(uid)
                 await update.message.reply_text(f"✅ ID `{uid}` desactivado.", parse_mode="Markdown")
-            except:
+            except (ValueError, IndexError):
                 await update.message.reply_text("❌ Formato: `desactivar ID`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -5349,7 +5349,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="Markdown")
                 except Exception as e:
                     logger.debug("Credits notify ignored: %s", e)
-            except:
+            except (ValueError, IndexError):
                 await update.message.reply_text("❌ Formato: `creditos ID CANTIDAD`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -5376,7 +5376,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dualstats_vinculados.add(uid)
             guardar_db()
             await update.message.reply_text(f"✅ Usuario `{uid}` marcado como vinculado a DualStats.", parse_mode="Markdown")
-        except:
+        except (ValueError, IndexError):
             await update.message.reply_text("❌ Formato: `vincular_ds ID`", parse_mode="Markdown")
 
     elif text.lower().startswith("desvincular_ds "):
@@ -5385,7 +5385,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dualstats_vinculados.discard(uid)
             guardar_db()
             await update.message.reply_text(f"✅ Usuario `{uid}` desvinculado de DualStats.", parse_mode="Markdown")
-        except:
+        except (ValueError, IndexError):
             await update.message.reply_text("❌ Formato: `desvincular_ds ID`", parse_mode="Markdown")
 
 # ============================================================
@@ -5687,7 +5687,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
-            except: commence = None
+            except (ValueError, KeyError): commence = None
             apuestas = encontrar_apuestas(event, active_bks, False, sport_key=sport_key)
             surebets = [ap for ap in apuestas if ap["tipo"] == "surebet"]
             sport_surebets += len(surebets)
@@ -6055,7 +6055,7 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     ts_mad = ts + timedelta(hours=2)
                 hora = ts_mad.strftime("%d/%m %H:%M")
-            except:
+            except Exception:
                 hora = str(ts)[:16]
         texto += f"{emoji} {tipo}{live} — *{profit}*\n🏆 {evento}\n🎯 {mercado} · 🗓 {hora}\n\n"
 
