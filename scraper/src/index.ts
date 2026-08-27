@@ -40,6 +40,7 @@ import { RetabetScraper } from "./scrapers/retabet";
 import { isProxyPaused, getPauseInfo, preflightCheck } from "./scrapers/ip-rotator";
 import { resetScraperCooldown } from "./scrapers/playwright-base";
 import { recordCycle, writeHealthFile } from "./health-file";
+import { filterSpikes, getSpikeFilterStats } from "./spike-filter";
 import { logger } from "./logger";
 
 // ─── Scraper registry ─────────────────────────────────────────────────────────
@@ -490,11 +491,18 @@ async function pollCycle(isLive: boolean): Promise<void> {
     }
   }
 
-  // 2. Persist odds to DB
-  await saveOdds(allEvents);
-  console.log(`[orchestrator] ${label}: saved ${allEvents.length} events total`);
+  // 2. Spike filter — hold back anomalous odds for one cycle before saving
+  const filteredEvents = filterSpikes(allEvents);
+  const spikeStats = getSpikeFilterStats();
+  if (spikeStats.pendingCount > 0) {
+    logger.warn("spike_filter.pending", { ...spikeStats, held: allEvents.length - filteredEvents.length });
+  }
 
-  // 3. Load grouped markets and detect arbs
+  // 3. Persist confirmed odds to DB
+  await saveOdds(filteredEvents);
+  console.log(`[orchestrator] ${label}: saved ${filteredEvents.length} events (${allEvents.length - filteredEvents.length} held for spike confirmation)`);
+
+  // 4. Load grouped markets and detect arbs
   const markets = await loadGroupedMarkets(isLive);
   const arbs = findArbs(markets, config.scanner.minProfitPct);
 

@@ -12,6 +12,7 @@ import * as fs from "fs";
 import { healthReport } from "./health/checker";
 import { getPauseInfo, getRotatorStats } from "./scrapers/ip-rotator";
 import { getScraperCooldownStates } from "./scrapers/playwright-base";
+import { getSpikeFilterStats } from "./spike-filter";
 
 const HEALTH_FILE = process.env.HEALTH_FILE ?? "/tmp/scanner-health.json";
 const startedAt   = Date.now();
@@ -40,6 +41,7 @@ export function writeHealthFile(): void {
       cycles,
       scrapers:   healthReport(),
       cooldowns:  getScraperCooldownStates(),
+      spikeFilter: getSpikeFilterStats(),
       proxy: {
         ...getRotatorStats(),
         ...(pauseInfo ? { pauseUntil: pauseInfo.until.toISOString(), remainingMin: Math.ceil(pauseInfo.remainingMs / 60_000) } : {}),
