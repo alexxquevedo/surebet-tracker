@@ -849,9 +849,11 @@ export class WinamaxScraper extends BaseScraper {
         this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — skip`);
       });
       await dismissCookies(page);
-      const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, 12_000);
+      // Football has far more competitions/matches than other sports — give it 25s to load WS data
+      const wsTimeout = sport === "FOOTBALL" ? 25_000 : 12_000;
+      const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, wsTimeout);
       if (waitResult === "timeout") {
-        this.warn(`Prematch ${sport}: sin datos WS ni REST en 12s — posible bloqueo`);
+        this.warn(`Prematch ${sport}: sin datos WS ni REST en ${wsTimeout / 1000}s — posible bloqueo`);
       }
 
       if (waitResult === "ws_data") {

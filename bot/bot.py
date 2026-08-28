@@ -245,7 +245,7 @@ def _save_scanner_state(state: dict):
 
 BLOQUEADO_MSG = "⛔ Función solo disponible para usuarios suscritos.\n\nPulsa 💳 Suscribirse para activar tu cuenta."
 
-SUSCRIPCION = """💳 *Planes FidesBot*
+SUSCRIPCION = """💳 *Planes FiidesBot*
 ━━━━━━━━━━━━━━━━━━
 
 💎 *PRO* — Alertas ilimitadas
@@ -274,12 +274,12 @@ Tu acceso se activa *automáticamente* al completar el pago.
 
 👇 *Elige tu plan:*"""
 
-TERMINOS = """📋 *Términos y Condiciones — FidesBot & DualStats Tracker*
+TERMINOS = """📋 *Términos y Condiciones — FiidesBot & DualStats Tracker*
 
 _Última actualización: 21/08/2026_
 
 *1. Identificación del servicio*
-FidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
+FiidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
 
 *2. Aceptación*
 El uso de cualquiera de los servicios implica la aceptación plena de estos Términos.
@@ -288,21 +288,21 @@ El uso de cualquiera de los servicios implica la aceptación plena de estos Tér
 Uso exclusivo para mayores de 18 años. El acceso por menores está estrictamente prohibido.
 
 *4. Naturaleza del servicio*
-FidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
+FiidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
 
 ⚠️ *No apuestes más de lo que estés dispuesto a perder.*
 
 *5. Pagos y reembolsos*
-Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
+Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FiidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
 
 *6. Datos y privacidad*
-FidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
+FiidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
 
 *7. Prohibiciones*
 Están prohibidos: ceder el acceso a terceros, reenviar alertas de forma automática, compartir la suscripción y cualquier uso automatizado no autorizado. El incumplimiento conlleva bloqueo permanente sin reembolso.
 
 *8. Responsabilidad*
-FidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
+FiidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
 
 *9. Modificaciones*
 Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los cambios se comunicarán a través del bot.
@@ -311,7 +311,7 @@ Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los 
 Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
 SOPORTE_PAGINAS = [
-"""🆘 *Soporte — FidesBot*  _(1/2)_
+"""🆘 *Soporte — FiidesBot*  _(1/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📩 Cualquier duda, escríbenos al administrador. Te respondemos lo antes posible.
@@ -323,7 +323,7 @@ SOPORTE_PAGINAS = [
 Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. El acceso se activa automáticamente al instante.
 
 ❓ *¿Qué es Stripe? ¿Es seguro pagar ahí?*
-Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
+Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FiidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
 
 ❓ *¿La suscripción se renueva sola? ¿Cómo la cancelo?*
 No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar, pulsa 🔄 Renovar en el menú principal y elige tu plan.
@@ -336,7 +336,7 @@ Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta a
 
 ━━━━━━━━━━━━━━━━━━
 _Actualizado: 21/08/2026_""",
-"""🆘 *Soporte — FidesBot*  _(2/2)_
+"""🆘 *Soporte — FiidesBot*  _(2/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📌 *Preguntas frecuentes (cont.):*
@@ -366,15 +366,15 @@ Envía /start para reiniciar la sesión. Si el problema persiste, escribe al adm
 ]
 
 NOVEDADES_HUB = (
-    "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
+    "📰 *Novedades — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "📌 Mantente al día con todo lo nuevo que ofrece FiidesBot.\n\n"
     "🕒 Última actualización: *24/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
     " • Próximas funciones en desarrollo.\n"
     " • Mensajes importantes y avisos.\n\n"
-    "💎 Gracias por confiar en FidesBot. Seguimos trabajando para "
+    "💎 Gracias por confiar en FiidesBot. Seguimos trabajando para "
     "ayudarte con el arbitraje deportivo.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
@@ -382,7 +382,7 @@ NOVEDADES_ULTIMA = (
     "🕒 *Última actualización — 24/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
     "✅ *Activación automática* — tu suscripción se activa al instante "
     "tras el pago con Stripe, sin esperar confirmación manual\n"
-    "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
+    "✅ *Integración FiidesBot × DualStats Tracker* — vincula tu cuenta "
     "web y registra apuestas directamente desde las alertas del bot\n"
     "✅ *Sistema de créditos y freebets* — búsquedas gratuitas por invitar "
     "amigos o renovar suscripción\n"
@@ -398,7 +398,7 @@ NOVEDADES_PROXIMAS = (
     "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
     "_Actualizado: 24/08/2026_\n\n"
     "🔜 *Canal gratuito de Telegram* — alertas de muestra para que "
-    "compruebes cómo funciona FidesBot antes de suscribirte. "
+    "compruebes cómo funciona FiidesBot antes de suscribirte. "
     "Lanzamiento inminente.\n"
     "🔜 Más casas de apuestas — añadimos Bet365, Bwin, William Hill, "
     "Betsson y más para ampliar las combinaciones disponibles\n"
@@ -753,7 +753,7 @@ async def cmd_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=target,
-            text="🚫 Tu acceso a FidesBot ha sido restringido por el administrador.\n"
+            text="🚫 Tu acceso a FiidesBot ha sido restringido por el administrador.\n"
                  "Si crees que es un error, contacta con soporte.")
     except Exception:
         pass
@@ -775,7 +775,7 @@ async def cmd_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=target,
-            text="✅ Tu acceso a FidesBot ha sido restaurado. Escribe /start para continuar.")
+            text="✅ Tu acceso a FiidesBot ha sido restaurado. Escribe /start para continuar.")
     except Exception:
         pass
 
@@ -838,6 +838,7 @@ def ha_pagado_antes(user_id):
     return user_id in subscriptions
 
 def dias_restantes(user_id):
+    if user_id in ADMIN_IDS: return 9999
     cache = subscription_api_cache.get(user_id)
     if cache and cache.get("subscribed") and cache.get("daysLeft") is not None:
         return cache["daysLeft"]
@@ -1014,7 +1015,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                     _discard_aviso(uid, "7d"); _discard_aviso(uid, "1d")
                     _add_aviso(uid, "expired")
                     await context.bot.send_message(chat_id=uid,
-                        text="😢 *Tu suscripción a FidesBot ha caducado.*\n\n"
+                        text="😢 *Tu suscripción a FiidesBot ha caducado.*\n\n"
                              "Ya no recibirás alertas hasta que renueves.\n\n"
                              "👉 Escribe /start y pulsa 💳 *Suscribirse* para continuar.",
                         parse_mode="Markdown")
@@ -1957,7 +1958,7 @@ async def menu_no_suscrito(update):
         [InlineKeyboardButton("💳 Suscribirse", callback_data="suscribirse")],
     ]
     texto = (
-        "🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        "🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         "🎫 Suscripción: *NO* ❌\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "• 💎 Surebets 🔒\n• 🎯 Middlebets 🔒\n• 📊 Valuebets 🔒\n• ⚡ LIVE 🔒\n"
@@ -1993,7 +1994,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_banned(user_id):
         await update.message.reply_text(
-            "🚫 Tu acceso a FidesBot está restringido.\n"
+            "🚫 Tu acceso a FiidesBot está restringido.\n"
             "Si crees que es un error, contacta con soporte.")
         return
 
@@ -2050,7 +2051,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         await update.message.reply_text(
-            f"🎁 *¡Bienvenido a FidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎁 *¡Bienvenido a FiidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
             f"Tienes *3 días de prueba gratuita* para descubrir cómo funcionan las alertas "
             f"de surebets y middlebets en tiempo real.\n\n"
             f"⏰ Tu prueba expira el *{trial_exp.strftime('%d/%m/%Y a las %H:%M')}*\n\n"
@@ -2098,7 +2099,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
                       if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
     creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
     await update.message.reply_text(
-        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
         f" • ⏱️ Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -2174,7 +2175,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mins = int((pausa_alertas[user_id] - datetime.now()).total_seconds() / 60)
         pausa_str = f"\n⏸️ *Alertas pausadas* — {mins} min restantes"
     texto = (
-        f"🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👤 *{nombre}* — {icono_sub} *{dias_str_completo}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"• 💎 Surebets {surebets_icon}\n• 🎯 Middlebets {middles_icon}\n"
@@ -2494,7 +2495,7 @@ async def mis_referidos(update, context):
         f"• Sin límite de referidos.\n━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📤 Compartir invitación",
-                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FidesBot%20y%20gana%20créditos%20gratis!")],
+                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FiidesBot%20y%20gana%20créditos%20gratis!")],
             [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
         ]), parse_mode="Markdown")
 
@@ -2947,7 +2948,7 @@ async def soporte_estado_bot(update, context):
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
-        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"✅ Servicio operativo\n"
         f"⏱️ Último escaneo: *{ultima}*\n"
         f"⏭️ Próximo escaneo: *{proxima}*\n"
@@ -3017,7 +3018,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sc_me = _get_scanner_cfg(update.effective_user.id)
     scanner_line = f"🔎 Scanner: {'✅ ON' if sc_me.get('active') else '❌ OFF'} | Profit ≥{sc_me.get('minProfitPct', 1.5)}%"
     await update.message.reply_text(
-        f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👥 Suscriptores activos: *{total}*\n"
         f"💎 Surebets: *{stats['surebets_encontradas']}*\n"
         f"🎯 Middles: *{stats['middlebets_encontradas']}*\n"
@@ -3087,7 +3088,7 @@ async def handle_admin_callback(update, context):
         sc = _get_scanner_cfg(uid_query)
         scanner_line = f"🔎 Scanner: {'✅ ON' if sc.get('active') else '❌ OFF'} | Profit ≥{sc.get('minProfitPct', 1.5)}%"
         await query.edit_message_text(
-            f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+            f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
             f"👥 *{total}* suscriptores\n{scanner_line}\n━━━━━━━━━━━━━━━━━━",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Activar usuario",   callback_data="admin_activar"),
@@ -3437,7 +3438,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         plan_badge = " (PRO+Tracker ✨)" if plan_web in ("PRO_TRACKER", "ENTERPRISE") else ""
         await update.message.reply_text(
             f"✅ *¡Cuenta vinculada con éxito!{plan_badge}*\n\n"
-            "Tu cuenta de FidesBot y DualStats Tracker están conectadas.\n\n"
+            "Tu cuenta de FiidesBot y DualStats Tracker están conectadas.\n\n"
             "A partir de ahora, cuando pulses *✅ Hecha* en una alerta, "
             "podrás registrar la apuesta directamente desde aquí.",
             parse_mode="Markdown",
@@ -3464,7 +3465,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         except Exception as e: logger.debug("Delete msg ignored: %s", e)
         await update.message.reply_text(
             "❌ *El enlace de vinculación no es válido o ha expirado.*\n\n"
-            "Ve a DualStats Tracker → Configuración → Conectar FidesBot "
+            "Ve a DualStats Tracker → Configuración → Conectar FiidesBot "
             "y genera un nuevo enlace.",
             parse_mode="Markdown")
     # Abrir menú si ya es suscriptor
@@ -3476,11 +3477,11 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
     await update.message.reply_text(
-        "🔗 *Vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+        "🔗 *Vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
         "Para vincular tu cuenta:\n\n"
         "1️⃣ Pulsa el botón de abajo para abrir DualStats\n"
         "2️⃣ Inicia sesión con tu cuenta\n"
-        "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
+        "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
         "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
         "Una vez vinculado, las alertas mostrarán botones ✅/❌ "
         "para registrar tus apuestas automáticamente.",
@@ -4794,7 +4795,7 @@ async def handle_desvincular(update, context):
     guardar_db()
     await query.edit_message_text(
         "🔓 *Cuenta desvinculada*\n\n"
-        "Tu cuenta de FidesBot ya no está conectada a DualStats Tracker.\n"
+        "Tu cuenta de FiidesBot ya no está conectada a DualStats Tracker.\n"
         "Puedes volver a vincularla pulsando 📈 DualStats en el menú principal.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("📈 Volver a DualStats", callback_data="panel_dualstats"),
@@ -4934,7 +4935,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ *Activado correctamente*\n\n👤 {nombre_activar} (ID: `{uid_activar}`)\n📅 {dias_activar} días — {plan_txt}",
             parse_mode="Markdown")
         try:
-            msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
+            msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
             await context.bot.send_message(chat_id=uid_activar,
                 text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                      f"Tienes *{dias_activar} días* de acceso.\n\nEscribe /start para acceder.",
@@ -5153,10 +5154,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "DS_info_vincular":
         await query.edit_message_text(
-            "🔗 *Cómo vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "🔗 *Cómo vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
             "1️⃣ Ve a *dualstats-tracker.vercel.app*\n"
             "2️⃣ Inicia sesión con tu cuenta\n"
-            "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
+            "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
             "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
             "Una vez vinculado, las alertas mostrarán botones ✅/❌.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_dualstats")]]),
@@ -5349,7 +5350,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ ID `{uid}` — *{plan_txt}* — activado por *{dias} días*. 💾 Guardado.",
                     parse_mode="Markdown")
                 try:
-                    msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
+                    msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
                     await context.bot.send_message(chat_id=uid,
                         text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                              f"Tienes *{dias} días* de acceso.\n\nEscribe /start para acceder.",
@@ -5753,7 +5754,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     detail_str = "\n".join(sport_detail) if sport_detail else "  (ningún deporte activo tiene surebets ahora)"
 
     texto = (
-        f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔬 *Diagnóstico FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"*Tu configuración:*\n"
         f"• Profit mín: {cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG["min_profit_surebet"])}%\n"
         f"• Filtro días: {cfg['max_days']} días\n"
@@ -6165,7 +6166,7 @@ async def main():
     _tg_queue = asyncio.Queue(maxsize=500)
     asyncio.create_task(_telegram_sender_task(app.bot))
 
-    logger.info("🚀 FidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
+    logger.info("🚀 FiidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)

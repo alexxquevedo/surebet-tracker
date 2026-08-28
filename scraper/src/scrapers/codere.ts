@@ -400,13 +400,32 @@ export class CodereScraper extends BaseScraper {
       const menuData = await codereGet(`LeftMenu/GetCountriesAndHighlights?parentid=${nodeId}`);
       const highlights: any[] = menuData?.highlights ?? [];
 
-      if (!highlights.length) {
-        this.warn(`Prematch ${sport}: no highlights`);
+      const seenNodeIds = new Set<string>();
+      const leaguesToFetch: any[] = [];
+
+      // Always start with highlights (promoted leagues)
+      for (const h of highlights) {
+        const nid = String(h.NodeId ?? "");
+        if (nid && !seenNodeIds.has(nid)) { seenNodeIds.add(nid); leaguesToFetch.push(h); }
+      }
+      // Supplement with country leagues until we have up to 15
+      const countries: any[] = menuData?.countries ?? [];
+      for (const country of countries.slice(0, 10)) {
+        for (const league of (country.Leagues ?? []).slice(0, 4)) {
+          const nid = String(league.NodeId ?? "");
+          if (nid && !seenNodeIds.has(nid)) { seenNodeIds.add(nid); leaguesToFetch.push(league); }
+          if (leaguesToFetch.length >= 15) break;
+        }
+        if (leaguesToFetch.length >= 15) break;
+      }
+
+      if (!leaguesToFetch.length) {
+        this.warn("Prematch " + sport + ": no leagues available");
         continue;
       }
 
+      const leagueSource = highlights.length ? "highlights+countries" : "countries";
       let found = 0;
-      const leaguesToFetch = highlights.slice(0, 8);
 
       for (const league of leaguesToFetch) {
         const leagueNodeId: string = String(league.NodeId ?? "");
@@ -451,7 +470,7 @@ export class CodereScraper extends BaseScraper {
           }
         }
       }
-      this.log(`Prematch ${sport}: ${found} events from ${leaguesToFetch.length} leagues`);
+      this.log(`Prematch ${sport}: ${found} events from ${leaguesToFetch.length} leagues (${leagueSource})`);
     }
     return all;
   }
