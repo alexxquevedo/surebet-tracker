@@ -159,6 +159,26 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bindonesia\b/gi, "indonesia"],
   [/\bchypre\b/gi, "cyprus"],
   [/\bchipre\b/gi, "cyprus"],
+  // National team name translations: FR -> EN (Winamax uses French)
+  [/\bpays de galles\b/gi, "wales"],          // FR: Pays de Galles -> wales
+  [/\bgales\b/gi, "wales"],                   // ES: Gales -> wales
+  [/\birlandie du nord\b/gi, "northern ireland"], // FR variant
+  [/\birland(e|a) du nord\b/gi, "northern ireland"], // FR: Irlande du Nord -> northern ireland
+  [/\birlanda del norte\b/gi, "northern ireland"], // ES: Irlanda del Norte -> northern ireland
+  [/\brepublica de irlanda\b/gi, "ireland"],  // ES: Republica de Irlanda -> ireland
+  [/\brepublic of ireland\b/gi, "ireland"],   // EN long form -> ireland
+  [/\bpays[ -]bas\b/gi, "netherlands"],        // FR: Pays-Bas -> netherlands
+  [/\bpaises bajos\b/gi, "netherlands"],       // ES: Paises Bajos -> netherlands
+  [/\bhamburgo\b/gi, "hamburg"],              // ES: Hamburgo -> hamburg
+  // German club name fixes: Koln (stripped Koeln) -> cologne
+  [/\bkoln\b/gi, "cologne"],                  // DE stripped: koln -> cologne
+  // Bundesliga numbered club names -> canonical short name
+  [/\b1899\s*hoffenheim\b/gi, "hoffenheim"], // TSG 1899 Hoffenheim -> hoffenheim
+  [/\bpaderborn\s*07\b/gi, "paderborn"],     // SC Paderborn 07 -> paderborn
+  [/\bschalke\s*04\b/gi, "schalke"],         // FC Schalke 04 -> schalke
+  [/\b1[\s.]+(fsv[\s.]+)?mainz\s*05\b/gi, "mainz"], // 1. FSV Mainz 05 / 1. Mainz 05 -> mainz
+  [/\b1[\s.]+(fc[\s.]+)?(koln|cologne|köln)\b/gi, "cologne"], // 1. FC Koln/Cologne -> cologne
+  [/\bsv\s+elversberg\b/gi, "elversberg"],   // SV Elversberg (SV prefix already stripped by TEAM_SUFFIXES)
   // German/French city name variants for Bundesliga clubs
   [/\bbreme\b/gi, "bremen"],           // FR: Werder Brême → bremen
   [/\bhambourg\b/gi, "hamburg"],       // FR: Hambourg → hamburg
