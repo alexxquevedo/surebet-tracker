@@ -69,7 +69,7 @@ const MARKET_LABEL: Record<string, string> = {
 };
 
 // Sports where h2h draw is possible — filter out 2-leg surebets (draw not covered)
-const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY", "BASKETBALL"]);
+const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY"]); // basketball has no draw
 
 function resolveMarketLabelBySport(market: string, sport: string): string {
   if (market === "h2h") {
@@ -392,6 +392,12 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
     if (allowed.length > 0 && !arbBooks.some((b: string) => allowed.includes(b))) return false;
   }
 
+  // Draw-risk: football/icehockey h2h surebets do not cover draw
+  if (arb.type === "SUREBET" && arb.market === "h2h" && THREE_WAY_SPORTS.has(arb.sport)) {
+    const blockDraw = sc.blockDrawRisk ?? old.block_draw_risk_surebets;
+    if (blockDraw !== false) return false;
+  }
+
   return true;
 }
 
@@ -407,19 +413,14 @@ export async function notifyArbs(
   const subscribers = await getActiveSubscribers();
   if (!subscribers.length) return;
 
-  // Filter invalid arbs (h2h in 3-way sports)
-  const validArbs = newArbs.filter(({ arb }) =>
-    !(arb.type === "SUREBET" && arb.market === "h2h" && THREE_WAY_SPORTS.has(arb.sport))
-  );
-
   let notified = 0;
   for (const sub of subscribers) {
     const bankrollEur: number | undefined = (sub.config as any)?.stake > 0
       ? Number((sub.config as any).stake) : undefined;
     const hasTracker = sub.plan === "PRO_TRACKER" || sub.plan === "ENTERPRISE";
 
-    // Only arbs matching this subscriber's preferences
-    const matching = validArbs.filter(({ arb }) => matchesPrefs(arb, sub.config));
+    // Per-user filter: draw-risk for football/icehockey is inside matchesPrefs
+    const matching = newArbs.filter(({ arb }) => matchesPrefs(arb, sub.config));
     if (!matching.length) continue;
 
     // Group by event+type so same match = one message
