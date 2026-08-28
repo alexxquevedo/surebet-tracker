@@ -3,7 +3,7 @@
 
 const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca)\b\.?/gi;
 // City qualifiers that some books append but others omit (e.g. "Juventus Turin" vs "Juventus")
-const CITY_QUALIFIERS = /\b(turin|leeuwarden|goteborg|goteborg|göteborg|lubeck|dusseldorf|frankfurt|hamburg|hambourg|bochum|gelsenkirchen|hannover|braunschweig|nurnberg|bielefeld|magdeburg|halle|erfurt|rostock|dresden|chemnitz|cottbus|kiel|flensburg|mainz|kaiserslautern|saarbrucken|koeln|cologne|duisburg|wuppertal|paderborn|munster|ingolstadt|freiburg|augsburg|regensburg|wurzburg|erlangen|bamberg|bayreuth|schweinfurt)\b/gi;
+const CITY_QUALIFIERS = /\b(bergame|genes|turin|leeuwarden|goteborg|goteborg|göteborg|lubeck|dusseldorf|frankfurt|hamburg|hambourg|bochum|gelsenkirchen|hannover|braunschweig|nurnberg|bielefeld|magdeburg|halle|erfurt|rostock|dresden|chemnitz|cottbus|kiel|flensburg|mainz|kaiserslautern|saarbrucken|koeln|cologne|duisburg|wuppertal|paderborn|munster|ingolstadt|freiburg|augsburg|regensburg|wurzburg|erlangen|bamberg|bayreuth|schweinfurt)\b/gi;
 const DIACRITICS: Record<string, string> = {
   á: "a", é: "e", í: "i", ó: "o", ú: "u",
   à: "a", è: "e", ì: "i", ò: "o", ù: "u",
@@ -159,6 +159,15 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bindonesia\b/gi, "indonesia"],
   [/\bchypre\b/gi, "cyprus"],
   [/\bchipre\b/gi, "cyprus"],
+  // Italian/French club names: Spanish (Codere) vs French (Winamax) variants
+  [/\bnapoles\b/gi, "naples"],
+  [/\bbolonia\b/gi, "bologna"],
+  [/\bbologne\b/gi, "bologna"],
+  [/\bmarsella\b/gi, "marseille"],
+  [/\bvenise\b/gi, "venezia"],
+  [/\blazio rome\b/gi, "lazio"],
+  [/\brome\b/gi, "roma"],
+  [/\bgenes\b/gi, "genoa"],
 ];
 
 function normalizeTeam(name: string): string {
