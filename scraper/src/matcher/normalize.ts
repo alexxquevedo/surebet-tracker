@@ -28,10 +28,37 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bmarseille\b/gi, "marseille"],
   [/\bseville\b/gi, "sevilla"],
   [/\bvalencia\b/gi, "valencia"],
+  [/\bchi\b/gi, "chicago"],
+  [/\bcin\b/gi, "cincinnati"],
+  [/\bdet\b/gi, "detroit"],
+  [/\bwsh\b/gi, "washington"],
+  [/\bmia\b/gi, "miami"],
+  [/\bhou\b/gi, "houston"],
+  [/\bstl\b/gi, "st louis"],
+  [/\batl\b/gi, "atlanta"],
+  [/\bphi\b/gi, "philadelphia"],
+  [/\bari\b/gi, "arizona"],
+  [/\bcol\b/gi, "colorado"],
+  [/\bmil\b/gi, "milwaukee"],
+  [/\bmin\b/gi, "minnesota"],
+  [/\bcle\b/gi, "cleveland"],
+  [/\bkc\b/gi, "kansas city"],
+  [/\bsea\b/gi, "seattle"],
+  [/\btex\b/gi, "texas"],
+  [/\btor\b/gi, "toronto"],
+  [/\bbal\b/gi, "baltimore"],
+  [/\bpit\b/gi, "pittsburgh"],
+  [/\boak\b/gi, "oakland"],
+  [/\btbr\b/gi, "tampa bay"],
+  [/\bsf\b/gi, "san francisco"],
+  [/\bsd\b/gi, "san diego"],
+  [/\bny\b/gi, "new york"],
+  [/\bla\b/gi, "los angeles"],
 ];
 
 function normalizeTeam(name: string): string {
   let s = stripDiacritics(name).toLowerCase();
+  s = s.replace(/\([^)]*\)/g, ' '); // strip annotations in parentheses (e.g. pitcher names)
   // Normalize language city variants
   for (const [re, replacement] of CITY_NORMALIZATIONS) {
     s = s.replace(re, replacement);
