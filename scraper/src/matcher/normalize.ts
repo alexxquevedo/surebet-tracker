@@ -1,9 +1,9 @@
 // Event name normalization for cross-bookmaker matching.
 // Goal: "Real Madrid vs FC Barcelona" and "R.Madrid - Barça" → same key.
 
-const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca)\b\.?/gi;
+const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca|osc|bayer|borussia|tsv|vfr|spvgg|ssv|ksv|dsv|fsv|hsv|msv|wsv|rsv)\b\.?/gi;
 // City qualifiers that some books append but others omit (e.g. "Juventus Turin" vs "Juventus")
-const CITY_QUALIFIERS = /\b(bergame|genes|turin|leeuwarden|goteborg|goteborg|göteborg|lubeck|dusseldorf|frankfurt|hamburg|hambourg|bochum|gelsenkirchen|hannover|braunschweig|nurnberg|bielefeld|magdeburg|halle|erfurt|rostock|dresden|chemnitz|cottbus|kiel|flensburg|mainz|kaiserslautern|saarbrucken|koeln|cologne|duisburg|wuppertal|paderborn|munster|ingolstadt|freiburg|augsburg|regensburg|wurzburg|erlangen|bamberg|bayreuth|schweinfurt)\b/gi;
+const CITY_QUALIFIERS = /\b(bergame|genes|turin|leeuwarden|goteborg|göteborg|lubeck|dusseldorf|frankfurt)\b/gi;
 const DIACRITICS: Record<string, string> = {
   á: "a", é: "e", í: "i", ó: "o", ú: "u",
   à: "a", è: "e", ì: "i", ò: "o", ù: "u",
@@ -159,6 +159,27 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bindonesia\b/gi, "indonesia"],
   [/\bchypre\b/gi, "cyprus"],
   [/\bchipre\b/gi, "cyprus"],
+  // German/French city name variants for Bundesliga clubs
+  [/\bbreme\b/gi, "bremen"],           // FR: Werder Brême → bremen
+  [/\bhambourg\b/gi, "hamburg"],       // FR: Hambourg → hamburg
+  [/\bhamburguer\b/gi, "hamburger"],   // ES: Hamburguer → hamburger
+  [/\bmayence\b/gi, "mainz"],          // FR: Mayence (Mainz) → mainz
+  [/\bbremen\b/gi, "bremen"],          // canonical (no-op but ensures)
+  [/\bmonchengladbach\b/gi, "gladbach"], // DE: Mönchengladbach → gladbach
+  [/\bm gladbach\b/gi, "gladbach"],    // short form → gladbach
+  [/\bm'gladbach\b/gi, "gladbach"],    // abbreviated → gladbach
+  [/\bleverkusen\b/gi, "leverkusen"],  // canonical (no-op)
+  [/\bfribourg\b/gi, "freiburg"],      // FR: Fribourg → freiburg (SC Freiburg)
+  [/\baugsbourg\b/gi, "augsburg"],     // FR: Augsbourg → augsburg
+  [/\bcolognia\b/gi, "cologne"],       // ES variant
+  [/\bcolonia\b/gi, "cologne"],        // ES: Colonia → cologne (1. FC Köln)
+  // French Ligue 1 naming
+  [/\bparis saint germain\b/gi, "psg"],  // long form → psg
+  [/\bparis saint-germain\b/gi, "psg"], // hyphenated → psg
+  [/\bparis sg\b/gi, "psg"],            // short form → psg
+  [/\bpsg\b/gi, "psg"],                 // already psg (no-op)
+  // Italian Serie A: Côme (FR) → Como
+  [/\bcome\b/gi, "como"],              // FR: Côme → como
   // Italian/French club names: Spanish (Codere) vs French (Winamax) variants
   [/\bnapoles\b/gi, "naples"],
   [/\bbolonia\b/gi, "bologna"],

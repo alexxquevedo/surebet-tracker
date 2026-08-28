@@ -69,7 +69,7 @@ const MARKET_LABEL: Record<string, string> = {
 };
 
 // Sports where h2h draw is possible — filter out 2-leg surebets (draw not covered)
-const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY", "BASKETBALL"]);
+const THREE_WAY_SPORTS = new Set(["FOOTBALL", "HOCKEY", "BASKETBALL"]);
 
 function resolveMarketLabelBySport(market: string, sport: string): string {
   if (market === "h2h") {
@@ -324,7 +324,7 @@ const OLD_SPORT_KEY: Record<string, string> = {
   soccer: "FOOTBALL", football: "FOOTBALL",
   tennis: "TENNIS", basketball: "BASKETBALL",
   baseball_mlb: "BASEBALL", baseball: "BASEBALL",
-  icehockey_nhl: "ICEHOCKEY", icehockey: "ICEHOCKEY",
+  icehockey_nhl: "HOCKEY", icehockey: "HOCKEY",
   americanfootball_nfl: "AMERICANFOOTBALL", americanfootball: "AMERICANFOOTBALL",
   rugbyleague: "RUGBYLEAGUE", rugby: "RUGBYLEAGUE",
   volleyball: "VOLLEYBALL", handball: "HANDBALL",
