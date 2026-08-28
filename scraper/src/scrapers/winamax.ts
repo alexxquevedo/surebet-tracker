@@ -96,11 +96,9 @@ function parseMatches(matches: any[], sport: Sport, isLive: boolean, league: str
       (home && away ? `${home} - ${away}` : "");
     if (!eventName) continue;
 
-    const startTime = match.matchStart ?? match.date ?? match.startDate;
-    const eventKey = buildEventKey(
-      sport, eventName,
-      startTime ? new Date(typeof startTime === "number" ? startTime * 1000 : startTime) : undefined,
-    );
+    const rawStartTime = match.matchStart ?? match.date ?? match.startDate;
+    const startTime = rawStartTime ? new Date(typeof rawStartTime === "number" ? rawStartTime * 1000 : rawStartTime) : (isLive ? new Date() : undefined);
+    const eventKey = buildEventKey(sport, eventName, startTime);
 
     const bets: any[] = match.bets ?? match.markets ?? match.betOffers ?? match.offers ?? [];
 
@@ -121,7 +119,7 @@ function parseMatches(matches: any[], sport: Sport, isLive: boolean, league: str
           return odds >= 1.01 && name ? { name, odds } : null;
         }).filter(Boolean) as H2HOutcome[];
         if (h2h.length >= 2) {
-          events.push({ bookmaker: "winamax", sport, eventKey, eventName, league, isLive, market: "h2h", outcomes: h2h });
+          events.push({ bookmaker: "winamax", sport, eventKey, eventName, league, isLive, market: "h2h", outcomes: h2h, startTime });
         }
       } else if (title.includes("total") || title.includes("over") || title.includes("plus/moins") || title.includes("más/menos")) {
         const byLine = new Map<number, TotalsLine>();
@@ -443,7 +441,9 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       h2h.push({ name, odds: Number(oOdds) });
     }
 
-    const eventKey = buildEventKey(sport, title, undefined);
+    const rawStart = match.matchStart ?? match.date ?? match.startDate ?? match.start;
+    const startTime = rawStart ? new Date(typeof rawStart === 'number' ? rawStart * 1000 : rawStart) : (isLive ? new Date() : undefined);
+    const eventKey = buildEventKey(sport, title, startTime);
     const tournamentId: number = match.tournamentId;
     const tournaments: Record<string, any> = state.tournaments ?? state.competitions ?? {};
     const league: string = tournaments[String(tournamentId)]?.name
@@ -453,7 +453,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     if (h2h.length >= 2) {
       events.push({
         bookmaker: "winamax", sport, eventKey, eventName: title,
-        league, isLive, market: "h2h", outcomes: h2h,
+        league, isLive, market: "h2h", outcomes: h2h, startTime,
       });
     }
 
