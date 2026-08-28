@@ -164,6 +164,10 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bgales\b/gi, "wales"],                   // ES: Gales -> wales
   [/\birlandie du nord\b/gi, "northern ireland"], // FR variant
   [/\birland(e|a) du nord\b/gi, "northern ireland"], // FR: Irlande du Nord -> northern ireland
+  // Post-transform (after irlanda/irlande->ireland generic rule runs first):
+  [/\bireland del norte\b/gi, "northern ireland"],  // ES post-transform
+  [/\bireland du nord\b/gi, "northern ireland"],    // FR post-transform
+  [/\brepublica de ireland\b/gi, "ireland"],        // ES post-transform
   [/\birlanda del norte\b/gi, "northern ireland"], // ES: Irlanda del Norte -> northern ireland
   [/\brepublica de irlanda\b/gi, "ireland"],  // ES: Republica de Irlanda -> ireland
   [/\brepublic of ireland\b/gi, "ireland"],   // EN long form -> ireland
