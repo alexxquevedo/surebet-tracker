@@ -1300,7 +1300,7 @@ def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
     return {
         "id":            ev.get("eventKey", ""),
         "sport_key":     sport_key,
-        "sport_title":   ev.get("league") or LEAGUE_MAP.get(sport_key, sport_key),
+        "sport_title":   ev.get("league") or "",
         "commence_time": ev.get("startTime") or "2099-01-01T00:00:00Z",
         "home_team":     home,
         "away_team":     away,
@@ -1711,7 +1711,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
     return (f"{cabecera}{sospechoso}{draw_warn}\n\n"
-            f"{emoji} {nombre_deporte} — {liga}\n"
+            f"{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n"
             f"🗓️ {fecha_str}{' 🎥 LIVE' if live else ''}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
@@ -1734,7 +1734,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     return (f"📢 Alerta Middlebets!{' 🎥 LIVE' if live else ''}\n"
             f"📈 Máx. si middle: +{ap['profit_max']:.2f}% | {peor_txt}\n"
             f"🍀 Probabilidad middle: {ap['prob_middle']:.2f}%\n\n"
-            f"{emoji} {nombre_deporte} — {liga}\n🗓️ {fecha_str}\n"
+            f"{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n🗓️ {fecha_str}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
 
@@ -3315,12 +3315,10 @@ async def handle_sport_toggle(update, context):
 # ── Helpers de pendientes ─────────────────────────────────
 
 def tiene_tracker(user_id: int) -> bool:
-    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web.
-    Si el plan no está guardado aún (usuario vinculado antes de v23), devuelve True
-    para no bloquear a usuarios existentes — la API hará la comprobación final."""
+    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web."""
     plan = dualstats_plan.get(user_id)
     if plan is None:
-        return True   # plan desconocido → dejar pasar, la API web lo validará
+        return False  # plan desconocido → no mostrar botones de Tracker sin plan confirmado
     return plan in ("PRO_TRACKER", "ENTERPRISE")
 
 def _uid_pendientes(user_id):
