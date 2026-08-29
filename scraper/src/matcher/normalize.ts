@@ -1,7 +1,7 @@
 // Event name normalization for cross-bookmaker matching.
 // Goal: "Real Madrid vs FC Barcelona" and "R.Madrid - Barça" → same key.
 
-const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca|osc|bayer|borussia|tsv|vfr|spvgg|ssv|ksv|dsv|fsv|hsv|msv|wsv|rsv)\b\.?/gi;
+const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca|osc|bayer|borussia|tsv|vfr|spvgg|ssv|ksv|dsv|fsv|hsv|msv|wsv|rsv|bc|hc|sg|hbw|thsv|frisch|auf|cp|lnh|aj|ogc|de)\b\.?/gi;
 // City qualifiers that some books append but others omit (e.g. "Juventus Turin" vs "Juventus")
 const CITY_QUALIFIERS = /\b(bergame|genes|turin|leeuwarden|goteborg|göteborg|lubeck|dusseldorf|frankfurt)\b/gi;
 const DIACRITICS: Record<string, string> = {
@@ -51,7 +51,7 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\boak\b/gi, "oakland"],
   [/\btbr\b/gi, "tampa bay"],
   [/\bsf\b/gi, "san francisco"],
-  [/\bsd\b/gi, "san diego"],
+  [/\bsd\s+padres\b/gi, "san diego padres"],  // SD Padres MLB
   [/\bny\b/gi, "new york"],
   [/\bla\b/gi, "los angeles"],
   [/\bsoudan du sud\b/gi, "south sudan"],
@@ -159,6 +159,78 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bindonesia\b/gi, "indonesia"],
   [/\bchypre\b/gi, "cyprus"],
   [/\bchipre\b/gi, "cyprus"],
+  // ── NBA team abbreviations (Codere uses 2-3 letter city codes) ────────────
+  // Paired with team nickname for safety (avoids false matches in other sports)
+  [/\bbos\s+celtics\b/gi, "boston celtics"],
+  [/\bbos\s+bruins\b/gi, "boston bruins"],
+  [/\bbkn\s+nets\b/gi, "brooklyn nets"],
+  [/\bcha\s+hornets\b/gi, "charlotte hornets"],
+  [/\bchi\s+bulls\b/gi, "chicago bulls"],
+  [/\bcle\s+cavaliers\b/gi, "cleveland cavaliers"],
+  [/\bdal\s+mavericks\b/gi, "dallas mavericks"],
+  [/\bden\s+nuggets\b/gi, "denver nuggets"],
+  [/\bdet\s+pistons\b/gi, "detroit pistons"],
+  [/\bgs\s+warriors\b/gi, "golden state warriors"],
+  [/\bhou\s+rockets\b/gi, "houston rockets"],
+  [/\bind\s+pacers\b/gi, "indiana pacers"],
+  [/\bla\s+lakers\b/gi, "los angeles lakers"],
+  [/\bla\s+clippers\b/gi, "los angeles clippers"],
+  [/\bmem\s+grizzlies\b/gi, "memphis grizzlies"],
+  [/\bmia\s+heat\b/gi, "miami heat"],
+  [/\bmil\s+bucks\b/gi, "milwaukee bucks"],
+  [/\bmin\s+timberwolves\b/gi, "minnesota timberwolves"],
+  [/\bno\s+pelicans\b/gi, "new orleans pelicans"],
+  [/\bny\s+knicks\b/gi, "new york knicks"],
+  [/\bokc\s+thunder\b/gi, "oklahoma thunder"],
+  [/\borl\s+magic\b/gi, "orlando magic"],
+  [/\bphi\s+76ers\b/gi, "philadelphia 76ers"],
+  [/\bphx\s+suns\b/gi, "phoenix suns"],
+  [/\bpor\s+trail\b/gi, "portland trail"],
+  [/\bsac\s+kings\b/gi, "sacramento kings"],
+  [/\bsa\s+spurs\b/gi, "san antonio spurs"],
+  [/\btor\s+raptors\b/gi, "toronto raptors"],
+  [/\buta\s+jazz\b/gi, "utah jazz"],
+  [/\bwas\s+wizards\b/gi, "washington wizards"],
+
+  // ── NHL team abbreviations (Codere uses 2-3 letter city codes) ────────────
+  [/\bcar\s+hurricanes\b/gi, "carolina hurricanes"],
+  [/\bflo\s+panthers\b/gi, "florida panthers"],
+  [/\btor\s+maple\b/gi, "toronto maple"],
+  [/\bmon\s+canadiens\b/gi, "montreal canadiens"],
+  [/\bbos\s+bruins\b/gi, "boston bruins"],
+  [/\bedm\s+oilers\b/gi, "edmonton oilers"],
+  [/\bvan\s+canucks\b/gi, "vancouver canucks"],
+  [/\bvg\s+knights\b/gi, "vegas golden knights"],
+  [/\bvgs\s+golden\b/gi, "vegas golden"],
+  [/\bch\s+blackhawks\b/gi, "chicago blackhawks"],
+  [/\bco\s+blue\s+jackets\b/gi, "columbus blue jackets"],
+  [/\bbuf\s+sabres\b/gi, "buffalo sabres"],
+  [/\bnj\s+devils\b/gi, "new jersey devils"],
+  [/\bphi\s+flyers\b/gi, "philadelphia flyers"],
+  [/\btb\s+lightning\b/gi, "tampa bay lightning"],
+  [/\bnv\s+predators\b/gi, "nashville predators"],
+  [/\bcal\s+flames\b/gi, "calgary flames"],
+  [/\bsea\s+kraken\b/gi, "seattle kraken"],
+  [/\buta\s+mammoth\b/gi, "utah mammoth"],
+  [/\bsj\s+sharks\b/gi, "san jose sharks"],
+  [/\bwpg\s+jets\b/gi, "winnipeg jets"],
+  [/\bott\s+senators\b/gi, "ottawa senators"],
+  [/\bpit\s+penguins\b/gi, "pittsburgh penguins"],
+  [/\bstl\s+blues\b/gi, "st louis blues"],
+  [/\bmin\s+wild\b/gi, "minnesota wild"],
+  [/\bana\s+ducks\b/gi, "anaheim ducks"],
+  [/\bnsh\s+predators\b/gi, "nashville predators"],
+
+  // ── MLB city abbreviation fixes ────────────────────────────────────────────
+  [/\btb\s+rays\b/gi, "tampa bay rays"],
+  [/\bny\s+yankees\b/gi, "new york yankees"],
+  [/\bny\s+mets\b/gi, "new york mets"],
+  [/\bbos\s+red\s+sox\b/gi, "boston red sox"],
+  [/\bnippon\s+ham\s+fighters\b/gi, "nippon ham fighters"],  // strip Hokkaido prefix effect
+  [/\bhokkaido\s+nippon\b/gi, "nippon"],                      // Hokkaido prefix
+  [/\btohoku\s+rakuten\b/gi, "tohoku"],                       // strip Rakuten prefix
+  [/\byokohama\s+dena\b/gi, "dena"],                          // strip Yokohama prefix
+
   // National team name translations: FR -> EN (Winamax uses French)
   [/\bpays de galles\b/gi, "wales"],          // FR: Pays de Galles -> wales
   [/\bgales\b/gi, "wales"],                   // ES: Gales -> wales
@@ -183,6 +255,55 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\b1[\s.]+(fsv[\s.]+)?mainz\s*05\b/gi, "mainz"], // 1. FSV Mainz 05 / 1. Mainz 05 -> mainz
   [/\b1[\s.]+(fc[\s.]+)?(koln|cologne|köln)\b/gi, "cologne"], // 1. FC Koln/Cologne -> cologne
   [/\bsv\s+elversberg\b/gi, "elversberg"],   // SV Elversberg (SV prefix already stripped by TEAM_SUFFIXES)
+  // ── Missing FR country name translations ─────────────────────────────────
+  [/\bandorre\b/gi, "andorra"],              // FR: Andorre -> andorra
+  [/\bmalte\b/gi, "malta"],                  // FR: Malte -> malta
+  [/\bparme\b/gi, "parma"],                  // FR: Parme -> parma (Italian club)
+  [/\bgerone\b/gi, "girona"],               // FR: Gérone -> girona
+  [/\bmajorque\b/gi, "mallorca"],            // FR: Majorque -> mallorca
+  [/\barcelone\b/gi, "barcelona"],           // FR: Barcelone -> barcelona
+  [/\becossais\b/gi, "scotland"],            // FR variant
+  [/\becosse\b/gi, "scotland"],              // FR: Écosse -> scotland
+  [/\bescocia\b/gi, "scotland"],             // ES: Escocia -> scotland
+  [/\bangleterre\b/gi, "england"],           // FR: Angleterre -> england
+  [/\binglaterra\b/gi, "england"],           // ES: Inglaterra -> england
+  [/\bespagne\b/gi, "spain"],               // FR: Espagne -> spain
+  [/\bespana\b/gi, "spain"],                // ES: España -> spain (diacritics stripped)
+  [/\broumanie\b/gi, "romania"],             // FR: Roumanie -> romania
+  [/\brumania\b/gi, "romania"],              // ES: Rumanía -> romania
+  [/\brumanía\b/gi, "romania"],              // ES: Rumanía (with diacritic) -> romania
+  [/\bmoldavie\b/gi, "moldova"],             // FR: Moldavie -> moldova
+  [/\bmoldavia\b/gi, "moldova"],             // ES: Moldavia -> moldova
+  [/\bsaint\s*-?\s*marin\b/gi, "san marino"],  // FR: Saint-Marin -> san marino
+  [/\bsaint\s+marin\b/gi, "san marino"],    // FR variant
+  [/\bmacedoine\s+du\s+nord\b/gi, "north macedonia"],  // FR: Macédoine du Nord
+  [/\bmacedonia\s+del\s+norte\b/gi, "north macedonia"], // ES: Macedonia del Norte
+  [/\bmacedone\b/gi, "north macedonia"],     // FR short form
+  [/\bbosnie\b/gi, "bosnia"],               // FR: Bosnie -> bosnia (goes before Bosnie-Herzégovine)
+  [/\bherzegovine\b/gi, "herzegovina"],      // FR: Herzégovine -> herzegovina
+  [/\bbulgarie\b/gi, "bulgaria"],            // FR: Bulgarie -> bulgaria
+  [/\bluxemburgo\b/gi, "luxembourg"],        // ES: Luxemburgo -> luxembourg
+  [/\bsuede\b/gi, "sweden"],                // FR: Suède -> sweden (backup)
+  [/\bsuecia\b/gi, "sweden"],               // ES: Suecia -> sweden (backup)
+  [/\brepublique\s+d\s+ireland\b/gi, "ireland"],  // FR post-transform: République d'Irlande
+  [/\brepublique\s+tcheque\b/gi, "czech"], // FR: République Tchèque -> czech
+  [/\brepublique\s+czech\b/gi, "czech"],   // FR post-transform (tcheque->czech ran first)
+  [/\brepublica\s+checa\b/gi, "czech"],    // ES: República Checa -> czech
+  [/\bgijon\b/gi, "gijon"],                 // normalize Gijón (already works via diacritics)
+  [/\bsporting\s+de\s+gijon\b/gi, "gijon"],  // Sporting de Gijón -> gijon
+  [/\bestoril\s+praia\b/gi, "estoril"],    // PT: Estoril-Praia -> estoril
+  [/\bvitoria\s+de\s+guimaraes\b/gi, "vitoria guimaraes"],  // PT: de -> dropped
+  [/\bnacional\s+da\s+madeira\b/gi, "nacional madeira"],     // PT: da -> dropped
+  [/\bacademico\s+de\s+viseu\b/gi, "academico viseu"],       // PT: de -> dropped
+  [/\bsporting\s+de\s+braga\b/gi, "braga"],                  // PT: Sporting de Braga -> braga
+  [/\bfutebol\s+clube\s+de\b/gi, ""],                        // PT: "Futebol Clube de" prefix strip
+  // ── Handball ──────────────────────────────────────────────────────────────
+  [/\bmagdebourg\b/gi, "magdeburg"],         // FR: Magdebourg -> magdeburg
+  [/\bhanovre\b/gi, "hannover"],             // FR: Hanovre -> hannover
+  [/\bhannovre\b/gi, "hannover"],            // FR variant
+  [/\bpsg\s+handball\b/gi, "psg"],          // PSG Handball -> psg (strip sport suffix)
+  [/\bmontpellier\s+agglomeration\b/gi, "montpellier"],  // strip corporate suffix
+
   // German/French city name variants for Bundesliga clubs
   [/\bbreme\b/gi, "bremen"],           // FR: Werder Brême → bremen
   [/\bhambourg\b/gi, "hamburg"],       // FR: Hambourg → hamburg
