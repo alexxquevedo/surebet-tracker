@@ -1245,6 +1245,19 @@ def calcular_stakes(total, legs):
 # FETCH Y ESCANEO
 # ============================================================
 
+
+# ── Odds API sport_key → VPS SportType (for DualStats event filtering) ─────────
+_VPS_SPORT_MAP = {
+    "soccer":               "FOOTBALL",
+    "basketball":           "BASKETBALL",
+    "tennis":               "TENNIS",
+    "baseball_mlb":         "BASEBALL",
+    "americanfootball_nfl": "AMERICANFOOTBALL",
+    "icehockey_nhl":        "ICEHOCKEY",
+    "volleyball":           "VOLLEYBALL",
+    "rugbyleague":          "RUGBYLEAGUE",
+}
+
 async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
     """Fetch VPS scraper odds from DualStats /api/bot/odds endpoint."""
     if not DUALSTATS_API_KEY:
