@@ -46,8 +46,6 @@ TELEGRAM_TOKEN   = _require_env("TELEGRAM_TOKEN")
 ADMIN_ID         = 1207554638
 ADMIN_IDS        = {1207554638, 2051653218}  # Todos los admins
 PAGOS_GROUP_ID   = -5254902973
-ODDS_API_KEY     = _require_env("ODDS_API_KEY")
-ODDS_API_BASE    = "https://api.the-odds-api.com/v4"
 DB_FILE          = "/content/drive/MyDrive/fidesbot/bot_db.json"
 ALERTS_CACHE_FILE = "bot_alerts_cache.json"
 BOT_USERNAME     = "perpleSurebetBot"
@@ -111,8 +109,6 @@ stats = {
     "proxima_actualizacion": None,
 }
 # API credits (The Odds API — actualizado en cada llamada)
-api_credits_remaining: int | None = None
-api_credits_used:      int | None = None
 live_empty_streak: int = 0   # nº de escaneos live consecutivos con 0 eventos
 
 # ── DualStats — nuevos estados ─────────────────────────────
@@ -194,8 +190,6 @@ def _es_tier1(sport_key: str, liga: str) -> bool:
         return False
     liga_lower = liga.lower()
     return any(p in liga_lower for p in patterns)
-BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
-RUGBYLEAGUE_API_KEYS  = ["rugbyleague_nrl", "rugbyleague_super_league"]
 
 # ============================================================
 # FUENTE ÚNICA DE CASAS — añadir/quitar solo aquí
@@ -1250,99 +1244,6 @@ def calcular_stakes(total, legs):
 # ============================================================
 # FETCH Y ESCANEO
 # ============================================================
-async def fetch_odds(sport_key, live=False):
-    global api_credits_remaining, api_credits_used
-    url = (f"{ODDS_API_BASE}/sports/{sport_key}/odds"
-           f"?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals"
-           f"&oddsFormat=decimal&inPlay={'true' if live else 'false'}")
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                # Capture credit headers from The Odds API
-                remaining = resp.headers.get("x-requests-remaining")
-                used      = resp.headers.get("x-requests-used")
-                if remaining is not None:
-                    api_credits_remaining = int(remaining)
-                if used is not None:
-                    api_credits_used = int(used)
-
-                if resp.status == 200:
-                    return await resp.json()
-                if resp.status in (401, 422, 429):
-                    body = await resp.text()
-                    logger.error(f"[API] {sport_key} HTTP {resp.status} — cuota agotada o clave inválida: {body[:200]}")
-                    if api_credits_remaining == 0:
-                        logger.error("[API] ⚠️  0 créditos restantes — desactivando escaneo hasta recarga mensual.")
-                else:
-                    logger.warning(f"[API] {sport_key} HTTP {resp.status}")
-                return []
-    except Exception as e:
-        logger.error(f"Error {sport_key}: {e}"); return []
-
-# ── OddsAPI league-specific key → user-facing sport key (for cross-source merge) ──
-_ODDSAPI_SPORT_KEY_NORM = {
-    "basketball_nba":            "basketball",
-    "basketball_euroleague":     "basketball",
-    "rugbyleague_nrl":           "rugbyleague",
-    "rugbyleague_super_league":  "rugbyleague",
-}
-
-def _norm_sport_key(sk: str) -> str:
-    return _ODDSAPI_SPORT_KEY_NORM.get(sk, sk)
-
-# ── Odds API sport_key → VPS SportType (for filtering DualStats events) ────────
-_VPS_SPORT_MAP = {
-    "soccer":               "FOOTBALL",
-    "basketball":           "BASKETBALL",
-    "tennis":               "TENNIS",
-    "baseball_mlb":         "BASEBALL",
-    "icehockey_nhl":        "ICEHOCKEY",
-    "rugbyleague":          "RUGBYLEAGUE",
-    "americanfootball_nfl": "AMERICANFOOTBALL",
-}
-
-def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
-    """Convert one DualStats /api/bot/odds event to The Odds API event format."""
-    bk_map: dict[str, dict] = {}  # bookmaker_key → {key, title, markets:[...]}
-    for item in ev.get("bookmakerOdds", []):
-        bk  = item["bookmaker"]
-        mkt = item["market"]
-        raw = item.get("outcomes", [])
-        outcomes_api: list[dict] = []
-        if mkt == "h2h":
-            for o in (raw if isinstance(raw, list) else []):
-                outcomes_api.append({"name": o.get("name", ""), "price": float(o.get("odds", 0))})
-        elif mkt == "totals":
-            for o in (raw if isinstance(raw, list) else []):
-                line = o.get("line")
-                if o.get("over"):
-                    outcomes_api.append({"name": "Over",  "price": float(o["over"]),  "point": line})
-                if o.get("under"):
-                    outcomes_api.append({"name": "Under", "price": float(o["under"]), "point": line})
-        if not outcomes_api:
-            continue
-        if bk not in bk_map:
-            bk_map[bk] = {"key": bk, "title": BOOKMAKER_NAMES.get(bk, bk.title()), "markets": []}
-        bk_map[bk]["markets"].append({"key": mkt, "outcomes": outcomes_api})
-    if not bk_map:
-        return None
-    parts = ev.get("eventName", "").split(" vs ", 1)
-    if len(parts) == 2:
-        home, away = parts[0].strip(), parts[1].strip()
-    else:
-        parts2 = ev.get("eventName", "").split(" - ", 1)
-        home = parts2[0].strip() if parts2 else ev.get("eventName", "")
-        away = parts2[1].strip() if len(parts2) > 1 else ""
-    return {
-        "id":            ev.get("eventKey", ""),
-        "sport_key":     sport_key,
-        "sport_title":   ev.get("league") or "",
-        "commence_time": ev.get("startTime") or "2099-01-01T00:00:00Z",
-        "home_team":     home,
-        "away_team":     away,
-        "_source":       "dualstats",      # internal tag — not sent to Telegram
-        "bookmakers":    list(bk_map.values()),
-    }
 
 async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
     """Fetch VPS scraper odds from DualStats /api/bot/odds endpoint."""
@@ -1792,24 +1693,12 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
     for sport_key in all_sports:
-        # Concurrent fetch: The Odds API (international) + DualStats (VPS, ES casas)
-        if sport_key == "basketball":
-            odds_tasks = [fetch_odds(_bk, live=live) for _bk in BASKETBALL_API_KEYS]
-        elif sport_key == "rugbyleague":
-            odds_tasks = [fetch_odds(_bk, live=live) for _bk in RUGBYLEAGUE_API_KEYS]
-        else:
-            odds_tasks = [fetch_odds(sport_key, live=live)]
-        odds_tasks.append(fetch_dualstats_odds(sport_key, live=live))
-        results_list = await asyncio.gather(*odds_tasks, return_exceptions=True)
-
-        # Collect events from both sources, then merge cross-source by Jaro-Winkler team-name matching
+        # Fetch only from VPS scrapers (Winamax + Codere via DualStats API)
         events: list[dict] = []
-        for result in results_list:
-            if isinstance(result, Exception):
-                logger.error(f"fetch error {sport_key}: {result}")
-                continue
-            events.extend(result)
-        events = _merge_cross_source_events(events, live)
+        try:
+            events = await fetch_dualstats_odds(sport_key, live=live)
+        except Exception as e:
+            logger.error(f"fetch error {sport_key}: {e}")
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
             except (ValueError, KeyError): commence = None
@@ -1949,14 +1838,10 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     return total_surebets + total_middles
 
 async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
-    if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[prematch] Sin créditos Odds API — escaneo solo con datos VPS (Winamax/Codere).")
     await escanear_y_alertar(context.application, live=False)
 
 async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     global live_empty_streak
-    if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[live] Sin créditos Odds API — escaneo solo con datos VPS (Winamax/Codere).")
     # Prune stale live deduplication entries (live games never last >3h)
     cutoff = datetime.now() - timedelta(hours=3)
     stale = [k for k, v in live_sent_surebets.items() if v["ts"] < cutoff]
@@ -1969,10 +1854,7 @@ async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
         live_empty_streak += 1
     else:
         live_empty_streak = 0
-    # Log créditos tras cada ciclo live
-    if api_credits_remaining is not None:
-        logger.info(f"[API] Créditos restantes: {api_credits_remaining} | Usados: {api_credits_used}"
-                    + (" ⚠️ BAJOS" if api_credits_remaining < 500 else ""))
+
 
 # ============================================================
 # MENÚ NO SUSCRITO
@@ -2131,9 +2013,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     casas_activas = sum(1 for v in BOOKMAKERS.values() if "✅" in v.get("status", ""))
     casas_str   = f" • {casas_activas}/{len(BOOKMAKERS)} casas con scraper activo (detalle en /casas)"
-    creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
-                      if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
-    creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
     await update.message.reply_text(
         f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
@@ -2148,7 +2027,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆕 {ahora.strftime('%d/%m/%Y %H:%M')}\n"
         f"⏱️ Pre-partido: cada {BOT_CONFIG['scan_prematch_interval']//60} min | "
         f"Live: cada {BOT_CONFIG['scan_live_interval']//60} min\n"
-        f"{creditos_linea}{creditos_alerta}",
+        f"",
         parse_mode="Markdown")
 
 # ============================================================
@@ -2441,15 +2320,7 @@ async def freebet_casa_seleccionada(update, context, casa_key):
     halladas = []
     for sport_key in sports_on:
         try:
-            if sport_key == "basketball":
-                api_keys = BASKETBALL_API_KEYS
-            elif sport_key == "rugbyleague":
-                api_keys = RUGBYLEAGUE_API_KEYS
-            else:
-                api_keys = [sport_key]
-            events = []
-            for ak in api_keys:
-                events.extend(await fetch_odds(ak, live=False))
+            events = await fetch_dualstats_odds(sport_key, live=False)
         except Exception:
             continue
         for event in events:
@@ -5746,19 +5617,8 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sport_detail: list[str] = []
 
     for sport_key in active_sports:
-        if sport_key == "basketball":
-            events: list = []
-            for _bk in BASKETBALL_API_KEYS:
-                events.extend(await fetch_odds(_bk, live=False))
-                events.extend(await fetch_odds(_bk, live=True))
-        elif sport_key == "rugbyleague":
-            events = []
-            for _bk in RUGBYLEAGUE_API_KEYS:
-                events.extend(await fetch_odds(_bk, live=False))
-                events.extend(await fetch_odds(_bk, live=True))
-        else:
-            events = await fetch_odds(sport_key, live=False)
-            events += await fetch_odds(sport_key, live=True)
+        events = await fetch_dualstats_odds(sport_key, live=False)
+        events += await fetch_dualstats_odds(sport_key, live=True)
 
         total_events += len(events)
         sport_surebets = 0
