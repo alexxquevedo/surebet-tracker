@@ -558,6 +558,24 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       }
     }
 
+    // Football goals market deduplication: Winamax may emit two separate "Nombre de buts"
+    // bets for the same match (one full-match, one halftime) with no "mi-temps" in the
+    // halftime bet title when it is nested inside a halftime bet-group in the WS state.
+    // Both end up classified as "goals", causing false middles (e.g. halftime Over 2 @3.90
+    // paired with full-match Under 2.5 @2.25). For any duplicate line number, keep the
+    // entry with the lowest over odds — full-match odds are always lower than halftime odds.
+    if (sport === "FOOTBALL") {
+      const goalsRaw = marketAcc.get("goals") as TotalsLine[] | undefined;
+      if (goalsRaw && goalsRaw.length > 0) {
+        const byLine = new Map<number, TotalsLine>();
+        for (const t of goalsRaw) {
+          const prev = byLine.get(t.line);
+          if (!prev || t.over < prev.over) byLine.set(t.line, t);
+        }
+        marketAcc.set("goals", [...byLine.values()].sort((a, b) => a.line - b.line));
+      }
+    }
+
     // Emit one ScrapedEvent per market key
     for (const [mkt, outs] of marketAcc) {
       events.push({
