@@ -7,6 +7,7 @@ import axios from "axios";
 import { config } from "../config";
 import prisma from "../db";
 import type { DetectedArb, DetectedSurebet, DetectedMiddle } from "../types";
+import { classifyCompetition } from "../matcher/competitions";
 
 const TG_API = `https://api.telegram.org/bot${config.telegram.token}`;
 
@@ -183,6 +184,8 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
 
+  const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
+  const tierMark = _tier === 1 ? "⭐ " : "";
   const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
   // For O/U surebets (market = "goals O/U 4.5"), extract the base market key for translation
   const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
@@ -203,7 +206,7 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
     `💎 Profit: +${arb.profitPct.toFixed(2)}%`,
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `🏆 <b>${arb.eventName}</b>${leagueTag}`,
+    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`,
     legs,
     ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
     formatSentAt(),
@@ -217,6 +220,8 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
   const probPct = (arb.middleProbability * 100).toFixed(2);
 
+  const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
+  const tierMark = _tier === 1 ? "⭐ " : "";
   const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
   const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
@@ -235,7 +240,7 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
     "",
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `🏆 <b>${arb.eventName}</b>${leagueTag}`,
+    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`,
     legs,
     ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
     formatSentAt(),
@@ -267,7 +272,9 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
     const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
     const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
     const datetimeLine = formatDatetime((arb as any).startTime, arb.isLive);
-    const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
+    const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
+  const tierMark = _tier === 1 ? "⭐ " : "";
+  const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
 
     const profitLine = arb.type === "SUREBET"
       ? `💎 Profit: +${arb.profitPct.toFixed(2)}%`
@@ -284,7 +291,7 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
       })
       .join("\n");
 
-    lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `🏆 <b>${arb.eventName}</b>${leagueTag}`, legLines);
+    lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`, legLines);
   }
 
   lines.push("", formatSentAt());

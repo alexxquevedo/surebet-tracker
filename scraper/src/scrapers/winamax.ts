@@ -844,7 +844,12 @@ export class WinamaxScraper extends BaseScraper {
 
     const events: ScrapedEvent[] = [];
     try {
-      const url = `${BASE_FR}/paris-sportifs/sports/${SPORT_IDS[sport]}`;
+      // Football (sport 1) is the default sport — its specific URL /sports/1
+      // is more aggressively Cloudflare-gated than other sport pages.
+      // Use the SPA homepage which loads football data by default.
+      const url = sport === "FOOTBALL"
+        ? `${BASE_FR}/paris-sportifs`
+        : `${BASE_FR}/paris-sportifs/sports/${SPORT_IDS[sport]}`;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 }).catch(async (e: any) => {
         this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — skip`);
       });

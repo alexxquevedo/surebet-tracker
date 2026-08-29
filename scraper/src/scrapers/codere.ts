@@ -272,6 +272,7 @@ function processCodereGame(
   eventName: string,
   startTime: Date | undefined,
   isLive: boolean,
+  league = "",
 ): ScrapedEvent | null {
   const gameName: string = game.Name ?? game.GameType ?? "";
   const results: any[] = game.Results ?? [];
@@ -282,7 +283,7 @@ function processCodereGame(
   if (propMeta) {
     const outcomes = parsePlayerPropOutcomes(results, propMeta.player, propMeta.stat);
     if (outcomes.length === 0) return null;
-    return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "player_props", outcomes };
+    return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: "player_props", outcomes };
   }
 
   // 2. Generic market classification
@@ -292,19 +293,19 @@ function processCodereGame(
   if (cat === "handicap") {
     const outcomes = parseCodereHandicap(results);
     if (outcomes.length < 2) return null;
-    return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "handicap", outcomes };
+    return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: "handicap", outcomes };
   }
 
   // Binary yes/no markets (btts, red_cards): use H2HOutcome with Sí/No labels
   if (cat === "btts" || cat === "red_cards") {
     const outcomes = parseCodereHandicap(results);
     if (outcomes.length < 2) return null;
-    return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: cat, outcomes };
+    return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: cat, outcomes };
   }
 
   const lines = parseCodereOverUnder(results);
   if (lines.length === 0) return null;
-  return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: cat, outcomes: lines };
+  return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: cat, outcomes: lines };
 }
 
 // ─── H2H parser ──────────────────────────────────────────────────────────────
@@ -316,6 +317,7 @@ function buildH2HEvent(
   eventName: string,
   startTime: Date | undefined,
   isLive: boolean,
+  league = "",
 ): ScrapedEvent | null {
   if (!results || results.length < 2) return null;
   const sorted = [...results].sort((a, b) => (a.SortOrder ?? 0) - (b.SortOrder ?? 0));
@@ -331,7 +333,7 @@ function buildH2HEvent(
     .slice(0, 3) as H2HOutcome[];  // 1X2 never exceeds 3 outcomes
   if (outcomes.length < 2) return null;
   const eventKey = buildEventKey(sport, eventName, startTime);
-  return { bookmaker, sport, eventKey, eventName, startTime, isLive, market: "h2h", outcomes };
+  return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: "h2h", outcomes };
 }
 
 // ─── Scraper ─────────────────────────────────────────────────────────────────
@@ -367,20 +369,21 @@ export class CodereScraper extends BaseScraper {
       for (const e of sportEvents) {
         const name: string = e.Name ?? `${e.ParticipantHome ?? ""} - ${e.ParticipantAway ?? ""}`.trim();
         const startTime = parseCodereDate(e.StartDate);
+        const liveLeague = String(e.CompetitionName ?? e.LeagueName ?? e.TournamentName ?? e.CategoryName ?? e.ParentName ?? "");
 
         // H2H from DefaultGame (always present for live)
-        const h2h = buildH2HEvent(e.DefaultGame?.Results ?? [], "codere", sport, name, startTime, true);
+        const h2h = buildH2HEvent(e.DefaultGame?.Results ?? [], "codere", sport, name, startTime, true, liveLeague);
         if (h2h) { all.push(h2h); found++; }
 
         // Secondary markets from primary call Games[] (may be empty)
         for (const game of (e.Games ?? [])) {
-          const sec = processCodereGame(game, "codere", sport, name, startTime, true);
+          const sec = processCodereGame(game, "codere", sport, name, startTime, true, liveLeague);
           if (sec) all.push(sec);
         }
 
         // Secondary markets from dedicated gametypes call
         for (const game of (secByNodeId.get(String(e.NodeId)) ?? [])) {
-          const sec = processCodereGame(game, "codere", sport, name, startTime, true);
+          const sec = processCodereGame(game, "codere", sport, name, startTime, true, liveLeague);
           if (sec) all.push(sec);
         }
       }
@@ -430,6 +433,7 @@ export class CodereScraper extends BaseScraper {
       for (const league of leaguesToFetch) {
         const leagueNodeId: string = String(league.NodeId ?? "");
         if (!leagueNodeId) continue;
+        const leagueLabel: string = String(league.Name ?? league.CompetitionName ?? league.Title ?? "");
 
         // Primary call: h2h events (no gametypes = only 1X2 in Games[0])
         const events = await codereGet(`Event/GetEvents?parentid=${leagueNodeId}`);
@@ -455,11 +459,11 @@ export class CodereScraper extends BaseScraper {
             const gameName: string = game.Name ?? game.GameType ?? "";
             const cat = classifyCodereGame(gameName);
             if (cat === "h2h" || (!cat && !hadH2H && !detectPlayerPropGame(gameName))) {
-              const h2h = buildH2HEvent(game.Results ?? [], "codere", sport, name, startTime, false);
+              const h2h = buildH2HEvent(game.Results ?? [], "codere", sport, name, startTime, false, leagueLabel);
               if (h2h) { all.push(h2h); found++; hadH2H = true; }
               continue;
             }
-            const sec = processCodereGame(game, "codere", sport, name, startTime, false);
+            const sec = processCodereGame(game, "codere", sport, name, startTime, false, leagueLabel);
             if (sec) all.push(sec);
           }
 
