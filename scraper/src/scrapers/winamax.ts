@@ -515,6 +515,11 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
         (awayLow.length >= 4 && betTitleLow.includes(awayLow.slice(0, 4)));
       if (isPerTeam) continue;
 
+      // Skip generic halftime markets ("Mi-temps" without 1ère/2ème qualifier).
+      // These are ambiguous halftime O/U markets that don't map to h1_goals or h2_goals
+      // and produce wrong odds when classified as full-match goals.
+      if (/mi[\s-]?temps/i.test(betTitle) && !/(?:1[eè]re?|premi[eè]re?|2[eè]me?|deuxi[eè]me?)/i.test(betTitle)) continue;
+
       // 2. Classify by bet title (corners, cards, goals, handicap, tennis, etc.)
       const cat = classifyBetTitle(betTitle, sport);
       if (!cat) continue;
@@ -533,7 +538,8 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
         if (cat === "goals" && sport === "FOOTBALL") {
           for (const t of lines) {
             if ((t.line <= 1.5 && t.over > 2.50) || (t.line <= 2.5 && t.over > 5.00)) {
-              logger(`[FOOTBALL goals suspect] betTitle="${betTitle}" line=${t.line} over=${t.over}`);
+              const hex = Buffer.from(betTitle.slice(0, 15)).toString("hex");
+              logger(`[FOOTBALL goals suspect] betTitle="${betTitle}" hex=${hex} line=${t.line} over=${t.over}`);
             }
           }
           // Sanity check: reject lines with physically impossible full-match football odds.
