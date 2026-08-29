@@ -158,6 +158,42 @@ LEAGUE_MAP = {
     "baseball_mlb":         "MLB",
     "rugbyleague":          "Rugby League",
 }
+
+# ── Tier 1 competition patterns (⭐ in notifications) ─────────────────────────
+# Matching is case-insensitive substring against the league/competition name.
+_TIER1: dict[str, list[str]] = {
+    "soccer": [
+        "champions league", "la liga", "bundesliga", "premier league",
+        "ligue 1", "serie a", "primeira liga", "eredivisie", "jupiler",
+        "europa league", "conference league", "copa libertadores",
+        "copa sudamericana", "world cup", "nations league", "league one",
+    ],
+    "basketball": [
+        "nba", "wnba", "euroleague", "euroliga", " acb", "superliga turca",
+        "lega basket", "basketball champions league", "fiba world cup", "olympics",
+    ],
+    "tennis": [
+        "wimbledon", "us open", "french open", "roland garros", "australian open",
+        "masters 1000", "atp 500", "wta 500", "atp 250", "wta 250",
+        "davis cup", "bjk cup", "billie jean", "finals",
+    ],
+    "baseball_mlb": [
+        "mlb", "npb", "kbo", "lmb", "lmp", "caribbean",
+        "world baseball classic", "world series",
+    ],
+    "americanfootball_nfl": ["nfl", "super bowl", "playoffs", "ncaa"],
+    "icehockey_nhl":        ["nhl", "khl", "shl", "liiga", "ahl", "world championship"],
+    "rugbyleague":          ["super league", "nrl", "state of origin", "world cup"],
+}
+
+
+def _es_tier1(sport_key: str, liga: str) -> bool:
+    """True when liga matches a Tier 1 competition pattern for the given sport."""
+    patterns = _TIER1.get(sport_key, [])
+    if not patterns or not liga:
+        return False
+    liga_lower = liga.lower()
+    return any(p in liga_lower for p in patterns)
 BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
 RUGBYLEAGUE_API_KEYS  = ["rugbyleague_nrl", "rugbyleague_super_league"]
 
@@ -1696,6 +1732,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     profit = ap["profit"]
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
+    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
@@ -1711,7 +1748,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
     return (f"{cabecera}{sospechoso}{draw_warn}\n\n"
-            f"{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n"
+            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n"
             f"🗓️ {fecha_str}{' 🎥 LIVE' if live else ''}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
@@ -1719,6 +1756,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
 def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
+    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
@@ -1734,7 +1772,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     return (f"📢 Alerta Middlebets!{' 🎥 LIVE' if live else ''}\n"
             f"📈 Máx. si middle: +{ap['profit_max']:.2f}% | {peor_txt}\n"
             f"🍀 Probabilidad middle: {ap['prob_middle']:.2f}%\n\n"
-            f"{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n🗓️ {fecha_str}\n"
+            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n🗓️ {fecha_str}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
 
