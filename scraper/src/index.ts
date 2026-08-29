@@ -1,5 +1,5 @@
 /**
- * FidesBot Scanner — Main orchestrator
+ * FiidesBot Scanner — Main orchestrator
  *
  * Architecture:
  *   1. Every LIVE_POLL_INTERVAL (30s):  scrape live odds → detect arbs → notify
@@ -102,7 +102,7 @@ function toPrismaSport(sport: string): string {
 if (process.env.DIAGNOSE === "true") {
   void (async () => {
     console.log("\n═══════════════════════════════════════");
-    console.log("  FidesBot Scanner — DIAGNOSE MODE");
+    console.log("  FiidesBot Scanner — DIAGNOSE MODE");
     console.log("═══════════════════════════════════════\n");
 
     const required = ["DATABASE_URL", "TELEGRAM_TOKEN"];
@@ -195,7 +195,7 @@ const ARB_DEDUP_MS = 10 * 60 * 1000;
 
 function arbFingerprint(arb: DetectedArb): string {
   const legs = arb.legs.map((l) => `${l.bookmaker}:${l.selection}`).sort().join("|");
-  return `${arb.type}::${arb.eventName}::${arb.market}::${legs}`;
+  return `${arb.type}::${arb.eventKey}::${arb.market}::${legs}`;
 }
 
 // ─── DB persistence ───────────────────────────────────────────────────────────
@@ -463,7 +463,7 @@ async function pollCycle(isLive: boolean): Promise<void> {
       const lastAlert = isLive ? lastAlertLive : lastAlertPrematch;
       const now = Date.now();
       if (now - lastAlert >= ALERT_COOLDOWN_MS) {
-        const msg = `🚨 <b>CRITICAL — FidesBot Scanner</b>\n\n` +
+        const msg = `🚨 <b>CRITICAL — FiidesBot Scanner</b>\n\n` +
           `${label} llevan ${counter} ciclos sin eventos en NINGUNA casa.\n` +
           `Scrapers activos: ${[...resultsMap.entries()].map(([k, v]) => `${k}=${v}`).join(", ") || "ninguno"}\n\n` +
           `Revisar VPS: <code>pm2 logs fidesbot-scanner --lines 50</code>`;
@@ -485,7 +485,7 @@ async function pollCycle(isLive: boolean): Promise<void> {
   if (wasDown) {
     const lastRec = isLive ? lastRecoveredLive : lastRecoveredPrematch;
     if (Date.now() - lastRec >= ALERT_COOLDOWN_MS) {
-      await sendAdminAlert(`✅ <b>Recuperado — FidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
+      await sendAdminAlert(`✅ <b>Recuperado — FiidesBot Scanner</b>\n\n${label} vuelve a recibir eventos.`);
       if (isLive) lastRecoveredLive = Date.now();
       else lastRecoveredPrematch = Date.now();
     }
@@ -605,7 +605,7 @@ try {
   if (stale.length > 0) console.log(`[scanner] Cleaned ${stale.length} stale Playwright dirs`);
 } catch { /* non-fatal */ }
 
-console.log("[scanner] FidesBot Scanner starting...");
+console.log("[scanner] FiidesBot Scanner starting...");
 console.log(`[scanner] Live poll: ${config.scanner.livePollMs / 1000}s`);
 console.log(`[scanner] Prematch poll: ${config.scanner.prematchPollMs / 1000}s`);
 console.log(`[scanner] Min profit: ${config.scanner.minProfitPct}%`);

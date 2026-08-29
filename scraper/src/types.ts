@@ -54,6 +54,7 @@ export interface DetectedSurebet {
   sport: Sport;
   isLive: boolean;
   startTime?: Date;
+  eventKey: string;
   eventName: string;
   league?: string;
   market: string;
@@ -66,6 +67,7 @@ export interface DetectedMiddle {
   sport: Sport;
   isLive: boolean;
   startTime?: Date;
+  eventKey: string;
   eventName: string;
   league?: string;
   market: string;

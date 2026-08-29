@@ -179,7 +179,7 @@ const MARKET_CAT_MAP: Array<[RegExp, string]> = [
   // ── Shots on goal / tirs ──
   [/tirs?\s+(?:cadr[eé]s?|au\s+but|totaux)|nombre\s+de\s+tirs?/i,                  "shots"],
   // ── Half goals ──
-  [/(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)/i, "h1_goals"],
+  [/(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)|mi[\s-]?temps\s*[-:]\s*nombre|mi[\s-]?temps/i, "h1_goals"],
   [/(?:2[eè]me?|deuxi[eè]me?)\s*mi[\s-]?temps/i,                                  "h2_goals"],
   // ── Goals (full match) ──
   [/nombre\s+de\s+buts?|total\s+buts?|\bbuts?\b/i,                                 "goals"],
@@ -505,14 +505,14 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       // Also skip per-team goal markets ("Nombre de buts de {Team}") to avoid confusing
       // individual-team totals with whole-match totals.
       const betTitleLow = betTitle.toLowerCase();
-      const SKIP_COMBO = /résultat\s+et\b|tiers[\s-]temps\s+avec|quart[\s-]temps\s+avec|mi[\s-]temps\s+avec\s+le?\s+plus/i;
+      const SKIP_COMBO = /résultat\s+(?:et|\&)\b|double\s+chance\s+(?:et|\&)\b|tiers[\s-]temps\s+avec|quart[\s-]temps\s+avec|mi[\s-]?temps\s+avec\s+le?\s+plus|(?:et|\&)\s+nombre\s+de\s+buts?|1x2\s+et|et\s+1x2/i;
       if (SKIP_COMBO.test(betTitle)) continue;
       const homeLow = homeName.toLowerCase();
       const awayLow = awayName.toLowerCase();
       // If bet title includes a significant portion of either team's name, it's per-team
       const isPerTeam =
-        (homeLow.length > 4 && betTitleLow.includes(homeLow.slice(0, 5))) ||
-        (awayLow.length > 4 && betTitleLow.includes(awayLow.slice(0, 5)));
+        (homeLow.length >= 4 && betTitleLow.includes(homeLow.slice(0, 4))) ||
+        (awayLow.length >= 4 && betTitleLow.includes(awayLow.slice(0, 4)));
       if (isPerTeam) continue;
 
       // 2. Classify by bet title (corners, cards, goals, handicap, tennis, etc.)
@@ -526,9 +526,25 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
           (marketAcc.get("handicap") as H2HOutcome[]).push(...hOuts);
         }
       } else {
-        // Over/Under market — debugTag only for non-obvious odds (temp diagnostic)
-        const debugTag: string | undefined = undefined; // set to `${title}|${betTitle}` to re-enable
-        const lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta, debugTag);
+        const debugTag: string | undefined = undefined;
+        let lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta, debugTag);
+
+        // Log bet titles producing suspicious football goals odds (diagnostic)
+        if (cat === "goals" && sport === "FOOTBALL") {
+          for (const t of lines) {
+            if ((t.line <= 1.5 && t.over > 2.50) || (t.line <= 2.5 && t.over > 5.00)) {
+              logger(`[FOOTBALL goals suspect] betTitle="${betTitle}" line=${t.line} over=${t.over}`);
+            }
+          }
+          // Sanity check: reject lines with physically impossible full-match football odds.
+          // Halftime markets (Over 1.5 first-half ~@5) pass SKIP_COMBO but have wrong odds.
+          lines = lines.filter(t =>
+            !(t.line <= 0.5 && t.over > 1.50) &&
+            !(t.line <= 1.5 && t.over > 2.50) &&
+            !(t.line <= 2.5 && t.over > 5.00)
+          );
+        }
+
         if (lines.length > 0) {
           if (!marketAcc.has(cat)) marketAcc.set(cat, []);
           (marketAcc.get(cat) as TotalsLine[]).push(...lines);
