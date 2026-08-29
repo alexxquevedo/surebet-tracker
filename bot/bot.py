@@ -1950,15 +1950,13 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
 
 async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
     if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[prematch] Sin créditos API — escaneo omitido.")
-        return
+        logger.warning("[prematch] Sin créditos Odds API — escaneo solo con datos VPS (Winamax/Codere).")
     await escanear_y_alertar(context.application, live=False)
 
 async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     global live_empty_streak
     if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[live] Sin créditos API — escaneo omitido.")
-        return
+        logger.warning("[live] Sin créditos Odds API — escaneo solo con datos VPS (Winamax/Codere).")
     # Prune stale live deduplication entries (live games never last >3h)
     cutoff = datetime.now() - timedelta(hours=3)
     stale = [k for k, v in live_sent_surebets.items() if v["ts"] < cutoff]
