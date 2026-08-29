@@ -72,7 +72,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   }
 
   // For each selection, find best odds + which bookmaker offers them
-  const bestPerSelection: Array<{
+  let bestPerSelection: Array<{
     name: string;
     odds: number;
     bookmaker: string;
@@ -98,9 +98,36 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   if (market.isLive && bestPerSelection.some((s) => s.odds > MAX_LIVE_H2H_ODDS)) return null;
 
   // Each outcome must come from a different bookmaker — one bookie covering two legs
-  // of the same market is not a real surebet (requires 3+ bookmakers for 3-way markets)
-  const usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
-  if (usedBooks.size < bestPerSelection.length) return null;
+  // of the same market is not a real surebet (requires 3+ bookmakers for 3-way markets).
+  // Positional fallback: for 2-way markets (basketball, tennis) bookmakers may use
+  // different name aliases (e.g. "Boston Celtics" vs "BOS Celtics"). When name-based
+  // matching produces more names than books, try position-based matching instead.
+  let usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
+  if (usedBooks.size < bestPerSelection.length) {
+    const hasDraw = bestPerSelection.some((s) => s.name === "Draw");
+    const allTwoWay = [...market.byBook.values()].every(
+      (outcomes) => isH2H(outcomes) && (outcomes as H2HOutcome[]).length === 2,
+    );
+    if (!hasDraw && allTwoWay && market.byBook.size >= 2) {
+      const positional: typeof bestPerSelection = [];
+      for (let pos = 0; pos < 2; pos++) {
+        let bestOdds = 0, bestBook = "", bestName = "";
+        for (const [book, outcomes] of market.byBook) {
+          if (!isH2H(outcomes)) continue;
+          const h2h = outcomes as H2HOutcome[];
+          if (h2h.length < 2) continue;
+          const o = h2h[pos];
+          if (o && o.odds > bestOdds) { bestOdds = o.odds; bestBook = book; bestName = o.name; }
+        }
+        if (bestOdds > 0) positional.push({ name: bestName, odds: bestOdds, bookmaker: bestBook });
+      }
+      bestPerSelection = positional;
+      usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
+      if (usedBooks.size < bestPerSelection.length) return null;
+    } else {
+      return null;
+    }
+  }
 
   const impliedSum = bestPerSelection.reduce((sum, s) => sum + 1 / s.odds, 0);
   if (impliedSum >= 1) return null; // No arb

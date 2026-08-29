@@ -321,7 +321,7 @@ class Semaphore {
   private count = 0;
   constructor(private readonly max: number) {}
 
-  async acquire(timeoutMs: number = 45_000): Promise<void> {
+  async acquire(timeoutMs: number = 180_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (this.count >= this.max) {
       if (Date.now() >= deadline) {
