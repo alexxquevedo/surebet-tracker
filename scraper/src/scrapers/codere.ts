@@ -321,7 +321,7 @@ function buildH2HEvent(
 ): ScrapedEvent | null {
   if (!results || results.length < 2) return null;
   const sorted = [...results].sort((a, b) => (a.SortOrder ?? 0) - (b.SortOrder ?? 0));
-  const NON_H2H = /\b(goles?|tarjetas?|c[oó]rner|sin\s+gol|btts|rojas?)\b/i;
+  const NON_H2H = /(goles?|tarjetas?|c[oó]rner|sin\s+gol|btts|rojas?)|m[aá]s\s+\d|menos\s+\d/i;
   const outcomes: H2HOutcome[] = sorted
     .map((r: any) => {
       const odds = parseFloat(String(r.Odd ?? 0));
