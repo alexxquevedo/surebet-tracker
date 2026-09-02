@@ -124,7 +124,8 @@ async function extractPageData(sportUrl: string, proxy: string, defaultSport?: S
 
   // Build event → sport map from embedded JSON: "OB_EV12345":{"topic":...,"sportId":"OB_SP9"}
   const evSportMap = new Map<string, Sport>();
-  const evSportPat = /"OB_EV(\d+)":\{"topic":"PDS\/OB_EV\d+","hash":\[[^\]]+\],"sportId":"(\w+)"\}/g;
+  // Looser pattern: capture sportId anywhere within 400 chars after OB_EV id (handles varying JSON field order)
+  const evSportPat = /"OB_EV(\d+)":\{[^}]{0,400}?"sportId":"(\w+)"/g;
   let m: RegExpExecArray | null;
   while ((m = evSportPat.exec(html)) !== null) {
     const eid = m[1];
@@ -139,6 +140,15 @@ async function extractPageData(sportUrl: string, proxy: string, defaultSport?: S
     if (!evMatch) continue;
     const sport = evSportMap.get(evMatch[1]) ?? defaultSport;
     if (sport) topicSport.set(topic, sport); // exclude topics with unknown sport
+  }
+
+  // If evSportMap is empty but topics were found, WH HTML format may have changed — fall back to FOOTBALL
+  // (better than returning 0 events for all live events)
+  if (evSportMap.size === 0 && topics.length > 0) {
+    console.warn(`[williamhill] evSportMap empty despite ${topics.length} topics — HTML format may have changed; defaulting to FOOTBALL`);
+    for (const topic of topics) {
+      topicSport.set(topic, (defaultSport ?? "FOOTBALL") as Sport);
+    }
   }
 
   return { topics, topicSport };
