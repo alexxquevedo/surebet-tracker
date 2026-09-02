@@ -211,6 +211,7 @@ export class BwinScraper extends BaseScraper {
   readonly name = "bwin";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
   private prematchCache: { ts: number; events: ScrapedEvent[] } | null = null;
+  private proxyBanUntil = 0; // epoch ms — set to now+30min when proxy returns 403
   private readonly PREMATCH_CACHE_TTL = 30 * 60 * 1000; // 30min — covers extended bwin rate-limit windows
 
   private async fetchFixtures(state: "Live" | "Latest", retried = false): Promise<{ data: any; usedProxy: boolean } | null> {
@@ -258,7 +259,12 @@ export class BwinScraper extends BaseScraper {
       }
       return { data, usedProxy: true };
     } catch (err: any) {
-      this.warn(`bwin.es proxy error: ${err?.response?.status ?? err?.message}`);
+      const status = err?.response?.status;
+      this.warn(`bwin.es proxy error: ${status ?? err?.message}`);
+      if (status === 403) {
+        this.proxyBanUntil = Date.now() + 30 * 60 * 1000; // 30 min ban
+        this.warn("bwin.es proxy 403 — IP baneada. Playwright desactivado 30 min.");
+      }
       return null;
     }
   }
@@ -424,6 +430,11 @@ export class BwinScraper extends BaseScraper {
     const coveredSports = new Set(all.map(e => e.sport));
     const missingSportsForPW = this.sports.filter(sp => !coveredSports.has(sp));
     if (all.length === 0 || missingSportsForPW.length > 0) {
+      if (Date.now() < this.proxyBanUntil) {
+        const remaining = Math.round((this.proxyBanUntil - Date.now()) / 60000);
+        this.warn(`bwin proxy IP baneada — Playwright suspendido ${remaining}min mas`);
+        return all;
+      }
       this.warn("Axios: 0 events — intentando Playwright + proxy (Q3)");
       const pwData = await this.fetchViaPlaywright(isLive).catch(() => null);
       if (pwData) {
