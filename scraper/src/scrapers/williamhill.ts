@@ -331,13 +331,12 @@ export class WilliamHillScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) {
-      const path = SPORT_PATHS[sport];
-      if (!path) continue;
-      const evs = await this.scrapePage(`${BASE_URL}/${path}`, sport, false);
-      all.push(...evs);
-    }
-    return all;
+    // Run all sport pages in parallel — sequential was taking 5+ minutes with 9 sports
+    const results = await Promise.all(
+      this.sports
+        .filter(sport => SPORT_PATHS[sport])
+        .map(sport => this.scrapePage(`${BASE_URL}/${SPORT_PATHS[sport]!}`, sport, false))
+    );
+    return results.flat();
   }
 }

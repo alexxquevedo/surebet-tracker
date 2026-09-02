@@ -1,7 +1,7 @@
 // Event name normalization for cross-bookmaker matching.
 // Goal: "Real Madrid vs FC Barcelona" and "R.Madrid - Barça" → same key.
 
-const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca|osc|bayer|borussia|tsv|vfr|spvgg|ssv|ksv|dsv|fsv|hsv|msv|wsv|rsv|bc|hc|sg|hbw|thsv|frisch|auf|cp|lnh|aj|ogc|de)\b\.?/gi;
+const TEAM_SUFFIXES = /\b(fc|cf|sd|ud|cd|rc|rcd|ca|at|ac|as|sc|bk|fk|sk|nk|if|gd|ok|afc|cfc|utd|united|city|town|rovers|wanderers|athletic|atletico|real|hb|hbc|hf|sv|vfl|vfb|bsc|tsg|rb|rsc|rsca|osc|bayer|borussia|tsv|vfr|spvgg|ssv|ksv|dsv|fsv|hsv|msv|wsv|rsv|bc|hc|sg|hbw|thsv|frisch|auf|cp|lnh|aj|ogc|de|club)\b\.?/gi; // club: South American prefix (Club Guarani -> guarani)
 // City qualifiers that some books append but others omit (e.g. "Juventus Turin" vs "Juventus")
 const CITY_QUALIFIERS = /\b(bergame|genes|turin|leeuwarden|goteborg|göteborg|lubeck|dusseldorf|frankfurt)\b/gi;
 const DIACRITICS: Record<string, string> = {
@@ -336,7 +336,7 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bgenes\b/gi, "genoa"],
 ];
 
-function normalizeTeam(name: string): string {
+export function normalizeTeam(name: string): string {
   let s = stripDiacritics(name).toLowerCase();
   s = s.replace(/\([^)]*\)/g, ' '); // strip annotations in parentheses (e.g. pitcher names)
   // Normalize language city variants
