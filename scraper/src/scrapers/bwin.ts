@@ -262,8 +262,8 @@ export class BwinScraper extends BaseScraper {
       const status = err?.response?.status;
       this.warn(`bwin.es proxy error: ${status ?? err?.message}`);
       if (status === 403) {
-        this.proxyBanUntil = Date.now() + 30 * 60 * 1000; // 30 min ban
-        this.warn("bwin.es proxy 403 — IP baneada. Playwright desactivado 30 min.");
+        this.proxyBanUntil = Date.now() + 120 * 60 * 1000; // 2 hour ban
+        this.warn("bwin.es proxy 403 — IP baneada. Playwright desactivado 2h.");
       }
       return null;
     }
@@ -385,6 +385,17 @@ export class BwinScraper extends BaseScraper {
   }
 
   private async scrape(isLive: boolean): Promise<ScrapedEvent[]> {
+    // Fast exit: skip all Q1/Q2/Q3 attempts when proxy IP is known-banned.
+    // Both VPS (direct) and 4G proxy are currently banned on bwin.es.
+    // Only fall back to prematch cache or return empty.
+    if (Date.now() < this.proxyBanUntil) {
+      const remaining = Math.round((this.proxyBanUntil - Date.now()) / 60000);
+      if (!isLive && this.prematchCache && Date.now() - this.prematchCache.ts < this.PREMATCH_CACHE_TTL) {
+        return this.prematchCache.events;
+      }
+      this.warn(`bwin IP baneada — scrape omitido ${remaining}min mas`);
+      return [];
+    }
     const result = await this.fetchFixtures(isLive ? "Live" : "Latest");
 
     const all: ScrapedEvent[] = [];
