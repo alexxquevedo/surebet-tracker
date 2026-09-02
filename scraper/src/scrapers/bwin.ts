@@ -334,9 +334,10 @@ export class BwinScraper extends BaseScraper {
 
           // Load the sport page directly — bwin.es homepage already returns widget data for
           // all featured sports, then navigate to sport-specific pages only if needed.
-          const entryUrl = isLive
-            ? "https://www.bwin.es/es/sports/en-vivo/futbol"
-            : "https://www.bwin.es/es/sports"; // main sports page triggers widgetdata for upcoming fixtures
+          // Both live and prematch use the en-vivo page — it reliably triggers widgetdata
+          // (the widget includes upcoming fixtures). For prematch, parseCdsFixtures uses
+          // isLive=false so eventKeys get date suffixes from startTime.
+          const entryUrl = "https://www.bwin.es/es/sports/en-vivo/futbol";
 
           await page.goto(entryUrl, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
           await page.waitForTimeout(3_000);
@@ -357,8 +358,8 @@ export class BwinScraper extends BaseScraper {
                 !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/en-vivo/baloncesto",
               ].filter(Boolean) as string[]
             : [
-                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/tenis",
-                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/baloncesto",
+                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/en-vivo/tenis",
+                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/en-vivo/baloncesto",
               ].filter(Boolean) as string[];
 
           for (const url of missingUrls) {
