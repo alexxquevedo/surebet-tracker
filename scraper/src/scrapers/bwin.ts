@@ -12,6 +12,7 @@
 
 import axios, { AxiosInstance } from "axios";
 import https from "https";
+import { createProxiedAxios } from "./proxy-helper";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
@@ -57,13 +58,8 @@ const SPORT_EXCLUDE: Partial<Record<Sport, string[]>> = {
 // ─── Axios instances ──────────────────────────────────────────────────────────
 
 function makeClient(proxyUrl?: string): AxiosInstance {
-  // Q3: Scoped HTTPS agent — disables certificate verification only for this client.
-  // Required when the proxy performs MITM TLS inspection (self-signed cert chain).
-  const httpsAgent = new https.Agent({
-    rejectUnauthorized: !proxyUrl,  // strict when direct; lenient only when proxied
-    keepAlive: true,
-  });
-
+  // Strict TLS for direct connections
+  const httpsAgent = new https.Agent({ rejectUnauthorized: true, keepAlive: true });
   const instance = axios.create({
     baseURL: BASE_ES,
     timeout: 15_000,
@@ -72,18 +68,44 @@ function makeClient(proxyUrl?: string): AxiosInstance {
   });
 
   if (proxyUrl) {
-    try {
-      const u = new URL(proxyUrl);
-      instance.defaults.proxy = {
-        protocol: u.protocol.replace(":", "") as "http" | "https",
-        host: u.hostname,
-        port: parseInt(u.port, 10),
-        ...(u.username ? { auth: { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) } } : {}),
-      };
-    } catch { /* malformed proxy URL — ignore */ }
+    // Delegate SOCKS5/HTTP proxy to createProxiedAxios; set baseURL so relative paths resolve
+    const proxyInst = createProxiedAxios(proxyUrl, 15_000, DEFAULT_HEADERS);
+    proxyInst.defaults.baseURL = BASE_ES;
+    return proxyInst;
   }
 
   return instance;
+}
+
+// ─── Widget fixture extractor ─────────────────────────────────────────────────
+// Extracts fixtures from bwin.es widget/widgetdata JSON responses.
+// The SPA delivers events via widget types TabbedGrid and OutrightsGrid.
+
+const WIDGET_FIXTURE_TYPES = new Set([
+  "TabbedGrid", "OutrightsGrid", "Grid", "LiveGrid", "FixturesWidget",
+  "EventsWidget", "SportsWidget", "LiveEventsWidget",
+]);
+
+const SPORT_IDS_REVERSE: Partial<Record<number, Sport>> = { 4: "FOOTBALL", 5: "TENNIS", 7: "BASKETBALL" };
+
+function extractWidgetFixtures(widgets: any[]): any[] {
+  const seen = new Set<number>();
+  const out: any[] = [];
+  for (const w of widgets) {
+    if (!w.hasData) continue;
+    const payload = w.payload;
+    if (!payload) continue;
+    let fixtures: any[] = payload.fixtures ?? [];
+    if (!fixtures.length && Array.isArray(payload.pods)) {
+      fixtures = (payload.pods as any[]).flatMap((pod: any) => pod.fixtures ?? []);
+    }
+    for (const f of fixtures) {
+      if (!f || !f.id || seen.has(f.id)) continue;
+      seen.add(f.id);
+      out.push(f);
+    }
+  }
+  return out;
 }
 
 // ─── CDS fixture parser ───────────────────────────────────────────────────────
@@ -108,6 +130,12 @@ function parseCdsFixtures(data: any, sport: Sport, isLive: boolean): ScrapedEven
   }
 
   for (const fixture of fixtures) {
+    // When fixture has a sport.id field, filter to avoid cross-sport contamination
+    if (fixture.sport?.id !== undefined) {
+      const expectedId = SPORT_IDS[sport];
+      if (expectedId !== undefined && fixture.sport.id !== expectedId) continue;
+    }
+
     const participants: any[] = fixture.participants ?? fixture.fixture?.participants ?? [];
     let home = "", away = "";
     for (const p of participants) {
@@ -236,25 +264,21 @@ export class BwinScraper extends BaseScraper {
   private async fetchV2(sport: Sport, isLive: boolean): Promise<any | null> {
     const sportId = SPORT_IDS[sport];
     const proxyUrl = config.scraperProxies.bwin;
-    const path = `sports/${sportId}/events?lang=es&facility=composite${isLive ? "&state=InPlay" : "&sort=StartDate&maxItems=100"}`;
-    const tryFetch = async (proxyUrl?: string): Promise<any | null> => {
-      try {
-        const agent = new https.Agent({ rejectUnauthorized: !proxyUrl, keepAlive: true });
-        const instance = axios.create({
-          baseURL: BASE_ES_V2,
-          timeout: 15_000,
-          headers: { ...DEFAULT_HEADERS, "x-app-context": undefined },
-          httpsAgent: agent,
-          ...(proxyUrl ? { proxy: (() => { const u = new URL(proxyUrl); return { protocol: u.protocol.replace(":", "") as "http", host: u.hostname, port: parseInt(u.port, 10) }; })() } : {}),
-        });
-        const res = await instance.get(path);
-        return res.data ?? null;
-      } catch { return null; }
-    };
-    const direct = await tryFetch();
-    if (direct) return direct;
-    if (proxyUrl) return tryFetch(proxyUrl);
-    return null;
+        const path = `sports/${sportId}/events?lang=es&facility=composite${isLive ? '&state=InPlay' : '&sort=StartDate&maxItems=100'}`;
+    // Direct attempt first
+    try {
+      const d = axios.create({ baseURL: BASE_ES_V2, timeout: 15_000, headers: { ...DEFAULT_HEADERS } });
+      const res = await d.get(path);
+      if (res.data) return res.data;
+    } catch { /* fall through */ }
+    // Proxy attempt — createProxiedAxios handles socks5h:// correctly
+    if (!proxyUrl) return null;
+    try {
+      const p = createProxiedAxios(proxyUrl, 15_000, { ...DEFAULT_HEADERS });
+      p.defaults.baseURL = BASE_ES_V2;
+      const res = await p.get(path);
+      return res.data ?? null;
+    } catch { return null; }
   }
 
   /**
@@ -266,33 +290,89 @@ export class BwinScraper extends BaseScraper {
     const proxyHint = getProxyForScraper("bwin");
     if (!proxyHint) return null;
 
-    const { page, ctx } = await browserManager.newPage(proxyHint);
+    const { page, ctx } = await browserManager.newPage(proxyHint, undefined, 30_000);
     const captured: any[] = [];
-    try {
-      page.on("response", async (res: any) => {
-        if (res.status() !== 200) return;
-        const u: string = res.url();
-        if (!u.includes("cds-api") && !u.includes("cds/api")) return;
-        try {
-          const data = await res.json().catch(() => null);
-          if (data) captured.push(data);
-        } catch { /* ok */ }
-      });
 
-      const url = isLive
-        ? "https://www.bwin.es/es/sports/en-vivo"
-        : "https://www.bwin.es/es/apuestas-deportivas";
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25_000 }).catch(() => {});
-      // Wait for cds-api XHR calls triggered by page SPA routing
-      await page.waitForTimeout(7_000);
-      this.log(`Playwright bwin: ${captured.length} cds-api responses captured`);
-      return captured.length > 0 ? captured : null;
-    } catch (err) {
-      this.warn(`Playwright bwin error: ${(err as any)?.message}`);
-      return null;
-    } finally {
-      await ctx.close().catch(() => {});
-    }
+    // Hard 38-second timeout — must fit inside the 60s orchestrator window
+    // (Axios takes ~20s to fail, leaving ~40s for Playwright)
+    return await new Promise<any[] | null>((resolve) => {
+      let settled = false;
+      const closeAndResolve = async (result: any[] | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardTimeout);
+        await ctx.close().catch(() => {});
+        resolve(result);
+      };
+
+      const hardTimeout = setTimeout(() => {
+        const totalFx = captured.reduce((s, d) => s + (d?.fixtures?.length ?? 0), 0);
+        this.warn(`bwin Playwright hard timeout (38s) — ${captured.length} responses, ${totalFx} fixtures`);
+        void closeAndResolve(captured.length > 0 ? [...captured] : null);
+      }, 38_000);
+
+      (async () => {
+        try {
+          page.setDefaultNavigationTimeout(10_000);
+          page.on("response", async (res: any) => {
+            if (res.status() !== 200) return;
+            const u: string = res.url();
+            if (!u.includes("/widget/widgetdata") && !u.includes("/widget/personalizedWidgetData")) return;
+            try {
+              const data = await Promise.race([res.json(), new Promise<null>(r => setTimeout(r, 3_000, null))]);
+              if (data && Array.isArray(data.widgets)) {
+                const fixtures = extractWidgetFixtures(data.widgets);
+                if (fixtures.length > 0) {
+                  this.log(`bwin PW widget: ${fixtures.length} fixtures from ${u.replace(/\?.*/,"").slice(-50)}`);
+                  captured.push({ fixtures });
+                }
+              }
+            } catch { /* ok */ }
+          });
+
+          // Load the sport page directly — bwin.es homepage already returns widget data for
+          // all featured sports, then navigate to sport-specific pages only if needed.
+          const entryUrl = isLive
+            ? "https://www.bwin.es/es/sports/en-vivo/futbol"
+            : "https://www.bwin.es/es/sports/futbol/apuestas";
+
+          await page.goto(entryUrl, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
+          await page.waitForTimeout(3_000);
+
+          // If the entry page didn't return widget data (unlikely), try homepage as fallback
+          if (captured.length === 0) {
+            await page.goto("https://www.bwin.es", { waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
+            await page.waitForTimeout(3_000);
+          }
+
+          // If still missing sports, fetch remaining sport pages
+          const hasSports = new Set(
+            captured.flatMap(d => (d.fixtures ?? []).map((f: any) => SPORT_IDS_REVERSE[f.sport?.id]).filter(Boolean))
+          );
+          const missingUrls = isLive
+            ? [
+                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/en-vivo/tenis",
+                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/en-vivo/baloncesto",
+              ].filter(Boolean) as string[]
+            : [
+                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/tenis/apuestas",
+                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/baloncesto/apuestas",
+              ].filter(Boolean) as string[];
+
+          for (const url of missingUrls) {
+            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
+            await page.waitForTimeout(2_000);
+          }
+
+          const totalFx = captured.reduce((s, d) => s + (d?.fixtures?.length ?? 0), 0);
+          this.log(`Playwright bwin: ${captured.length} widget responses, ${totalFx} total fixtures`);
+          await closeAndResolve(captured.length > 0 ? captured : null);
+        } catch (err) {
+          this.warn(`Playwright bwin error: ${(err as any)?.message}`);
+          await closeAndResolve(null);
+        }
+      })();
+    });
   }
 
   private async scrape(isLive: boolean): Promise<ScrapedEvent[]> {
@@ -317,19 +397,22 @@ export class BwinScraper extends BaseScraper {
       }
     }
 
-    // v2 fallback for any sport that returned 0 events
-    const missingSports = this.sports.filter(sp => !all.some(e => e.sport === sp));
-    for (const sport of missingSports) {
-      const v2data = await this.fetchV2(sport, isLive);
-      if (!v2data) { saveFailedPayload("bwin", sport, "0_events_v2_null", null); continue; }
-      const topKeys = typeof v2data === "object" ? Object.keys(v2data ?? {}).slice(0, 8).join(", ") : String(v2data).slice(0, 60);
-      this.log(`bwin v2 ${sport}: keys=[${topKeys}]`);
-      const events = parseCdsFixtures(v2data, sport, isLive);
-      if (events.length > 0) {
-        this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events (v2)`);
-        all.push(...events);
-      } else {
-        saveFailedPayload("bwin", sport, "0_events_v2", v2data);
+    // v2 fallback only if v1 returned some data (missing sports only)
+    // If v1 returned null (403 blocked), v2 is also blocked — skip straight to Playwright
+    if (result !== null) {
+      const missingSports = this.sports.filter(sp => !all.some(e => e.sport === sp));
+      for (const sport of missingSports) {
+        const v2data = await this.fetchV2(sport, isLive);
+        if (!v2data) { saveFailedPayload("bwin", sport, "0_events_v2_null", null); continue; }
+        const topKeys = typeof v2data === "object" ? Object.keys(v2data ?? {}).slice(0, 8).join(", ") : String(v2data).slice(0, 60);
+        this.log(`bwin v2 ${sport}: keys=[${topKeys}]`);
+        const events = parseCdsFixtures(v2data, sport, isLive);
+        if (events.length > 0) {
+          this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events (v2)`);
+          all.push(...events);
+        } else {
+          saveFailedPayload("bwin", sport, "0_events_v2", v2data);
+        }
       }
     }
 
@@ -346,6 +429,7 @@ export class BwinScraper extends BaseScraper {
           }
         }
         if (all.length > 0) this.log(`Playwright: ${all.length} eventos recuperados`);
+        else this.warn(`Playwright: 0 eventos (${pwData.reduce((s, d) => s + (d?.fixtures?.length ?? 0), 0)} fixtures en data)`);
       }
     }
 
