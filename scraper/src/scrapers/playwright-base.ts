@@ -91,7 +91,8 @@ export function parseProxyUrl(rawUrl: string): { server: string; username?: stri
   if (!rawUrl) return undefined;
   try {
     const u = new URL(rawUrl);
-    const server   = `${u.protocol}//${u.hostname}:${u.port}`;
+    const proto    = u.protocol === "socks5h:" ? "socks5:" : u.protocol;
+    const server   = `${proto}//${u.hostname}:${u.port}`;
     const username = u.username ? decodeURIComponent(u.username) : undefined;
     const password = u.password ? decodeURIComponent(u.password) : undefined;
     return { server, ...(username ? { username, password } : {}) };
@@ -158,17 +159,25 @@ class BrowserManager {
 
   // Residential proxy browser — launched with proxy at browser level (Chromium requires this;
   // context-level proxy auth is not supported and throws ERR_PROXY_AUTH_UNSUPPORTED).
+  private async killBrowser(browser: Browser, label: string): Promise<void> {
+    try { await Promise.race([browser.close(), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000))]); }
+    catch { 
+      console.warn();
+      try { (browser as any).process()?.kill('SIGKILL'); } catch { /* noop */ }
+    }
+  }
+
   private async getResidentialBrowser(proxy: { server: string; username?: string; password?: string }): Promise<Browser> {
     if (this.proxyBrowser) {
       if (!this.proxyBrowser.isConnected()) {
-        await this.proxyBrowser.close().catch(() => {});
-        this.proxyBrowser = null;
+        const dead = this.proxyBrowser; this.proxyBrowser = null;
+        await this.killBrowser(dead, 'proxy-disconnected');
       } else {
         const alive = await this.pingBrowser(this.proxyBrowser);
         if (!alive) {
           console.warn("[BrowserManager] Zombie proxy browser detectado — shutdown forzado");
-          await this.proxyBrowser.close().catch(() => {});
-          this.proxyBrowser = null;
+          const dead = this.proxyBrowser; this.proxyBrowser = null;
+          await this.killBrowser(dead, 'proxy-zombie');
         }
       }
     }
@@ -180,8 +189,8 @@ class BrowserManager {
 
   // Creates a browser context with the semaphore already acquired.
   // The ctx.close() wrapper releases the semaphore — always call it (or releaseSemaphore()).
-  async createContext(proxyHint?: { server: string; username?: string; password?: string }): Promise<BrowserContext> {
-    await pageSemaphore.acquire();
+  async createContext(proxyHint?: { server: string; username?: string; password?: string }, semaphoreTimeoutMs?: number): Promise<BrowserContext> {
+    await pageSemaphore.acquire(semaphoreTimeoutMs);
     try {
       const browser = proxyHint
         ? await this.getResidentialBrowser(proxyHint)
@@ -221,8 +230,9 @@ class BrowserManager {
   async newPage(
     proxyHint?: { server: string; username?: string; password?: string },
     scraperName?: string,
+    semaphoreTimeoutMs?: number,
   ): Promise<{ page: Page; ctx: BrowserContext }> {
-    const ctx = await this.createContext(proxyHint);
+    const ctx = await this.createContext(proxyHint, semaphoreTimeoutMs);
     try {
       const page = await ctx.newPage();
 
@@ -321,7 +331,7 @@ class Semaphore {
   private count = 0;
   constructor(private readonly max: number) {}
 
-  async acquire(timeoutMs: number = 180_000): Promise<void> {
+  async acquire(timeoutMs: number = 360_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (this.count >= this.max) {
       if (Date.now() >= deadline) {
@@ -339,7 +349,7 @@ class Semaphore {
   }
 }
 
-export const pageSemaphore = new Semaphore(1); // 1 page at a time — VPS has limited RAM
+export const pageSemaphore = new Semaphore(2); // 2 concurrent Playwright pages — bwin + pokerstars can run simultaneously
 
 /** Log current page URL + title — call when a scraper finds 0 events to diagnose wrong URL / redirect */
 export async function logPageState(page: Page, scraperName: string, apiCalls?: string[]): Promise<void> {

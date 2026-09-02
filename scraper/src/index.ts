@@ -24,7 +24,7 @@ import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes, H2HOutcome, De
 import { BaseScraper } from "./scrapers/base";
 import { isScraperEnabled } from "./scrapers/scraperState";
 import { BetfairScraper } from "./scrapers/betfair";
-// MarathonbetScraper disabled: marathonbet.es/es/ only offers casino in Spain (exited sportsbook market)
+// MarathonbetScraper: geo-blocked 451 from both VPS (FR) and Digi 4G ES proxy
 import { WinamaxScraper } from "./scrapers/winamax";
 import { BwinScraper } from "./scrapers/bwin";
 import { BetssonScraper } from "./scrapers/betsson";
@@ -405,12 +405,19 @@ async function pollCycle(isLive: boolean): Promise<void> {
   // scraperProxies keys: all proxy-dependent scrapers; direct scrapers (winamax, codere, betfair) are absent
   const proxyScrapers = new Set(Object.keys(config.scraperProxies).filter(k => (config.scraperProxies as Record<string, string>)[k]));
 
+  const SCRAPER_TIMEOUT_MS = isLive ? 60 * 1000 : 10 * 60 * 1000; // 60s live, 10min prematch
+  // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
+  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "daznbet"]);
+  // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
+  const skipInPrematch = new Set<string>([]);
   const scrapeResults = await Promise.allSettled(
     scrapers.filter(s => {
       if (!isScraperEnabled(s.name)) {
         console.log("[orchestrator] scraper desactivado");
         return false;
       }
+      if (isLive && skipInLive.has(s.name)) { logger.warn("orchestrator.scraper_skipped_live_browser", { bookmaker: s.name }); return false; }
+      if (!isLive && skipInPrematch.has(s.name)) { logger.warn("orchestrator.scraper_skipped_prematch_0ev", { bookmaker: s.name }); return false; }
       if (proxyScrapers.has(s.name)) {
         if (proxyPaused) { logger.warn("orchestrator.scraper_skipped_pause", { bookmaker: s.name }); return false; }
         if (!preflight.ok) { logger.warn("orchestrator.scraper_skipped_wg_down", { bookmaker: s.name }); return false; }
@@ -418,9 +425,14 @@ async function pollCycle(isLive: boolean): Promise<void> {
       return true;
     }).map(async (s) => {
       try {
-        const events = DRY_RUN
-          ? mockEvents(s.name, isLive)
-          : await (isLive ? s.scrapeLive() : s.scrapePrematch());
+        const scraperTimeout = s.name === "daznbet" && isLive ? 90 * 1000 : SCRAPER_TIMEOUT_MS;
+        const timeoutPromise = new Promise<ScrapedEvent[]>((_, reject) =>
+          setTimeout(() => reject(new Error(`Scraper timeout: ${s.name} exceeded ${scraperTimeout}ms`)), scraperTimeout)
+        );
+        const scrapePromise = DRY_RUN
+          ? Promise.resolve(mockEvents(s.name, isLive))
+          : (isLive ? s.scrapeLive() : s.scrapePrematch());
+        const events = await Promise.race([scrapePromise, timeoutPromise]);
         healthUpdate(s.name, isLive, events.length);
         // Reset exponential backoff counter on success
         if (events.length > 0) resetScraperCooldown(s.name);

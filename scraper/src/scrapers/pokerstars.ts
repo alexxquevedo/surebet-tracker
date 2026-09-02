@@ -1,203 +1,192 @@
-﻿/**
+/**
  * PokerStars Sports España — Playwright scraper.
  *
- * PokerStars Sports usa la plataforma Kambi (mismo que Sportium y Betsson).
- * Interceptamos las llamadas XHR a la CDN de Kambi.
- *
- * Kambi response: { liveEvents/events: [{ event: { name, homeName, awayName }, betOffers: [...] }] }
- * Odds: milli-odds (dividir entre 1000 para obtener decimal).
+ * Approach: Playwright navega a /sports/ con proxy ES.
+ * Inyecta un Proxy en window.__INITIAL_STATE__ para capturar el widget
+ * 'isp-sports-widget-home-page' del SSR antes de que React hidrate.
+ * Ese widget contiene eventos (live y prematch) + markets (WIN-DRAW-WIN / MATCH_BETTING)
+ * con odds ya incluidas — sin GraphQL ni markets-updates adicionales.
  */
 
+import { chromium } from "playwright";
 import { BaseScraper } from "./base";
-import { browserManager, dismissCookies, logPageState, getProxyForScraper } from "./playwright-base";
+import { getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
-  FOOTBALL: {
-    live:     "https://www.pokerstarssports.es/sports/football/live",
-    prematch: "https://www.pokerstarssports.es/sports/football",
-  },
-  TENNIS: {
-    live:     "https://www.pokerstarssports.es/sports/tennis/live",
-    prematch: "https://www.pokerstarssports.es/sports/tennis",
-  },
-  BASKETBALL: {
-    live:     "https://www.pokerstarssports.es/sports/basketball/live",
-    prematch: "https://www.pokerstarssports.es/sports/basketball",
-  },
+const SPORT_MAP: Record<number, Sport> = {
+  1: "FOOTBALL",
+  2: "TENNIS",
+  7524: "ICEHOCKEY",
+  468328: "HANDBALL",
+  998917: "VOLLEYBALL",
 };
 
-// ─── Kambi parser (comparte lógica con Sportium) ─────────────────────────────
+const HOME_URL = "https://www.pokerstars.es/sports/";
+// Cache TTL largo: el live navega cada 30s, el prematch cada 120s.
+// Ambos comparten el mismo fetch; el prematch usa el cache del live.
+const CACHE_TTL_MS = 110_000;
 
-const toDecimal = (raw: any): number => {
-  const n = typeof raw === "string" ? parseInt(raw, 10) : Number(raw);
-  return n > 100 ? n / 1000 : n;
-};
+interface PSRunner {
+  runnerName: string;
+  runnerStatus: string;
+  sortPriority: number;
+  winRunnerOdds?: { decimalDisplayOdds?: { decimalOdds?: number } };
+}
 
-function parseKambi(data: any, sport: Sport, isLive: boolean): ScrapedEvent[] {
-  const eventList: any[] =
-    data?.liveEvents ??
-    data?.events ??
-    data?.offeringEvents?.events ??
-    data?.betOfferCategories?.flatMap((c: any) => c.events ?? []) ??
-    [];
-  if (!eventList.length) return [];
+interface PSMarket {
+  eventId: number;
+  inPlay: boolean;
+  marketType: string;
+  marketStatus: string;
+  runners: PSRunner[];
+}
 
-  const events: ScrapedEvent[] = [];
-  for (const item of eventList) {
-    const ev = item.event ?? item;
-    const eventName: string =
-      ev.name ??
-      (ev.homeName && ev.awayName ? `${ev.homeName} - ${ev.awayName}` : "");
-    if (!eventName) continue;
+interface PSEvent {
+  eventId: number;
+  eventName: string;
+  eventStartTime: string;
+  isInPlay: boolean;
+  eventTypeId: number;
+  competitionId: number;
+}
 
-    const startTime = ev.start ? new Date(ev.start) : undefined;
-    const eventKey = buildEventKey(sport, eventName, startTime);
-    const league: string = ev.group ?? ev.path?.[1]?.name ?? "";
+interface PSCompetition {
+  competitionId: number;
+  competitionName: string;
+}
 
-    for (const offer of (item.betOffers ?? [])) {
-      const label: string = (
-        offer.criterion?.label ??
-        offer.betOfferType?.name ??
-        ""
-      ).toLowerCase();
-      const isH2H =
-        label.includes("1x2") ||
-        label.includes("full time") ||
-        label.includes("resultado") ||
-        label.includes("match result") ||
-        label.includes("winner") ||
-        label.includes("ganador");
-      if (!isH2H) continue;
+interface PSHomeData {
+  competitions: Record<string, PSCompetition>;
+  events: Record<string, PSEvent>;
+  markets: Record<string, PSMarket>;
+}
 
-      const outcomes: H2HOutcome[] = (offer.outcomes ?? [])
-        .map((o: any) => {
-          const odds = toDecimal(o.odds ?? o.decimalOdds ?? 0);
-          const name: string = o.label ?? o.type ?? "";
-          return odds >= 1.01 && name ? { name, odds } : null;
-        })
-        .filter(Boolean) as H2HOutcome[];
+export class PokerStarsScraper extends BaseScraper {
+  readonly name = "pokerstars";
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "ICEHOCKEY", "HANDBALL"];
 
-      if (outcomes.length >= 2) {
+  private cachedData: { ts: number; events: ScrapedEvent[] } | null = null;
+
+  private async fetchAllEvents(): Promise<ScrapedEvent[]> {
+    const now = Date.now();
+    if (this.cachedData && now - this.cachedData.ts < CACHE_TTL_MS) {
+      return this.cachedData.events;
+    }
+
+    const proxy = getProxyForScraper("pokerstars");
+    if (!proxy) {
+      this.log("Sin proxy ES — necesita ROUTER_PROXY_URL o POKERSTARS_PROXY_URL");
+      return [];
+    }
+
+    // Uses its own browser instance (not the shared semaphore) — lightweight SSR scrape
+    const chromiumPath = process.env.CHROMIUM_PATH ?? "/usr/bin/google-chrome";
+    const browser = await chromium.launch({
+      executablePath: chromiumPath,
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-extensions"],
+    });
+    const ctx = await browser.newContext({
+      proxy: { server: proxy.server, username: proxy.username, password: proxy.password },
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      locale: "es-ES",
+    });
+    const page = await ctx.newPage();
+    const events: ScrapedEvent[] = [];
+
+    try {
+      // Inject before scripts run so we capture SSR __INITIAL_STATE__ assignments
+      await page.addInitScript(() => {
+        const capturedKeys: Record<string, unknown> = {};
+        const handler: ProxyHandler<Record<string, unknown>> = {
+          set(target, prop: string, value) {
+            capturedKeys[prop] = value;
+            target[prop] = value;
+            return true;
+          },
+          get(target, prop: string) {
+            return target[prop];
+          },
+        };
+        (window as unknown as Record<string, unknown>).__INITIAL_STATE__ = new Proxy({}, handler);
+        (window as unknown as Record<string, unknown>).__CAPTURED_KEYS__ = capturedKeys;
+      });
+
+      await page.goto(HOME_URL, { waitUntil: "domcontentloaded", timeout: 28_000 });
+      await page.waitForTimeout(1_500);
+
+      const homeData = await page.evaluate((): PSHomeData | null => {
+        const captured = (window as unknown as Record<string, Record<string, unknown>>).__CAPTURED_KEYS__;
+        if (!captured) return null;
+        return (captured["isp-sports-widget-home-page"] as PSHomeData) ?? null;
+      });
+
+      if (!homeData?.markets) {
+        this.warn("No se capturó isp-sports-widget-home-page data");
+        return [];
+      }
+
+      const { competitions = {}, events: psEvents = {}, markets = {} } = homeData;
+
+      for (const mkt of Object.values(markets)) {
+        if (mkt.marketStatus !== "OPEN") continue;
+        if (mkt.marketType !== "WIN-DRAW-WIN" && mkt.marketType !== "MATCH_BETTING") continue;
+
+        const psEvent = psEvents[String(mkt.eventId)];
+        if (!psEvent) continue;
+
+        const sport: Sport | undefined = SPORT_MAP[psEvent.eventTypeId];
+        if (!sport) continue;
+
+        const comp = competitions[String(psEvent.competitionId)];
+        const league = comp?.competitionName ?? "";
+
+        const outcomes: H2HOutcome[] = [...mkt.runners]
+          .filter(r => r.runnerStatus === "ACTIVE")
+          .sort((a, b) => a.sortPriority - b.sortPriority)
+          .map(r => {
+            const odds = r.winRunnerOdds?.decimalDisplayOdds?.decimalOdds;
+            if (!odds || odds < 1.01) return null;
+            return { name: r.runnerName, odds };
+          })
+          .filter((o): o is H2HOutcome => o !== null);
+
+        if (outcomes.length < 2) continue;
+
+        const startTime = psEvent.eventStartTime ? new Date(psEvent.eventStartTime) : undefined;
+        const eventKey = buildEventKey(sport, psEvent.eventName, startTime);
+
         events.push({
           bookmaker: "pokerstars",
           sport,
           eventKey,
-          eventName,
+          eventName: psEvent.eventName,
           league,
           startTime,
-          isLive,
+          isLive: psEvent.isInPlay,
           market: "h2h",
           outcomes,
         });
-        break;
-      }
-    }
-  }
-  return events;
-}
-
-// ─── Scraper ─────────────────────────────────────────────────────────────────
-
-export class PokerStarsScraper extends BaseScraper {
-  readonly name = "pokerstars";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
-
-  private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage(getProxyForScraper("pokerstars"));
-
-    const kambiCaptures: Array<{ url: string; data: any }> = [];
-    const allCaptures: Array<{ url: string; data: any }> = [];
-
-    page.on("response", async (res: any) => {
-      if (res.status() !== 200) return;
-      const ct: string = res.headers()?.["content-type"] ?? "";
-      if (!ct.includes("json")) return;
-      const u: string = res.url();
-      if (u.includes("analytics") || u.includes("hotjar")) return;
-      try {
-        const data = await res.json().catch(() => null);
-        if (!data || JSON.stringify(data).length < 200) return;
-        allCaptures.push({ url: u, data });
-        if (u.includes("kambicdn") || u.includes("kambi") || u.includes("offering") || u.includes("betoffer")) {
-          kambiCaptures.push({ url: u, data });
-        }
-      } catch { /* ok */ }
-    });
-
-    const events: ScrapedEvent[] = [];
-    try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 });
-      await dismissCookies(page);
-      // Event-driven: exit as soon as first JSON capture arrives (max 10s)
-      const captureDeadline = Date.now() + 10_000;
-      while (allCaptures.length === 0 && Date.now() < captureDeadline) {
-        await new Promise<void>((r) => setTimeout(r, 200));
-      }
-      if (allCaptures.length > 0) {
-        await new Promise<void>((r) => setTimeout(r, 1_500));
       }
 
-      const title = await page.title().catch(() => "");
-      const pageUrl = page.url();
-
-      // PokerStars retiró el sportsbook de España — redirige a .fr o .eu
-      const isGeoRedirected = !pageUrl.includes("pokerstarssports.es") && !pageUrl.includes("pokerstars.es");
-      if (isGeoRedirected) {
-        this.warn(`PokerStars redirigido a ${pageUrl} — posible retirada del mercado español`);
-        return [];
-      }
-
-      if (
-        title.toLowerCase().includes("not found") ||
-        title.toLowerCase().includes("404") ||
-        pageUrl.includes("/404")
-      ) {
-        this.warn(`Página no disponible: ${pageUrl}`);
-        return [];
-      }
-
-      if (kambiCaptures.length > 0) {
-        this.log(`Kambi XHR (${kambiCaptures.length}): ${kambiCaptures.map((c) => c.url.replace(/https?:\/\/[^/]+/, "").slice(0, 60)).join(" | ")}`);
-        for (const { data } of kambiCaptures) {
-          events.push(...parseKambi(data, sport, isLive));
-        }
-      } else {
-        // Intentar con todas las capturas por si Kambi está bajo otro dominio
-        for (const { data } of allCaptures) {
-          const parsed = parseKambi(data, sport, isLive);
-          if (parsed.length > 0) { events.push(...parsed); break; }
-        }
-      }
-
-      if (events.length === 0) {
-        await logPageState(page, this.name);
-        if (allCaptures.length > 0) {
-          this.warn(`Sin eventos. Dominios capturados: ${[...new Set(allCaptures.map(c => new URL(c.url).hostname))].join(", ")}`);
-        }
-      } else {
-        this.log(`${isLive ? "Live" : "Prematch"} ${sport}: ${events.length} events`);
-      }
+      const live = events.filter(e => e.isLive).length;
+      this.log(`${events.length} events (${live} live, ${events.length - live} prematch)`);
     } catch (err) {
-      this.warn(`${sport} failed`, err);
+      this.warn("fetchAllEvents failed", err);
     } finally {
-      await ctx.close();
+      await browser.close().catch(() => {});
     }
+
+    this.cachedData = { ts: Date.now(), events };
     return events;
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    if (!getProxyForScraper("pokerstars")) { this.log("Sin POKERSTARS_PROXY_URL — necesita proxy ES"); return []; }
-    const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.live, sport, true)));
-    return all;
+    return (await this.fetchAllEvents()).filter(e => e.isLive);
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    if (!getProxyForScraper("pokerstars")) { this.log("Sin POKERSTARS_PROXY_URL — necesita proxy ES"); return []; }
-    const all: ScrapedEvent[] = [];
-    for (const sport of this.sports) all.push(...(await this.scrapePage(URLS[sport]!.prematch, sport, false)));
-    return all;
+    return (await this.fetchAllEvents()).filter(e => !e.isLive);
   }
 }
