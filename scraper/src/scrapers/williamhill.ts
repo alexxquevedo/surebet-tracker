@@ -240,7 +240,7 @@ function buildEvents(
   topicSport: Map<string, Sport>,
   bookmaker: string,
   isLive: boolean,
-  defaultSport: Sport,
+  defaultSport: Sport | undefined,
 ): ScrapedEvent[] {
   type EvGroup = {
     sport: Sport;
@@ -291,7 +291,7 @@ export class WilliamHillScraper extends BaseScraper {
 
   private async scrapePage(
     pageUrl: string,
-    defaultSport: Sport,
+    defaultSport: Sport | undefined,
     isLive: boolean,
   ): Promise<ScrapedEvent[]> {
     const proxy = getProxy();
@@ -301,33 +301,33 @@ export class WilliamHillScraper extends BaseScraper {
     }
 
     try {
-      this.log(`WH ${defaultSport} (${isLive ? "live" : "prematch"}): fetching HTML...`);
+      this.log(`WH ${defaultSport ?? "LIVE"} (${isLive ? "live" : "prematch"}): fetching HTML...`);
       const { topics, topicSport } = await extractPageData(pageUrl, proxy, defaultSport);
 
       if (topics.length === 0) {
-        this.warn(`WH ${defaultSport}: 0 outcome topics found in HTML`);
+        this.warn(`WH ${defaultSport ?? "LIVE"}: 0 outcome topics found in HTML`);
         return [];
       }
-      this.log(`WH ${defaultSport}: ${topics.length} outcome topics — connecting WS...`);
+      this.log(`WH ${defaultSport ?? "LIVE"}: ${topics.length} outcome topics — connecting WS...`);
 
       const outcomeMap = await fetchOutcomesViaWs(topics, proxy, isLive ? 25_000 : 20_000);
-      this.log(`WH ${defaultSport}: ${outcomeMap.size}/${topics.length} outcomes received`);
+      this.log(`WH ${defaultSport ?? "LIVE"}: ${outcomeMap.size}/${topics.length} outcomes received`);
 
       const events = buildEvents(outcomeMap, topicSport, "williamhill", isLive, defaultSport);
       if (events.length > 0) {
-        this.log(`WH ${defaultSport}: ${events.length} events`);
+        this.log(`WH ${defaultSport ?? "LIVE"}: ${events.length} events`);
       } else {
-        this.warn(`WH ${defaultSport}: 0 events from ${outcomeMap.size} outcomes`);
+        this.warn(`WH ${defaultSport ?? "LIVE"}: 0 events from ${outcomeMap.size} outcomes`);
       }
       return events;
     } catch (err) {
-      this.warn(`WH ${defaultSport} failed`, err);
+      this.warn(`WH ${defaultSport ?? "LIVE"} failed`, err);
       return [];
     }
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    return this.scrapePage(`${BASE_URL}/${LIVE_PATH}`, "FOOTBALL", true);
+    return this.scrapePage(`${BASE_URL}/${LIVE_PATH}`, undefined, true); // mixed-sport page — sport detected per-event from embedded sportId
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
