@@ -147,6 +147,8 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   const PROFIT_CAP_LIVE = 5.0;
   const PROFIT_CAP_PREMATCH = 3.0;
   const cap = market.isLive ? PROFIT_CAP_LIVE : PROFIT_CAP_PREMATCH;
+  // Silent skip: profit >15% is almost certainly settled/suspended odds — too noisy to log
+  if (profitPct > 15) return null;
   if (profitPct > cap) {
     console.warn(
       `[calculator] Anomaly: ${market.eventKey} ${market.market} ${profitPct.toFixed(2)}% > cap ${cap}% discarded`,
