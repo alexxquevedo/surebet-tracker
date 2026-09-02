@@ -13,6 +13,7 @@ import { config } from "../config";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 import { BaseScraper } from "./base";
+import { createProxiedAxios } from "./proxy-helper";
 
 // Betfair event type IDs
 const EVENT_TYPE_IDS: Partial<Record<Sport, string>> = {
@@ -22,7 +23,7 @@ const EVENT_TYPE_IDS: Partial<Record<Sport, string>> = {
 };
 
 // Betfair market types we care about
-const MARKET_TYPES = ["MATCH_ODDS", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45"];
+const MARKET_TYPES = ["MATCH_ODDS"];
 
 interface BetfairRunner {
   selectionId: number;
@@ -51,47 +52,64 @@ export class BetfairScraper extends BaseScraper {
   private sessionExpiry: number = 0;
 
   private betApi: AxiosInstance;
+  private loginPromise: Promise<void> | null = null; // mutex for concurrent login calls
+  private permanentlyDisabled = false;
 
   constructor() {
     super();
-    this.betApi = axios.create({
+    // Route through proxy if available (Betfair WAF blocks OVH datacenter IPs)
+    const proxyUrl = process.env.ROUTER_PROXY_URL || "";
+    const baseConfig = {
       baseURL: "https://api.betfair.com/exchange/betting/json-rpc/v1",
       timeout: 15_000,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Application": config.betfair.appKey,
-      },
-    });
+      headers: { "Content-Type": "application/json", "X-Application": config.betfair.appKey },
+    };
+    this.betApi = proxyUrl
+      ? (() => { const inst = createProxiedAxios(proxyUrl, 15_000); inst.defaults.baseURL = baseConfig.baseURL; inst.defaults.headers.common["Content-Type"] = "application/json"; inst.defaults.headers.common["X-Application"] = config.betfair.appKey; return inst; })()
+      : axios.create(baseConfig);
   }
 
   // ─── Auth ────────────────────────────────────────────────────────────────
 
   private async ensureSession(): Promise<void> {
+    if (this.permanentlyDisabled) throw new Error("Betfair desactivado — cuenta requiere cambio de contraseña.");
     if (this.sessionToken && Date.now() < this.sessionExpiry) return;
+    // Mutex: if a login is in progress, wait for it instead of starting a new one
+    if (this.loginPromise) { await this.loginPromise; return; }
+    this.loginPromise = this._doLogin().finally(() => { this.loginPromise = null; });
+    await this.loginPromise;
+  }
 
+  private async _doLogin(): Promise<void> {
     this.log("Logging in to Betfair...");
-    const res = await axios.post(
-      "https://identitysso.betfair.com/api/login",
-      new URLSearchParams({
-        username: config.betfair.username,
-        password: config.betfair.password,
-      }),
-      {
-        headers: {
-          "X-Application": config.betfair.appKey,
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-      },
-    );
+    const proxyUrl = process.env.ROUTER_PROXY_URL || "";
+    const loginHeaders = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "X-Application": config.betfair.appKey,
+    };
+    const loginAxios = proxyUrl
+      ? createProxiedAxios(proxyUrl, 15_000, loginHeaders)
+      : axios.create({ timeout: 15_000, headers: loginHeaders });
+
+    const params = new URLSearchParams({ username: config.betfair.username, password: config.betfair.password });
+    const loginUrls = ["https://identitysso-cert.betfair.es/api/login", "https://identitysso.betfair.es/api/login", "https://identitysso.betfair.com/api/login"];
+    let res: any = null;
+    let lastErr: any = null;
+    for (const url of loginUrls) {
+      try { res = await loginAxios.post(url, params.toString()); if (res?.data?.status === "SUCCESS") break; } catch (e) { lastErr = e; }
+    }
+    if (!res) throw lastErr ?? new Error("All Betfair login endpoints failed");
 
     const { token, status } = res.data;
-    if (status !== "SUCCESS" || !token) {
-      throw new Error(`Betfair login failed: ${JSON.stringify(res.data)}`);
+    if (status === "FAIL" && res.data?.error === "ACCOUNT_PENDING_PASSWORD_CHANGE") {
+      this.permanentlyDisabled = true;
+      throw new Error("⚠️  Betfair: CUENTA REQUIERE CAMBIO DE CONTRASEÑA — ve a betfair.com e inicia sesión para cambiarla. Scraper desactivado hasta reinicio.");
     }
-
+    if (status !== "SUCCESS" || !token) {
+      throw new Error("Betfair login failed: " + JSON.stringify(res.data).slice(0, 120));
+    }
     this.sessionToken = token;
-    // Token valid for 12 hours of inactivity; refresh after 10h
     this.sessionExpiry = Date.now() + 10 * 60 * 60 * 1000;
     this.log("Betfair session obtained.");
   }
@@ -223,6 +241,7 @@ export class BetfairScraper extends BaseScraper {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (this.permanentlyDisabled) { this.warn("Betfair desactivado — cambia la contraseña en betfair.com y reinicia el scanner."); return []; }
     if (!config.betfair.appKey || !config.betfair.username) {
       this.warn("Betfair credentials not configured, skipping.");
       return [];
@@ -242,6 +261,7 @@ export class BetfairScraper extends BaseScraper {
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (this.permanentlyDisabled) { this.warn("Betfair desactivado — cambia la contraseña en betfair.com y reinicia el scanner."); return []; }
     if (!config.betfair.appKey || !config.betfair.username) {
       this.warn("Betfair credentials not configured, skipping.");
       return [];
