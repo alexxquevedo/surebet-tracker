@@ -265,8 +265,7 @@ function buildEvents(
     if (!evMatch) continue;
     const eid = evMatch[1];
     if (!byEvent.has(eid)) {
-      const evSport = topicSport.get(topic) ?? defaultSport;
-      if (!evSport) continue; // skip if sport unknown (mixed live page, non-mapped sportIds)
+      const evSport = topicSport.get(topic) ?? defaultSport ?? "FOOTBALL" as Sport; // live unknown events default to FOOTBALL
       byEvent.set(eid, { sport: evSport });
     }
     byEvent.get(eid)![outcome.pos] = outcome;
