@@ -211,7 +211,7 @@ export class BwinScraper extends BaseScraper {
   readonly name = "bwin";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
   private prematchCache: { ts: number; events: ScrapedEvent[] } | null = null;
-  private readonly PREMATCH_CACHE_TTL = 12 * 60 * 1000;
+  private readonly PREMATCH_CACHE_TTL = 30 * 60 * 1000; // 30min — covers extended bwin rate-limit windows
 
   private async fetchFixtures(state: "Live" | "Latest", retried = false): Promise<{ data: any; usedProxy: boolean } | null> {
     const proxyUrl = config.scraperProxies.bwin;
@@ -416,17 +416,6 @@ export class BwinScraper extends BaseScraper {
         } else {
           saveFailedPayload("bwin", sport, "0_events_v2", v2data);
         }
-      }
-    }
-
-    // v2 prematch direct — different endpoint from v1; may not share the same 403 block.
-    // Runs when v1 returned null AND we still have no events AND this is a prematch cycle.
-    if (result === null && !isLive && all.length === 0) {
-      for (const sport of this.sports) {
-        const v2data = await this.fetchV2(sport, false);
-        if (!v2data) continue;
-        const ev2 = parseCdsFixtures(v2data, sport, false);
-        if (ev2.length > 0) { this.log(`Prematch v2 direct ${sport}: ${ev2.length} events`); all.push(...ev2); }
       }
     }
 
