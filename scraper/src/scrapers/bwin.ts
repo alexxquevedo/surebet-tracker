@@ -446,6 +446,22 @@ export class BwinScraper extends BaseScraper {
         }
         if (all.length > 0) this.log(`Playwright: ${all.length} eventos recuperados`);
         else this.warn(`Playwright: 0 eventos (${pwData.reduce((s, d) => s + (d?.fixtures?.length ?? 0), 0)} fixtures en data)`);
+
+        // When live Playwright succeeds, also populate prematch cache.
+        // The widget data includes upcoming fixtures — re-parsing with isLive=false
+        // gives dated eventKeys for prematch arb detection.
+        if (isLive && all.length > 0) {
+          const pmEvents: ScrapedEvent[] = [];
+          for (const d of pwData) {
+            for (const sp of this.sports) {
+              pmEvents.push(...parseCdsFixtures(d, sp, false));
+            }
+          }
+          if (pmEvents.length > 0) {
+            this.prematchCache = { ts: Date.now(), events: pmEvents };
+            this.log(`Live Playwright → prematch cache: ${pmEvents.length} events`);
+          }
+        }
       }
     }
 
