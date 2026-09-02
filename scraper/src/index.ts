@@ -388,6 +388,33 @@ function isProxyIssue(resultsMap: Map<string, number>): boolean {
   return WORKING_SCRAPERS.some((name) => (resultsMap.get(name) ?? 0) > 0);
 }
 
+// ─── Proxy concurrency limiter ───────────────────────────────────────────────────
+// Prevents saturating the single WireGuard SOCKS5 tunnel with simultaneous Axios requests.
+// Playwright-based scrapers (bwin, pokerstars) are NOT throttled here — they have their own
+// pageSemaphore and use persistent connections rather than many short-lived HTTP requests.
+class ProxySemaphore {
+  private active = 0;
+  constructor(private readonly max: number) {}
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.active >= this.max) {
+      await new Promise<void>(r => setTimeout(r, 250));
+    }
+    this.active++;
+    try { return await fn(); } finally { this.active--; }
+  }
+}
+const proxySemaphore = new ProxySemaphore(3);
+
+// Axios-based scrapers that route through the SOCKS5 proxy — throttled by proxySemaphore
+const PROXY_THROTTLED_AXIOS = new Set([
+  "williamhill", "betsson",
+  // Kambi B2B — each instance serializes its sports internally, so 1 connection at a time per scraper
+  "leovegas", "888sport", "casumo", "betsson_es", "unibet", "marca", "kirolbet",
+  // Altenar
+  "luckia", "casino-gran-madrid", "tonybet",
+  "retabet",
+]);
+
 // ─── Main poll cycle ──────────────────────────────────────────────────────────
 
 async function pollCycle(isLive: boolean): Promise<void> {
@@ -418,7 +445,8 @@ async function pollCycle(isLive: boolean): Promise<void> {
       }
       if (isLive && skipInLive.has(s.name)) { logger.warn("orchestrator.scraper_skipped_live_browser", { bookmaker: s.name }); return false; }
       if (!isLive && skipInPrematch.has(s.name)) { logger.warn("orchestrator.scraper_skipped_prematch_0ev", { bookmaker: s.name }); return false; }
-      if (proxyScrapers.has(s.name)) {
+      const usesProxy = proxyScrapers.has(s.name) || PROXY_THROTTLED_AXIOS.has(s.name);
+      if (usesProxy) {
         if (proxyPaused) { logger.warn("orchestrator.scraper_skipped_pause", { bookmaker: s.name }); return false; }
         if (!preflight.ok) { logger.warn("orchestrator.scraper_skipped_wg_down", { bookmaker: s.name }); return false; }
       }
@@ -431,7 +459,9 @@ async function pollCycle(isLive: boolean): Promise<void> {
         );
         const scrapePromise = DRY_RUN
           ? Promise.resolve(mockEvents(s.name, isLive))
-          : (isLive ? s.scrapeLive() : s.scrapePrematch());
+          : PROXY_THROTTLED_AXIOS.has(s.name)
+            ? proxySemaphore.run(() => (isLive ? s.scrapeLive() : s.scrapePrematch()))
+            : (isLive ? s.scrapeLive() : s.scrapePrematch());
         const events = await Promise.race([scrapePromise, timeoutPromise]);
         healthUpdate(s.name, isLive, events.length);
         // Reset exponential backoff counter on success
