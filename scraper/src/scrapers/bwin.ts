@@ -210,6 +210,8 @@ function parseCdsFixtures(data: any, sport: Sport, isLive: boolean): ScrapedEven
 export class BwinScraper extends BaseScraper {
   readonly name = "bwin";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  private prematchCache: { ts: number; events: ScrapedEvent[] } | null = null;
+  private readonly PREMATCH_CACHE_TTL = 12 * 60 * 1000;
 
   private async fetchFixtures(state: "Live" | "Latest", retried = false): Promise<{ data: any; usedProxy: boolean } | null> {
     const proxyUrl = config.scraperProxies.bwin;
@@ -450,7 +452,17 @@ export class BwinScraper extends BaseScraper {
   async scrapePrematch(): Promise<ScrapedEvent[]> {
     if (isScraperInCooldown(this.name)) { this.warn("En cooldown — omitiendo ciclo prematch"); return []; }
     try {
-      return await this.scrape(false);
+      const events = await this.scrape(false);
+      if (events.length > 0) {
+        this.prematchCache = { ts: Date.now(), events };
+        return events;
+      }
+      if (this.prematchCache && Date.now() - this.prematchCache.ts < this.PREMATCH_CACHE_TTL) {
+        const ageS = Math.round((Date.now() - this.prematchCache.ts) / 1000);
+        this.log(`Playwright: 0 events — using prematch cache (${this.prematchCache.events.length} events, ${ageS}s old)`);
+        return this.prematchCache.events;
+      }
+      return events;
     } catch (err) {
       setScraperCooldown(this.name);
       this.warn("scrapePrematch fallido — circuit breaker activado", err);
