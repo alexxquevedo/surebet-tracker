@@ -1,3 +1,4 @@
+import { normalizeTeam, teamSimilarity } from "../matcher/normalize";
 import type {
   H2HOutcome,
   TotalsLine,
@@ -50,7 +51,9 @@ function normalizeOutcomeName(name: string): string {
   if (/^x$/i.test(t) || /^empate$/i.test(t) || /^nul[ae]?$/i.test(t) || /^draw$/i.test(t)) {
     return "Draw";
   }
-  return t;
+  // Apply the same pipeline as normalizeTeam: diacritics + language aliases + suffix strip.
+  // This ensures "Filipinas" == "Philippines", "Pays-Bas" == "Netherlands", etc.
+  return normalizeTeam(t);
 }
 
 // ─── Surebet detection (h2h) ─────────────────────────────────────────────────
@@ -71,6 +74,30 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     if (isH2H(outcomes)) outcomes.forEach((o) => allNames.add(normalizeOutcomeName(o.name)));
   }
 
+  // Normalize outcome names to positions using eventKey teams:
+  // eventKey format: sport:teamA:teamB:date (teams alphabetically sorted after normalizeTeam).
+  // Books like WilliamHill use '1'/'2'/'X'; others (codere, winamax) use team names.
+  // Map each outcome name to '1', 'X', or '2' so they match across books.
+  const ekParts = market.eventKey.split(":").slice(1); // drop sport prefix
+  const teamA = ekParts.length >= 1 ? ekParts[0] : null; // alpha-first team (normalized in key)
+  const teamB = ekParts.length >= 2 ? ekParts[1].replace(/:[0-9]{4}-[0-9]{2}-[0-9]{2}$|:nodate$/, "") : null;
+  const nameToPos = new Map<string, "1" | "X" | "2">();
+  for (const name of allNames) {
+    if (name === "1") { nameToPos.set(name, "1"); continue; }
+    if (name === "2") { nameToPos.set(name, "2"); continue; }
+    if (name === "Draw") { nameToPos.set(name, "X"); continue; }
+    if (!teamA || !teamB) continue;
+    const nt = normalizeTeam(name);
+    const simA = teamSimilarity(nt, teamA);
+    const simB = teamSimilarity(nt, teamB);
+    if (simA >= 0.7 && simA > simB) nameToPos.set(name, "1");
+    else if (simB >= 0.7 && simB > simA) nameToPos.set(name, "2");
+  }
+  // Use positions if ALL names were mapped — collapses 5-name mixed set to 3-name positional set
+  const positionNames = new Set(["1", "X", "2"]);
+  const allMapped = [...allNames].every(n => nameToPos.has(n));
+  const effectiveNames = allMapped ? positionNames : allNames;
+
   // For each selection, find best odds + which bookmaker offers them
   let bestPerSelection: Array<{
     name: string;
@@ -78,18 +105,20 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     bookmaker: string;
   }> = [];
 
-  for (const name of allNames) {
+  for (const pos of effectiveNames) {
     let bestOdds = 0;
     let bestBook = "";
     for (const [book, outcomes] of market.byBook) {
       if (!isH2H(outcomes)) continue;
-      const match = outcomes.find((o) => normalizeOutcomeName(o.name) === name);
-      if (match && match.odds > bestOdds) {
-        bestOdds = match.odds;
-        bestBook = book;
+      for (const o of outcomes) {
+        const oNorm = normalizeOutcomeName(o.name);
+        // Check if this outcome maps to current position
+        const oPos = allMapped ? (nameToPos.get(oNorm) ?? null) : oNorm;
+        if (oPos !== pos) continue;
+        if (o.odds > bestOdds) { bestOdds = o.odds; bestBook = book; }
       }
     }
-    if (bestOdds > 0) bestPerSelection.push({ name, odds: bestOdds, bookmaker: bestBook });
+    if (bestOdds > 0) bestPerSelection.push({ name: pos, odds: bestOdds, bookmaker: bestBook });
   }
 
   if (bestPerSelection.length < 2) return null;
@@ -102,37 +131,30 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   // Positional fallback: for 2-way markets (basketball, tennis) bookmakers may use
   // different name aliases (e.g. "Boston Celtics" vs "BOS Celtics"). When name-based
   // matching produces more names than books, try position-based matching instead.
-  let usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
-  if (usedBooks.size < bestPerSelection.length) {
-    const hasDraw = bestPerSelection.some((s) => s.name === "Draw");
-    const allTwoWay = [...market.byBook.values()].every(
-      (outcomes) => isH2H(outcomes) && (outcomes as H2HOutcome[]).length === 2,
-    );
-    if (!hasDraw && allTwoWay && market.byBook.size >= 2) {
-      const positional: typeof bestPerSelection = [];
-      for (let pos = 0; pos < 2; pos++) {
-        let bestOdds = 0, bestBook = "", bestName = "";
-        for (const [book, outcomes] of market.byBook) {
-          if (!isH2H(outcomes)) continue;
-          const h2h = outcomes as H2HOutcome[];
-          if (h2h.length < 2) continue;
-          const o = h2h[pos];
-          if (o && o.odds > bestOdds) { bestOdds = o.odds; bestBook = book; bestName = o.name; }
-        }
-        if (bestOdds > 0) positional.push({ name: bestName, odds: bestOdds, bookmaker: bestBook });
-      }
-      bestPerSelection = positional;
-      usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
-      if (usedBooks.size < bestPerSelection.length) return null;
-    } else {
-      return null;
-    }
-  }
+  const usedBooks = new Set(bestPerSelection.map((s) => s.bookmaker));
+  // Each outcome must come from a different bookmaker.
+  // Positional fallback removed: it compared teams by array position, not by name,
+  // causing false positives when bookmakers list the same two teams in different order.
+  if (usedBooks.size < bestPerSelection.length) return null;
 
   const impliedSum = bestPerSelection.reduce((sum, s) => sum + 1 / s.odds, 0);
   if (impliedSum >= 1) return null; // No arb
 
   const profitPct = parseFloat(((1 / impliedSum - 1) * 100).toFixed(2));
+
+  // Safety cap: profits above these thresholds are almost certainly parsing errors or stale prices.
+  // Live arbs move fast — real edge rarely exceeds 4-5%. Prematch books are tightly correlated — rarely > 3%.
+  const PROFIT_CAP_LIVE = 5.0;
+  const PROFIT_CAP_PREMATCH = 3.0;
+  const cap = market.isLive ? PROFIT_CAP_LIVE : PROFIT_CAP_PREMATCH;
+  if (profitPct > cap) {
+    console.warn(
+      `[calculator] Anomaly: ${market.eventKey} ${market.market} ${profitPct.toFixed(2)}% > cap ${cap}% discarded`,
+      bestPerSelection.map((s) => `${s.bookmaker}:${s.name}@${s.odds}`).join(", "),
+    );
+    return null;
+  }
+
   const stakes = distributeStakes(bestPerSelection.map((s) => s.odds));
 
   const legs: ArbLeg[] = bestPerSelection.map((s, i) => ({
