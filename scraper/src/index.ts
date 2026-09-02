@@ -434,9 +434,13 @@ async function pollCycle(isLive: boolean): Promise<void> {
 
   const SCRAPER_TIMEOUT_MS = isLive ? 60 * 1000 : 10 * 60 * 1000; // 60s live, 10min prematch
   // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
-  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "daznbet"]);
+  // Kambi CDN (eu-offering.kambicdn.org) blocks our IP at TCP level — skip until new proxy
+  // Altenar also blocked. Retabet blocked by Akamai.
+  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "casumo", "betsson_es", "unibet", "marca", "kirolbet"]);
+  const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
+  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
-  const skipInPrematch = new Set<string>([]);
+  const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "bet365", "sportium", "marathonbet"]); // never produce prematch events, block the cycle for full timeout
   const scrapeResults = await Promise.allSettled(
     scrapers.filter(s => {
       if (!isScraperEnabled(s.name)) {
