@@ -336,7 +336,7 @@ export class BwinScraper extends BaseScraper {
           // all featured sports, then navigate to sport-specific pages only if needed.
           const entryUrl = isLive
             ? "https://www.bwin.es/es/sports/en-vivo/futbol"
-            : "https://www.bwin.es/es/sports/futbol/apuestas";
+            : "https://www.bwin.es/es/sports"; // main sports page triggers widgetdata for upcoming fixtures
 
           await page.goto(entryUrl, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
           await page.waitForTimeout(3_000);
@@ -357,8 +357,8 @@ export class BwinScraper extends BaseScraper {
                 !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/en-vivo/baloncesto",
               ].filter(Boolean) as string[]
             : [
-                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/tenis/apuestas",
-                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/baloncesto/apuestas",
+                !hasSports.has("TENNIS")     && "https://www.bwin.es/es/sports/tenis",
+                !hasSports.has("BASKETBALL") && "https://www.bwin.es/es/sports/baloncesto",
               ].filter(Boolean) as string[];
 
           for (const url of missingUrls) {
@@ -418,9 +418,22 @@ export class BwinScraper extends BaseScraper {
       }
     }
 
+    // v2 prematch direct — different endpoint from v1; may not share the same 403 block.
+    // Runs when v1 returned null AND we still have no events AND this is a prematch cycle.
+    if (result === null && !isLive && all.length === 0) {
+      for (const sport of this.sports) {
+        const v2data = await this.fetchV2(sport, false);
+        if (!v2data) continue;
+        const ev2 = parseCdsFixtures(v2data, sport, false);
+        if (ev2.length > 0) { this.log(`Prematch v2 direct ${sport}: ${ev2.length} events`); all.push(...ev2); }
+      }
+    }
+
     // Q3: Playwright fallback — Chromium BoringSSL bypasses JA3 TLS fingerprinting
     // that causes Axios 502 when routing through proxy. Only invoked when Axios found 0 events.
-    if (all.length === 0) {
+    const coveredSports = new Set(all.map(e => e.sport));
+    const missingSportsForPW = this.sports.filter(sp => !coveredSports.has(sp));
+    if (all.length === 0 || missingSportsForPW.length > 0) {
       this.warn("Axios: 0 events — intentando Playwright + proxy (Q3)");
       const pwData = await this.fetchViaPlaywright(isLive).catch(() => null);
       if (pwData) {
