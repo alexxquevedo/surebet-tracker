@@ -825,7 +825,7 @@ export class WinamaxScraper extends BaseScraper {
         String(err?.message).includes("disconnected");
       if (isCrash) {
         browserManager.recordCrash();
-        await browserManager.shutdown();
+        await browserManager.shutdownDirect();
       }
       this.warn(`${isLive ? "live" : "prematch"} page failed`, err);
     } finally {
@@ -894,9 +894,22 @@ export class WinamaxScraper extends BaseScraper {
       const url = sport === "FOOTBALL"
         ? `${BASE_FR}/paris-sportifs`
         : `${BASE_FR}/paris-sportifs/sports/${SPORT_IDS[sport]}`;
+      let gotoFailed = false;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 }).catch(async (e: any) => {
-        this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — skip`);
+        this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — retrying sports/1`);
+        gotoFailed = true;
+        if (sport === "FOOTBALL") {
+          await page.goto(`${BASE_FR}/paris-sportifs/sports/${SPORT_IDS.FOOTBALL}`, {
+            waitUntil: "domcontentloaded", timeout: 30_000,
+          }).catch((e2: any) => {
+            this.warn(`Prematch ${sport} retry also failed (${e2?.message?.slice(0, 50)}) — skip`);
+          });
+          gotoFailed = page.isClosed();
+        }
       });
+      if (gotoFailed && page.isClosed()) {
+        return events;
+      }
       await dismissCookies(page);
       // Football has far more competitions/matches than other sports — give it 25s to load WS data
       const wsTimeout = sport === "FOOTBALL" ? 25_000 : 12_000;
@@ -973,7 +986,7 @@ export class WinamaxScraper extends BaseScraper {
         String(err?.message).includes("disconnected");
       if (isCrash) {
         browserManager.recordCrash();
-        await browserManager.shutdown();
+        await browserManager.shutdownDirect();
       }
       this.warn(`Prematch ${sport} failed`, err);
     } finally {

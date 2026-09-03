@@ -274,6 +274,10 @@ class BrowserManager {
     if (this.proxyBrowser) { await this.proxyBrowser.close(); this.proxyBrowser = null; }
   }
 
+  async shutdownDirect(): Promise<void> {
+    if (this.directBrowser) { await this.directBrowser.close(); this.directBrowser = null; }
+  }
+
   recordCrash(): void {
     this.consecutiveCrashCount++;
     if (this.consecutiveCrashCount >= 3) {
