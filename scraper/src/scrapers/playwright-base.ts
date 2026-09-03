@@ -132,14 +132,16 @@ class BrowserManager {
     }
     if (this.directBrowser) {
       if (!this.directBrowser.isConnected()) {
-        // WebSocket to browser process closed — tear down and relaunch
-        await this.shutdown();
+        // Only close directBrowser — leave proxyBrowser intact for daznbet
+        try { await this.directBrowser.close(); } catch { /* ignore */ }
+        this.directBrowser = null;
       } else {
         // Async zombie ping: creates a throwaway context with 500ms timeout
         const alive = await this.pingBrowser(this.directBrowser);
         if (!alive) {
-          console.warn("[BrowserManager] Zombie detectado (ping timeout 500ms) — shutdown forzado");
-          await this.shutdown();
+          console.warn("[BrowserManager] Zombie detectado (ping timeout 500ms) — cerrando solo directBrowser");
+          try { await this.directBrowser.close(); } catch { /* ignore */ }
+          this.directBrowser = null;
         }
       }
     }
