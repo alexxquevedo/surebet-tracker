@@ -103,13 +103,12 @@ export function parseProxyUrl(rawUrl: string): { server: string; username?: stri
 
 class BrowserManager {
   private directBrowser: Browser | null = null;
-  private proxyBrowser: Browser | null = null;
   private consecutiveCrashCount = 0;
   private coolDownUntil = 0;
   private lastPingMs = 0;
   private readonly PING_INTERVAL_MS = 30_000;
 
-  private async launchChromium(proxy?: { server: string; username?: string; password?: string }): Promise<Browser> {
+  private async launchChromium(): Promise<Browser> {
     const executablePath = process.env.CHROMIUM_PATH || undefined;
     return chromium.launch({
       headless: true,
@@ -119,12 +118,14 @@ class BrowserManager {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--renderer-process-limit=1",
       ],
-      ...(proxy ? { proxy } : {}),
     });
   }
 
-  // Direct browser (no proxy) — used by Betsson, Winamax, etc.
   async getBrowser(): Promise<Browser> {
     if (this.coolDownUntil > Date.now()) {
       const remaining = Math.ceil((this.coolDownUntil - Date.now()) / 1000);
@@ -132,61 +133,21 @@ class BrowserManager {
     }
     if (this.directBrowser) {
       if (!this.directBrowser.isConnected()) {
-        // Only close directBrowser — leave proxyBrowser intact for daznbet
         try { await this.directBrowser.close(); } catch { /* ignore */ }
         this.directBrowser = null;
       } else {
-        // Async zombie ping: creates a throwaway context with 500ms timeout
         const alive = await this.pingBrowser(this.directBrowser);
         if (!alive) {
-          console.warn("[BrowserManager] Zombie detectado (ping timeout 500ms) — cerrando solo directBrowser");
+          console.warn("[BrowserManager] Zombie detectado — cerrando browser");
           try { await this.directBrowser.close(); } catch { /* ignore */ }
           this.directBrowser = null;
         }
       }
     }
     if (!this.directBrowser) {
-      this.directBrowser = await this.launchChromium(
-        config.proxy.enabled
-          ? {
-              server: `http://${config.proxy.host}:${config.proxy.port}`,
-              username: config.proxy.username || undefined,
-              password: config.proxy.password || undefined,
-            }
-          : undefined,
-      );
+      this.directBrowser = await this.launchChromium();
     }
     return this.directBrowser;
-  }
-
-  // Residential proxy browser — launched with proxy at browser level (Chromium requires this;
-  // context-level proxy auth is not supported and throws ERR_PROXY_AUTH_UNSUPPORTED).
-  private async killBrowser(browser: Browser, label: string): Promise<void> {
-    try { await Promise.race([browser.close(), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000))]); }
-    catch { 
-      console.warn();
-      try { (browser as any).process()?.kill('SIGKILL'); } catch { /* noop */ }
-    }
-  }
-
-  private async getResidentialBrowser(proxy: { server: string; username?: string; password?: string }): Promise<Browser> {
-    if (this.proxyBrowser) {
-      if (!this.proxyBrowser.isConnected()) {
-        const dead = this.proxyBrowser; this.proxyBrowser = null;
-        await this.killBrowser(dead, 'proxy-disconnected');
-      } else {
-        const alive = await this.pingBrowser(this.proxyBrowser);
-        if (!alive) {
-          console.warn("[BrowserManager] Zombie proxy browser detectado — shutdown forzado");
-          const dead = this.proxyBrowser; this.proxyBrowser = null;
-          await this.killBrowser(dead, 'proxy-zombie');
-        }
-      }
-    }
-    if (!this.proxyBrowser) {
-      this.proxyBrowser = await this.launchChromium(proxy);
-    }
-    return this.proxyBrowser;
   }
 
   // Creates a browser context with the semaphore already acquired.
@@ -194,14 +155,11 @@ class BrowserManager {
   async createContext(proxyHint?: { server: string; username?: string; password?: string }, semaphoreTimeoutMs?: number): Promise<BrowserContext> {
     await pageSemaphore.acquire(semaphoreTimeoutMs);
     try {
-      const browser = proxyHint
-        ? await this.getResidentialBrowser(proxyHint)
-        : await this.getBrowser();
+      const browser = await this.getBrowser();
       const ctx = await browser.newContext({
         ...CTX_BASE_OPTIONS,
-        userAgent: randomUA(), // rotate UA per browser context
-        // Q2: disabling strict cert checks for proxied contexts prevents MITM TLS errors
-        ...(proxyHint ? { ignoreHTTPSErrors: true } : {}),
+        userAgent: randomUA(),
+        ...(proxyHint ? { proxy: proxyHint, ignoreHTTPSErrors: true } : {}),
       });
       await ctx.addInitScript(() => {
         Object.defineProperty(navigator, "webdriver", { get: () => false });
@@ -214,9 +172,9 @@ class BrowserManager {
       };
       return ctx;
     } catch (err) {
-      // Context never created — release semaphore manually
       pageSemaphore.release();
-      if (!proxyHint) { try { await this.directBrowser?.close(); } catch { /* ignore */ } this.directBrowser = null; }
+      try { await this.directBrowser?.close(); } catch { /* ignore */ }
+      this.directBrowser = null;
       throw err;
     }
   }
@@ -271,7 +229,6 @@ class BrowserManager {
 
   async shutdown(): Promise<void> {
     if (this.directBrowser) { await this.directBrowser.close(); this.directBrowser = null; }
-    if (this.proxyBrowser) { await this.proxyBrowser.close(); this.proxyBrowser = null; }
   }
 
   async shutdownDirect(): Promise<void> {

@@ -245,7 +245,7 @@ export class DaznBetScraper extends BaseScraper {
   readonly name = "daznbet";
   private _liveRunning = false;
   private _lastLiveResult: ScrapedEvent[] = [];
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "HANDBALL", "VOLLEYBALL", "ICEHOCKEY", "BASEBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "HANDBALL", "VOLLEYBALL", "ICEHOCKEY", "BASEBALL", "AMERICANFOOTBALL"];
 
   private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     const { page, ctx } = await browserManager.newPage(getProxyForScraper("daznbet"), undefined, 180_000);
