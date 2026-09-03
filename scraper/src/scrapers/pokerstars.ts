@@ -67,8 +67,19 @@ export class PokerStarsScraper extends BaseScraper {
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "ICEHOCKEY", "HANDBALL"];
 
   private cachedData: { ts: number; events: ScrapedEvent[] } | null = null;
+  private _fetchInFlight: Promise<ScrapedEvent[]> | null = null;
 
   private async fetchAllEvents(): Promise<ScrapedEvent[]> {
+    const now = Date.now();
+    if (this.cachedData && now - this.cachedData.ts < CACHE_TTL_MS) {
+      return this.cachedData.events;
+    }
+    if (this._fetchInFlight) return this._fetchInFlight;
+    this._fetchInFlight = this._doFetch();
+    try { return await this._fetchInFlight; } finally { this._fetchInFlight = null; }
+  }
+
+  private async _doFetch(): Promise<ScrapedEvent[]> {
     const now = Date.now();
     if (this.cachedData && now - this.cachedData.ts < CACHE_TTL_MS) {
       return this.cachedData.events;
