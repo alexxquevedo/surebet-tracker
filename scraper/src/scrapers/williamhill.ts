@@ -325,10 +325,31 @@ export class WilliamHillScraper extends BaseScraper {
         this.warn(`WH ${defaultSport ?? "LIVE"}: 0 outcome topics found in HTML`);
         return [];
       }
-      this.log(`WH ${defaultSport ?? "LIVE"}: ${topics.length} outcome topics — connecting WS...`);
 
-      const outcomeMap = await fetchOutcomesViaWs(topics, proxy, isLive ? 25_000 : 20_000);
-      this.log(`WH ${defaultSport ?? "LIVE"}: ${outcomeMap.size}/${topics.length} outcomes received`);
+      // Filter out outright/championship markets: any OB_EV with >3 outcome topics is a
+      // multi-team outright — WS never serves prices for those. Keep only match-level topics.
+      const evTopicCount = new Map<string, number>();
+      for (const t of topics) {
+        const ev = t.match(/OB_EV(\d+)/)?.[1] ?? "";
+        evTopicCount.set(ev, (evTopicCount.get(ev) ?? 0) + 1);
+      }
+      const matchTopics = topics.filter((t) => {
+        const ev = t.match(/OB_EV(\d+)/)?.[1] ?? "";
+        return (evTopicCount.get(ev) ?? 0) <= 3;
+      });
+      if (matchTopics.length < topics.length) {
+        const dropped = topics.length - matchTopics.length;
+        this.log(`WH ${defaultSport ?? "LIVE"}: filtered ${dropped} outright topics (${matchTopics.length} match topics remain)`);
+      }
+      if (matchTopics.length === 0) {
+        this.log(`WH ${defaultSport ?? "LIVE"}: only outright markets — skipping WS`);
+        return [];
+      }
+
+      this.log(`WH ${defaultSport ?? "LIVE"}: ${matchTopics.length} outcome topics — connecting WS...`);
+
+      const outcomeMap = await fetchOutcomesViaWs(matchTopics, proxy, isLive ? 25_000 : 20_000);
+      this.log(`WH ${defaultSport ?? "LIVE"}: ${outcomeMap.size}/${matchTopics.length} outcomes received`);
 
       const events = buildEvents(outcomeMap, topicSport, "williamhill", isLive, defaultSport);
       if (events.length > 0) {
