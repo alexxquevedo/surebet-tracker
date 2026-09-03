@@ -825,7 +825,6 @@ export class WinamaxScraper extends BaseScraper {
         String(err?.message).includes("disconnected");
       if (isCrash) {
         browserManager.recordCrash();
-        await browserManager.shutdownDirect();
       }
       this.warn(`${isLive ? "live" : "prematch"} page failed`, err);
     } finally {
@@ -986,7 +985,6 @@ export class WinamaxScraper extends BaseScraper {
         String(err?.message).includes("disconnected");
       if (isCrash) {
         browserManager.recordCrash();
-        await browserManager.shutdownDirect();
       }
       this.warn(`Prematch ${sport} failed`, err);
     } finally {

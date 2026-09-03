@@ -534,6 +534,14 @@ export class BetssonScraper extends BaseScraper {
         this.log(`XHR URLs: ${xhrCaptures.slice(0, 10).map(c => c.url.replace(/https?:\/\/[^/]+/, "").slice(0, 65)).join(" | ")}`);
       }
 
+
+      // Detect Kambi CDN mp_verify anti-bot block
+      if (xhrCaptures.some(c => c.url.includes('mp_verify')) && events.length === 0) {
+        this.warn('Kambi mp_verify detectado — IP bloqueada. Circuit breaker activado 3 min.');
+        setScraperCooldown(this.name);
+        return [];
+      }
+
       // ── 3. Try WS events + markets ────────────────────────────────────────
       const sportCodesLower = sportCodes.map(c => c.toLowerCase());
       const wsEvents = [...wsState.events.values()].filter(ev =>
@@ -631,7 +639,6 @@ export class BetssonScraper extends BaseScraper {
 
     if (browserCrashed) {
       browserManager.recordCrash();
-      await browserManager.shutdown();
       await sleep(1500);
       if (browserManager.isCoolingDown()) {
         this.warn(`Browser en cool-down — cancelando reintento para ${sport}`);
