@@ -105,7 +105,7 @@ type PageData = {
 };
 
 // Fetch HTML and extract PDS topic paths (and sport per event for live page)
-async function extractPageData(sportUrl: string, proxy: string, defaultSport?: Sport): Promise<PageData> {
+async function extractPageData(sportUrl: string, proxy: string, defaultSport?: Sport, isLive = false): Promise<PageData> {
   const agent = new SocksProxyAgent(proxy);
   const resp = await axios.get(sportUrl, {
     httpAgent: agent,
@@ -119,8 +119,16 @@ async function extractPageData(sportUrl: string, proxy: string, defaultSport?: S
   });
   const html: string = resp.data;
 
+  // Extract topics from the relevant modelBox section only:
+  // preMatch pages should only use preMatch events, live pages only inPlay events.
+  // This prevents prematch scrapers from picking up inPlay topics (which the WS
+  // doesn't serve prematch prices for) and vice-versa.
+  const boxKey = isLive ? "inPlay" : "preMatch";
+  const boxStart = html.indexOf(`modelBox['${boxKey}']`);
+  const searchHtml = boxStart >= 0 ? html.slice(boxStart, boxStart + 500_000) : html;
+
   // All unique full topic paths
-  const topics = [...new Set<string>(html.match(/PDS\/OB_EV\d+\/OB_MA\d+\/OB_OU\d+/g) || [])];
+  const topics = [...new Set<string>(searchHtml.match(/PDS\/OB_EV\d+\/OB_MA\d+\/OB_OU\d+/g) || [])];
 
   // Build event → sport map from embedded JSON: "OB_EV12345":{"topic":...,"sportId":"OB_SP9"}
   const evSportMap = new Map<string, Sport>();
@@ -311,7 +319,7 @@ export class WilliamHillScraper extends BaseScraper {
 
     try {
       this.log(`WH ${defaultSport ?? "LIVE"} (${isLive ? "live" : "prematch"}): fetching HTML...`);
-      const { topics, topicSport } = await extractPageData(pageUrl, proxy, defaultSport);
+      const { topics, topicSport } = await extractPageData(pageUrl, proxy, defaultSport, isLive);
 
       if (topics.length === 0) {
         this.warn(`WH ${defaultSport ?? "LIVE"}: 0 outcome topics found in HTML`);
