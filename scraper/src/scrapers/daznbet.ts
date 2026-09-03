@@ -78,8 +78,8 @@ function parseEveryMatrixB(data: any, sport: Sport, isLive: boolean): ScrapedEve
   for (const ev of evList) {
     const eventName: string = ev.name ?? ev.Name ?? ev.EventName ?? "";
     if (!eventName) continue;
-    const startTime = (ev.startDate ?? ev.StartDate ?? ev.start)
-      ? new Date(ev.startDate ?? ev.StartDate ?? ev.start) : undefined;
+    const startTime = (ev.startDate ?? ev.StartDate ?? ev.start ?? ev.anticipated?.startTime)
+      ? new Date(ev.startDate ?? ev.StartDate ?? ev.start ?? ev.anticipated?.startTime) : undefined;
     const eventKey = buildEventKey(sport, eventName, startTime);
     for (const m of (ev.markets ?? ev.Markets ?? ev.betOffers ?? [])) {
       if (!isH2HMarket(m.name ?? m.Name ?? m.type ?? "")) continue;
@@ -454,6 +454,30 @@ export class DaznBetScraper extends BaseScraper {
       for (const m of marketResult.msgs) {
         wsCaptures.push({ url: evtWsUrl, payload: m });
       }
+
+      // Extract startTimes from events/{id} frames (now in wsCaptures after Phase 2)
+      const eventStartTimes = new Map<string, Date>();
+      for (const { payload: stPayload } of wsCaptures) {
+        for (const stFrame of parseStompSockJS(stPayload)) {
+          if (stFrame.command !== "MESSAGE") continue;
+          const stDest: string = (stFrame.headers as any)?.destination ?? "";
+          if (!stDest.startsWith("events/") || stDest === "events/socketConnection") continue;
+          try {
+            const stPatches = Array.isArray(stFrame.body) ? stFrame.body : JSON.parse(String(stFrame.body));
+            if (!Array.isArray(stPatches)) continue;
+            for (const stPatch of stPatches) {
+              const stEv = stPatch?.value;
+              if (stEv?.id && stEv?.anticipated?.startTime) {
+                const st = new Date(String(stEv.anticipated.startTime));
+                if (!isNaN(st.getTime()) && st.getFullYear() > 2020) {
+                  eventStartTimes.set(String(stEv.id), st);
+                }
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+      this.log(`DaznBet startTimes from events: ${eventStartTimes.size}`);
 
       // Phase 2.5: subscribe to MAIN market IDs (h2h winner) from miniCoupons
       // Extract market IDs from events/{id} STOMP bodies → subscribe on marketlivedocl1
