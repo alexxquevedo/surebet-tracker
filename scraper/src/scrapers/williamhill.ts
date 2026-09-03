@@ -282,6 +282,9 @@ function buildEvents(
   const events: ScrapedEvent[] = [];
   for (const [, ev] of byEvent) {
     if (!ev.H || !ev.A) continue;
+    // Skip events where team names look like internal WH IDs (e.g. "A10trueA15014757491000", "C30")
+    const isGarbageName = (n: string) => n.length < 3 || /\d{7,}/.test(n) || /true[A-Z]\d/.test(n);
+    if (isGarbageName(ev.H.name) || isGarbageName(ev.A.name)) continue;
     const eventName = `${ev.H.name} - ${ev.A.name}`;
     const eventKey = buildEventKey(ev.sport, eventName, undefined);
     const outcomes: H2HOutcome[] = [

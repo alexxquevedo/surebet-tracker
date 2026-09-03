@@ -323,6 +323,10 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       if (!existing.startTime && row.startTime) {
         existing.startTime = row.startTime;
       }
+      // Prefer non-null league from any bookmaker in the group
+      if (!existing.league && row.league) {
+        existing.league = row.league;
+      }
     }
     groupMap.get(key)!.byBook.set(row.bookmaker, row.outcomes as unknown as MarketOutcomes);
   }

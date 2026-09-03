@@ -1956,7 +1956,7 @@ async def menu_no_suscrito(update):
         [InlineKeyboardButton("📊 Valuebets 🔒", callback_data="bloqueado"),
          InlineKeyboardButton("🎁 Freebets", callback_data="panel_freebets")],
         [InlineKeyboardButton("🔔 Alertas 🔒", callback_data="bloqueado"),
-         InlineKeyboardButton("⚙️ Configuración 🔒", callback_data="bloqueado")],
+         InlineKeyboardButton("⚙️ Configuración",     callback_data="menu_config")],
         [InlineKeyboardButton("🔍 Escanear 🔒", callback_data="bloqueado"),
          InlineKeyboardButton("🧮 Stake 🔒", callback_data="bloqueado")],
         [InlineKeyboardButton("💰 Créditos", callback_data="mis_creditos"),

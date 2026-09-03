@@ -95,6 +95,10 @@ function parseMatches(matches: any[], sport: Sport, isLive: boolean, league: str
       match.title ?? match.label ?? match.name ??
       (home && away ? `${home} - ${away}` : "");
     if (!eventName) continue;
+    // Skip virtual/accumulator events (MultiFoot, MultiSport) - not real matches
+    if (/multi.?foot|multi.?sport|multi.?match|multibet/i.test(eventName) || /multi.?foot|multi.?sport/i.test(league)) continue;
+    // Skip events where home == away
+    if (home && away && home.toLowerCase() === away.toLowerCase()) continue;
 
     const rawStartTime = match.matchStart ?? match.date ?? match.startDate;
     const startTime = rawStartTime ? new Date(typeof rawStartTime === "number" ? rawStartTime * 1000 : rawStartTime) : (isLive ? new Date() : undefined);
