@@ -413,13 +413,13 @@ export class CodereScraper extends BaseScraper {
       }
       // Supplement with country leagues until we have up to 15
       const countries: any[] = menuData?.countries ?? [];
-      for (const country of countries.slice(0, 10)) {
-        for (const league of (country.Leagues ?? []).slice(0, 4)) {
+      for (const country of countries.slice(0, 20)) {
+        for (const league of (country.Leagues ?? []).slice(0, 6)) {
           const nid = String(league.NodeId ?? "");
           if (nid && !seenNodeIds.has(nid)) { seenNodeIds.add(nid); leaguesToFetch.push(league); }
-          if (leaguesToFetch.length >= 15) break;
+          if (leaguesToFetch.length >= 40) break;
         }
-        if (leaguesToFetch.length >= 15) break;
+        if (leaguesToFetch.length >= 40) break;
       }
 
       if (!leaguesToFetch.length) {

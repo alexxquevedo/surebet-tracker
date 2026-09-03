@@ -909,7 +909,7 @@ export class WinamaxScraper extends BaseScraper {
 
         // Cap at 120 to avoid 100+ second blocking subscription loops that starve the LIVE cycle.
         // 120 / 20 per batch × 1s delay = ~7s + 3s wait = ~10s per sport.
-        const MAX_PREMATCH_SUBS = 120;
+        const MAX_PREMATCH_SUBS = 200;
         const matchIds = allMatchIds.slice(0, MAX_PREMATCH_SUBS);
 
         if (matchIds.length > 0) {

@@ -30,10 +30,34 @@ const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
     live:     "https://www.daznbet.es/es/sports/baloncesto?liveMode=true",
     prematch: "https://www.daznbet.es/es/sports/baloncesto",
   },
+  HANDBALL: {
+    live:     "https://www.daznbet.es/es/sports/balonmano?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/balonmano",
+  },
+  VOLLEYBALL: {
+    live:     "https://www.daznbet.es/es/sports/voleibol?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/voleibol",
+  },
+  ICEHOCKEY: {
+    live:     "https://www.daznbet.es/es/sports/hockey-hielo?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/hockey-hielo",
+  },
+  BASEBALL: {
+    live:     "https://www.daznbet.es/es/sports/beisbol?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/beisbol",
+  },
+  AMERICANFOOTBALL: {
+    live:     "https://www.daznbet.es/es/sports/futbol-americano?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/futbol-americano",
+  },
+  RUGBYLEAGUE: {
+    live:     "https://www.daznbet.es/es/sports/rugby?liveMode=true",
+    prematch: "https://www.daznbet.es/es/sports/rugby",
+  },
 };
 
 // DaznBet/EveryMatrix sport IDs (estimación — se confirman vía logs)
-const DAZN_SPORT_IDS: Partial<Record<Sport, number>> = { FOOTBALL: 1, TENNIS: 2, BASKETBALL: 3 };
+const DAZN_SPORT_IDS: Partial<Record<Sport, number>> = { FOOTBALL: 1, TENNIS: 2, BASKETBALL: 3, HANDBALL: 11, VOLLEYBALL: 13, ICEHOCKEY: 7, BASEBALL: 9, AMERICANFOOTBALL: 6, RUGBYLEAGUE: 12 };
 
 // ─── EveryMatrix XHR parsers ──────────────────────────────────────────────────
 
@@ -149,7 +173,7 @@ function parseStompSockJS(payload: string): StompFrame[] {
     const arr: string[] = JSON.parse(isServer ? payload.slice(1) : payload);
     return arr.flatMap((raw) => {
       // STOMP frames end with \0 (null byte U+0000)
-      const nullIdx = raw.indexOf("");
+      const nullIdx = raw.indexOf("\u0000");
       const clean = nullIdx >= 0 ? raw.slice(0, nullIdx) : raw;
       const blankLine = clean.indexOf("\n\n");
       const headerPart = blankLine >= 0 ? clean.slice(0, blankLine) : clean;
@@ -221,7 +245,7 @@ export class DaznBetScraper extends BaseScraper {
   readonly name = "daznbet";
   private _liveRunning = false;
   private _lastLiveResult: ScrapedEvent[] = [];
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "HANDBALL", "VOLLEYBALL", "ICEHOCKEY", "BASEBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE"];
 
   private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     const { page, ctx } = await browserManager.newPage(getProxyForScraper("daznbet"), undefined, 180_000);
@@ -312,7 +336,7 @@ export class DaznBetScraper extends BaseScraper {
       // The SPA only subscribes to eventmap/socketConnection (handshake) within our capture window;
       // the actual eventmap/upcoming{CODE} subscription push — which contains all event IDs — arrives
       // later after a lazy component mounts. We subscribe directly to get it immediately.
-      const EVTMAP_CODES: Partial<Record<string, string>> = { FOOTBALL: "FBL", BASKETBALL: "BKB", TENNIS: "TNS" };
+      const EVTMAP_CODES: Partial<Record<string, string>> = { FOOTBALL: "FBL", BASKETBALL: "BKB", TENNIS: "TNS", HANDBALL: "HBL", VOLLEYBALL: "VLB", ICEHOCKEY: "HKY", BASEBALL: "BSB", AMERICANFOOTBALL: "AFB", RUGBYLEAGUE: "RUG" };
       const evtmapSportCode = EVTMAP_CODES[sport] ?? "FBL";
       const evtmapServerId = String(Math.floor(Math.random() * 900 + 100));
       const evtmapSessId = Math.random().toString(36).substring(2, 10);
@@ -400,7 +424,7 @@ export class DaznBetScraper extends BaseScraper {
       // Phase 2: create NEW WebSocket to eventlivedocl1 and subscribe to events/{id}
       // eventlivedocl1 handles individual event data including markets/odds
       // SPA flow: subscribe events/socketConnection (handshake) → subscribe events/{id}
-      const topN = isLive ? eventIds.slice(0, 12) : eventIds.slice(0, 50);
+      const topN = isLive ? eventIds.slice(0, 20) : eventIds.slice(0, 150);
       const evtCapUrl = [...new Set(wsCaptures.map(w => w.url))].find(u => u.includes("eventlivedocl1"));
       const evtSvrMatch = evtCapUrl?.match(/eventlivedocl1\/livedoc\/(\d+)\//);
       const evtServerId = evtSvrMatch ? evtSvrMatch[1] : String(Math.floor(Math.random() * 900 + 100));
@@ -485,6 +509,12 @@ export class DaznBetScraper extends BaseScraper {
         FOOTBALL: ["MAIN", "WIN+TOTR2", "TOTR3"],
         TENNIS: ["MAIN", "MWIN", "TOTR2"],
         BASKETBALL: ["TOTR2", "MAIN", "MWIN"],
+        HANDBALL: ["WIN", "MAIN", "TWINNER"],
+        VOLLEYBALL: ["WIN", "1S+WIN", "MAIN"],
+        ICEHOCKEY: ["WIN", "MAIN", "WIN+TOTR2", "3WIN"],
+        BASEBALL: ["WIN", "MAIN"],
+        AMERICANFOOTBALL: ["WIN", "MAIN", "WIN+TOTR2"],
+        RUGBYLEAGUE: ["WIN", "MAIN"],
       };
       const h2hKeys = MARKET_H2H_KEYS[sport] ?? ["MAIN"];
       const mktIdsToSub: Array<{ eventId: string; eventName: string; marketId: string }> = [];
@@ -513,7 +543,7 @@ export class DaznBetScraper extends BaseScraper {
           } catch { /* not JSON */ }
         }
       }
-      const topMkts = isLive ? mktIdsToSub.slice(0, 12) : mktIdsToSub.slice(0, 50);
+      const topMkts = isLive ? mktIdsToSub.slice(0, 20) : mktIdsToSub.slice(0, 150);
       this.log(`Market sub: ${topMkts.length} markets (keys=${h2hKeys.join(",")}): ${topMkts.map(m => m.marketId).join(", ")}`);
 
       if (topMkts.length > 0) {
