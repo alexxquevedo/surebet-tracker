@@ -121,7 +121,6 @@ class BrowserManager {
         "--disable-gpu",
         "--disable-extensions",
         "--disable-background-networking",
-        "--renderer-process-limit=1",
       ],
     });
   }
