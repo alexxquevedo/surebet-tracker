@@ -136,6 +136,17 @@ function translateSelection(selection: string): string {
   return selection.replace(/\b([A-Za-z0-9_]+)$/, (_, stat) => STAT_LABEL[stat] ?? stat);
 }
 
+function resolvePositionalSelection(selection: string, eventName: string): string {
+  if (selection === "X") return "Empate";
+  if (selection === "1" || selection === "2") {
+    const parts = eventName.split(" - ");
+    if (parts.length >= 2) {
+      return selection === "1" ? parts[0].trim() : parts[parts.length - 1].trim();
+    }
+  }
+  return selection;
+}
+
 function formatDatetime(d: Date | undefined, isLive: boolean): string {
   if (!d) return isLive ? "🎥 LIVE" : "📅 Pre-partido";
   const dd = String(d.getDate()).padStart(2, "0");
@@ -194,7 +205,7 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
     .map((l) => {
       const sel = /^(Over|Under)\s+[\d.]+$/i.test(l.selection)
         ? translateMiddleSelection(l.selection, baseMarket)
-        : translateSelection(l.selection);
+        : resolvePositionalSelection(translateSelection(l.selection), arb.eventName);
       return `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${sel} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`;
     })
     .join("\n");
@@ -286,7 +297,7 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
         const bookmaker = leg.bookmaker.charAt(0).toUpperCase() + leg.bookmaker.slice(1);
         const sel = /^(Over|Under)\s+[\d.]+$/i.test(leg.selection)
           ? translateMiddleSelection(leg.selection, baseMarket)
-          : translateSelection(leg.selection);
+          : resolvePositionalSelection(translateSelection(leg.selection), arb.eventName);
         return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
       })
       .join("\n");
