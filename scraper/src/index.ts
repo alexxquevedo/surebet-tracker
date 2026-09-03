@@ -457,7 +457,7 @@ async function pollCycle(isLive: boolean): Promise<void> {
       return true;
     }).map(async (s) => {
       try {
-        const scraperTimeout = s.name === "daznbet" && isLive ? 90 * 1000 : SCRAPER_TIMEOUT_MS;
+        const scraperTimeout = s.name === "daznbet" && isLive ? 150 * 1000 : SCRAPER_TIMEOUT_MS;
         const timeoutPromise = new Promise<ScrapedEvent[]>((_, reject) =>
           setTimeout(() => reject(new Error(`Scraper timeout: ${s.name} exceeded ${scraperTimeout}ms`)), scraperTimeout)
         );

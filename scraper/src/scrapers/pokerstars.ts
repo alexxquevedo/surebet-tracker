@@ -155,7 +155,13 @@ export class PokerStarsScraper extends BaseScraper {
         if (outcomes.length < 2) continue;
 
         const startTime = psEvent.eventStartTime ? new Date(psEvent.eventStartTime) : undefined;
-        const eventKey = buildEventKey(sport, psEvent.eventName, startTime);
+        // Use runner names (full player/team names) instead of psEvent.eventName which uses
+        // abbreviated names like L Harris - Tsitsipas that fail to match other books.
+        const participants = outcomes.map(o => o.name).filter(n => !/^draw$/i.test(n));
+        const matchName = participants.length >= 2
+          ? participants[0] +  -  + participants[participants.length - 1]
+          : psEvent.eventName;
+        const eventKey = buildEventKey(sport, matchName, startTime);
 
         events.push({
           bookmaker: "pokerstars",
