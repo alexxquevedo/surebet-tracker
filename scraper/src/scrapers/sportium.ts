@@ -385,12 +385,14 @@ export class SportiumScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
+    if (!SPORTIUM_PROXY_URL) { this.log("Sin SPORTIUM_PROXY_URL"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...(await this.scrapeOneSport(sport, true)));
     return all;
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
+    if (!SPORTIUM_PROXY_URL) { this.log("Sin SPORTIUM_PROXY_URL"); return []; }
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) all.push(...(await this.scrapeOneSport(sport, false)));
     return all;

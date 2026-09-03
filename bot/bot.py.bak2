@@ -1,6 +1,5 @@
 import asyncio
 import aiohttp
-import asyncpg
 import logging
 import json
 import os
@@ -11,17 +10,6 @@ from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-
-# ── Cargar .env local si existe (secretos fuera del repo) ──
-_env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(_env_path):
-    with open(_env_path) as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line and not _line.startswith("#") and "=" in _line:
-                _k, _v = _line.split("=", 1)
-                os.environ.setdefault(_k.strip(), _v.strip())
-
 # Zona horaria local (España)
 try:
     from zoneinfo import ZoneInfo as _ZI
@@ -33,26 +21,23 @@ except Exception:
         return datetime.now() + timedelta(hours=2)
 
 
+
 # ============================================================
 # CONFIGURACIÓN PRINCIPAL
 # ============================================================
-def _require_env(key: str) -> str:
-    val = os.environ.get(key)
-    if not val:
-        raise RuntimeError(f"Variable de entorno requerida no encontrada: {key}")
-    return val
-
-TELEGRAM_TOKEN   = _require_env("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN   = "8467505098:AAEQfDx-TnSSitjVQwDbGHH8EdnPKajwyus"
 ADMIN_ID         = 1207554638
 ADMIN_IDS        = {1207554638, 2051653218}  # Todos los admins
 PAGOS_GROUP_ID   = -5254902973
+ODDS_API_KEY     = "250616a989efee88a4f31af49784c07e"
+ODDS_API_BASE    = "https://api.the-odds-api.com/v4"
 DB_FILE          = "/content/drive/MyDrive/fidesbot/bot_db.json"
 ALERTS_CACHE_FILE = "bot_alerts_cache.json"
 BOT_USERNAME     = "perpleSurebetBot"
 
 # ── DualStats Tracker ──────────────────────────────────────
 DUALSTATS_API_URL = "https://dualstats-tracker.vercel.app/api/bot"
-DUALSTATS_API_KEY = _require_env("DUALSTATS_API_KEY")
+DUALSTATS_API_KEY = "f8c22003d898614fd5fe4df311785bd7e16b75599f30ec4d2f08416919ad13c0"
 DUALSTATS_WEB_URL = "https://dualstats-tracker.vercel.app"
 ADMIN_USERNAME    = "alescuge"          # usuario de Telegram de soporte
 COMUNIDAD_URL     = ""                  # ← link a tu grupo/canal (vacío = botón oculto)
@@ -77,17 +62,21 @@ DEFAULT_USER_CONFIG = {
     "block_draw_risk_surebets": False,
     "sports": {
         "soccer": True, "basketball": True,
-        "tennis": True, "volleyball": True,
-        "americanfootball_nfl": True, "icehockey_nhl": True,
-        "baseball_mlb": True, "rugbyleague": True,
+        "tennis": True, "americanfootball_nfl": True, "icehockey_nhl": True,
+        "baseball_mlb": True, "rugbyleague": True, "cricket": False, "golf": False,
     },
-    "bookmakers": {},  # se sobreescribe abajo con {k: True for k in BOOKMAKERS}
+    "bookmakers": {
+        "bet365": True, "winamax": True, "pokerstars": True,
+        "bwin": True, "betfair": True, "betsson": True, "leovegas": True,
+        "williamhill": True, "888sport": True, "daznbet": True,
+        "codere": True, "sportium": True, "retabet": True, "marathonbet": True,
+    },
     "stake": 100.0,
 }
 
 BOT_CONFIG = {
     "scan_prematch_interval": 300,  # 5 min — prematch opportunities last hours
-    "scan_live_interval":     30,   # 30s — default when live games active
+    "scan_live_interval":     120,  # 2 min — default when live games active
     "scan_live_backoff":      600,  # 10 min — when 3+ consecutive live scans return 0 events
 }
 
@@ -109,6 +98,8 @@ stats = {
     "proxima_actualizacion": None,
 }
 # API credits (The Odds API — actualizado en cada llamada)
+api_credits_remaining: int | None = None
+api_credits_used:      int | None = None
 live_empty_streak: int = 0   # nº de escaneos live consecutivos con 0 eventos
 
 # ── DualStats — nuevos estados ─────────────────────────────
@@ -129,22 +120,13 @@ SPORT_DISPLAY = {
     "soccer":               ("⚽", "Fútbol"),
     "basketball":           ("🏀", "Baloncesto"),
     "tennis":               ("🎾", "Tenis"),
-    "volleyball":           ("🏐", "Voleibol"),
     "americanfootball_nfl": ("🏈", "Fútbol Americano"),
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
     "baseball_mlb":         ("⚾", "Béisbol"),
     "rugbyleague":          ("🏉", "Rugby"),
+    "cricket":              ("🏏", "Cricket"),
+    "golf":                 ("⛳", "Golf"),
 }
-SPORT_STATUS = {
-    "soccer":               "Winamax + Codere (scraper directo) + OddsAPI",
-    "basketball":           "OddsAPI (NBA/EuroLeague)",
-    "tennis":               "OddsAPI (ATP/WTA)",
-    "americanfootball_nfl": "OddsAPI — temporada oct-feb",
-    "icehockey_nhl":        "OddsAPI — temporada oct-jun",
-    "baseball_mlb":         "OddsAPI — temporada abr-oct",
-    "rugbyleague":          "OddsAPI — NRL/Super League",
-}
-
 LEAGUE_MAP = {
     "soccer":               "Fútbol",
     "basketball":           "NBA / EuroLeague",
@@ -153,165 +135,102 @@ LEAGUE_MAP = {
     "icehockey_nhl":        "NHL",
     "baseball_mlb":         "MLB",
     "rugbyleague":          "Rugby League",
+    "cricket":              "Cricket",
+    "golf":                 "Golf",
+}
+BASKETBALL_API_KEYS = ["basketball_nba", "basketball_euroleague"]
+
+BOOKMAKER_NAMES = {
+    "bet365": "Bet365", "winamax": "Winamax", "pokerstars": "PokerStars",
+    "bwin": "Bwin", "betfair": "Betfair", "betsson": "Betsson", "leovegas": "LeoVegas",
+    "marathonbet": "Marathonbet", "williamhill": "William Hill", "888sport": "888sport", "daznbet": "DaznBet",
+    "codere": "Codere", "sportium": "Sportium", "retabet": "Retabet",
 }
 
-# ── Tier 1 competition patterns (⭐ in notifications) ─────────────────────────
-# Matching is case-insensitive substring against the league/competition name.
-_TIER1: dict[str, list[str]] = {
-    "soccer": [
-        "champions league", "la liga", "bundesliga", "premier league",
-        "ligue 1", "serie a", "primeira liga", "eredivisie", "jupiler",
-        "europa league", "conference league", "copa libertadores",
-        "copa sudamericana", "world cup", "nations league", "league one",
-    ],
-    "basketball": [
-        "nba", "wnba", "euroleague", "euroliga", " acb", "superliga turca",
-        "lega basket", "basketball champions league", "fiba world cup", "olympics",
-    ],
-    "tennis": [
-        "wimbledon", "us open", "french open", "roland garros", "australian open",
-        "masters 1000", "atp 500", "wta 500", "atp 250", "wta 250",
-        "davis cup", "bjk cup", "billie jean", "finals",
-    ],
-    "baseball_mlb": [
-        "mlb", "npb", "kbo", "lmb", "lmp", "caribbean",
-        "world baseball classic", "world series",
-    ],
-    "americanfootball_nfl": ["nfl", "super bowl", "playoffs", "ncaa"],
-    "icehockey_nhl":        ["nhl", "khl", "shl", "liiga", "ahl", "world championship"],
-    "rugbyleague":          ["super league", "nrl", "state of origin", "world cup"],
+BOOKMAKER_URLS = {
+    "bet365": "https://www.bet365.es/",
+    "winamax": "https://www.winamax.es/apostar/sports/",
+    "pokerstars": "https://www.pokerstarssports.es/sports/",
+    "bwin": "https://sports.bwin.es/",
+    "betfair": "https://www.betfair.es/sport/football",
+    "betsson": "https://www.betsson.es/es-ES/sportsbook",
+    "leovegas": "https://www.leovegas.com/es-es/",
+    "williamhill": "https://www.williamhill.es/",
+    "888sport": "https://www.888sport.es/",
+    "daznbet": "https://www.daznbet.es/es/sports/",
+    "codere": "https://apuestas.codere.es/",
+    "sportium": "https://www.sportium.es/",
+    "retabet": "https://www.retabet.es/apuestas/",
+    "marathonbet": "https://www.marathonbet.com/su/",
 }
 
-
-def _es_tier1(sport_key: str, liga: str) -> bool:
-    """True when liga matches a Tier 1 competition pattern for the given sport."""
-    patterns = _TIER1.get(sport_key, [])
-    if not patterns or not liga:
-        return False
-    liga_lower = liga.lower()
-    return any(p in liga_lower for p in patterns)
-
-# ============================================================
-# FUENTE ÚNICA DE CASAS — añadir/quitar solo aquí
-# ============================================================
-# Campos: name, emoji, url (None si no hay), region (ES/INT), status (para /casas admin)
-BOOKMAKERS: dict[str, dict] = {
-    "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando",          "default": True},
-    "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando",          "default": True},
-    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR",              "default": True},
-    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": "https://www.betfair.es",          "region": "INT", "status": "⏸ Sin credenciales API", "default": True},
-    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy",        "default": True},
-    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "betsson":     {"name": "Betsson",       "emoji": "💚", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright",           "default": True},
-    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": "https://www.pokerstars.es",      "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": "https://www.888sport.es",        "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
-    # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
-    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
-    "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
-    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
-    "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
-    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": True},
-    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
-    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
+# Región regulatoria: ES = DGOJ (España), INT = plataforma internacional
+BOOKMAKER_REGION = {
+    "betsson": "ES", "winamax": "ES", "codere": "ES", "sportium": "ES",
+    "williamhill": "ES", "bwin": "ES", "daznbet": "ES", "retabet": "ES",
+    "bet365": "INT", "betfair": "INT", "pokerstars": "INT",
+    "leovegas": "INT", "888sport": "INT",
 }
-
-# Scrapers internos que no son casas de usuario independientes
-# (sub-scrapers del mismo operador con tecnología distinta)
-EXTRA_SCRAPERS: dict[str, dict] = {
-    "betsson_es": {"name": "Betsson ES", "emoji": "🇪🇸", "status": "⏸ Kambi — proxy ES", "maps_to": "betsson"},
-}
-
-# ── Derivados automáticos — NO editar a mano ──────────────
-BOOKMAKER_NAMES:  dict[str, str]       = {k: v["name"]   for k, v in BOOKMAKERS.items()}
-BOOKMAKER_URLS:   dict[str, str]       = {k: v["url"]    for k, v in BOOKMAKERS.items() if v["url"]}
-BOOKMAKER_REGION: dict[str, str]       = {k: v["region"] for k, v in BOOKMAKERS.items()}
-SCRAPER_DISPLAY:  dict[str, tuple]     = {
-    **{k: (v["emoji"], v["name"], v["status"]) for k, v in BOOKMAKERS.items()},
-    **{k: (v["emoji"], v["name"], v["status"]) for k, v in EXTRA_SCRAPERS.items()},
-}
-# Sync DEFAULT_USER_CONFIG.bookmakers con BOOKMAKERS (fuente única)
-DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKMAKERS.items()}
 
 # DualStats odds endpoint (VPS scraper data via Supabase)
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "pokerstars", "casumo", "marca", "kirolbet"},
+    {"kambi", "888sport", "leovegas", "betsson", "nordicbet", "unibet"},
     {"codere", "sportium"},
-    {"tonybet", "luckia", "casino-gran-madrid"},  # Altenar
 ]
 
 def son_casas_clon(bk1, bk2):
-    if bk1 == bk2:  # mismo bookmaker nunca es un surebet real
-        return True
     for grupo in CASAS_CLON:
         if bk1 in grupo and bk2 in grupo:
             return True
     return False
 
-# ── Gestión de scrapers (toggle ON/OFF por admin) ─────────
-# Shared con el scanner Node.js — ambos leen/escriben este JSON.
-SCANNER_STATE_FILE = "/home/ubuntu/scanner-state.json"
-
-def _load_scanner_state() -> dict:
-    try:
-        with open(SCANNER_STATE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"disabled_scrapers": []}
-
-def _save_scanner_state(state: dict):
-    from datetime import timezone
-    state["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    try:
-        with open(SCANNER_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logging.getLogger(__name__).error(f"[scanner-state] Error guardando: {e}")
-
 BLOQUEADO_MSG = "⛔ Función solo disponible para usuarios suscritos.\n\nPulsa 💳 Suscribirse para activar tu cuenta."
 
-SUSCRIPCION = """💳 *Planes FiidesBot*
+SUSCRIPCION = """💳 *Suscribirse a FidesBot*
 ━━━━━━━━━━━━━━━━━━
 
+📋 *¿Qué incluye cada plan?*
+
+🆓 *FREE* — Gratis
+  • Acceso básico al bot
+  • Freebets y créditos
+  • Sin alertas de surebets
+
 💎 *PRO* — Alertas ilimitadas
-  • ⚡ Surebets, Middlebets y LIVE en tiempo real
-  • ⚙️ Configuración por casas, deportes y profit mínimo
+  • ⚡ Alertas en tiempo real (surebets, middles, LIVE)
+  • ⚙️ Configuración personalizada (casas, deportes, profit)
   • 🧮 Calculadora de stake automática
 
 🔗 *PRO+Tracker* — PRO + web DualStats
   • Todo lo de PRO
-  • ✅ Marca apuestas como Hecha/No hecha desde la alerta
+  • ✅ Botones Hecha/No hecha en cada alerta
   • 📋 Registro automático en DualStats Tracker
-  • 🏆 Estadísticas: ROI, P&L, win rate
+  • 🏆 Estadísticas completas: ROI, P&L, win rate
 
 ━━━━━━━━━━━━━━━━━━
 💰 *Precios:*
-• PRO 1 semana: *19,99€*
-• PRO 2 semanas: *32,99€*
-• PRO 1 mes: *44,99€*
-• PRO+Tracker 1 mes: *49,99€*
+• PRO 1 semana: *17€*
+• PRO 2 semanas: *25€*
+• PRO 1 mes: *45€* _(1er mes 35€)_ 🎁
+• PRO+Tracker 1 mes: *49,99€* _(1er mes 39,99€)_ 🎁
 
-_✨ Primera compra: 34,99€ PRO · 39,99€ PRO+Tracker_
+_🎁 Descuento aplicado automáticamente en tu primera compra_
 
 ━━━━━━━━━━━━━━━━━━
-💳 Pago 100% seguro con Stripe.
-Tu acceso se activa *automáticamente* al completar el pago.
+💳 *Pago seguro con Stripe*
+Elige tu plan y pulsa el botón de pago.
+Tu suscripción se activa *automáticamente* al completar el pago.
 
 👇 *Elige tu plan:*"""
 
-TERMINOS = """📋 *Términos y Condiciones — FiidesBot & DualStats Tracker*
+TERMINOS = """📋 *Términos y Condiciones — FidesBot & DualStats Tracker*
 
-_Última actualización: 21/08/2026_
+_Última actualización: junio 2026_
 
 *1. Identificación del servicio*
-FiidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
+FidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
 
 *2. Aceptación*
 El uso de cualquiera de los servicios implica la aceptación plena de estos Términos.
@@ -320,21 +239,21 @@ El uso de cualquiera de los servicios implica la aceptación plena de estos Tér
 Uso exclusivo para mayores de 18 años. El acceso por menores está estrictamente prohibido.
 
 *4. Naturaleza del servicio*
-FiidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
+FidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
 
 ⚠️ *No apuestes más de lo que estés dispuesto a perder.*
 
 *5. Pagos y reembolsos*
-Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FiidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
+Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
 
 *6. Datos y privacidad*
-FiidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
+FidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
 
 *7. Prohibiciones*
 Están prohibidos: ceder el acceso a terceros, reenviar alertas de forma automática, compartir la suscripción y cualquier uso automatizado no autorizado. El incumplimiento conlleva bloqueo permanente sin reembolso.
 
 *8. Responsabilidad*
-FiidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
+FidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
 
 *9. Modificaciones*
 Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los cambios se comunicarán a través del bot.
@@ -343,7 +262,7 @@ Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los 
 Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
 SOPORTE_PAGINAS = [
-"""🆘 *Soporte — FiidesBot*  _(1/2)_
+"""🆘 *Soporte — FidesBot*  _(1/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📩 Cualquier duda, escríbenos al administrador. Te respondemos lo antes posible.
@@ -355,10 +274,10 @@ SOPORTE_PAGINAS = [
 Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. El acceso se activa automáticamente al instante.
 
 ❓ *¿Qué es Stripe? ¿Es seguro pagar ahí?*
-Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FiidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
+Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
 
 ❓ *¿La suscripción se renueva sola? ¿Cómo la cancelo?*
-No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar, pulsa 🔄 Renovar en el menú principal y elige tu plan.
+No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar o cancelar antes del vencimiento contacta al administrador.
 
 ❓ *¿Qué es DualStats Tracker?*
 DualStats es la app web complementaria al bot. Registra todas tus apuestas y muestra: ROI, beneficio acumulado, rendimiento por casa, estadísticas por deporte y mucho más. Con PRO+Tracker las alertas que aceptas en el bot se registran automáticamente.
@@ -366,9 +285,8 @@ DualStats es la app web complementaria al bot. Registra todas tus apuestas y mue
 ❓ *¿Cómo vinculo el bot con DualStats?*
 Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta activa en DualStats y el plan PRO+Tracker.
 
-━━━━━━━━━━━━━━━━━━
-_Actualizado: 21/08/2026_""",
-"""🆘 *Soporte — FiidesBot*  _(2/2)_
+━━━━━━━━━━━━━━━━━━""",
+"""🆘 *Soporte — FidesBot*  _(2/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📌 *Preguntas frecuentes (cont.):*
@@ -398,59 +316,54 @@ Envía /start para reiniciar la sesión. Si el problema persiste, escribe al adm
 ]
 
 NOVEDADES_HUB = (
-    "📰 *Novedades — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "📌 Mantente al día con todo lo nuevo que ofrece FiidesBot.\n\n"
-    "🕒 Última actualización: *24/08/2026*\n\n"
+    "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
+    "🕒 Última actualización: *15/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
     " • Próximas funciones en desarrollo.\n"
     " • Mensajes importantes y avisos.\n\n"
-    "💎 Gracias por confiar en FiidesBot. Seguimos trabajando para "
+    "💎 Gracias por confiar en FidesBot. Seguimos trabajando para "
     "ayudarte con el arbitraje deportivo.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕒 *Última actualización — 24/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "✅ *Activación automática* — tu suscripción se activa al instante "
-    "tras el pago con Stripe, sin esperar confirmación manual\n"
-    "✅ *Integración FiidesBot × DualStats Tracker* — vincula tu cuenta "
+    "🕒 *Última actualización — Agosto 2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
     "web y registra apuestas directamente desde las alertas del bot\n"
-    "✅ *Sistema de créditos y freebets* — búsquedas gratuitas por invitar "
+    "✅ Sistema de créditos y freebets — búsquedas gratuitas por invitar "
     "amigos o renovar suscripción\n"
-    "✅ *Alertas live mejoradas* — cooldown inteligente para evitar "
-    "spam de cuotas fluctuantes\n"
-    "✅ *Auto-registro aproximado* — las apuestas pendientes de confirmar "
+    "✅ Alertas live mejoradas — cooldown inteligente (180s o +0.5pp "
+    "de profit) para evitar spam de cuotas fluctuantes\n"
+    "✅ Auto-registro aproximado — las apuestas pendientes de confirmar "
     "se registran solas a las 48h con aviso por Telegram\n"
-    "✅ *Flujo de Apuestas Pendientes* — acepta o rechaza cada alerta "
+    "✅ Flujo de Apuestas Pendientes — acepta o rechaza cada alerta "
     "antes de registrarla en DualStats\n"
+    "✅ 14 correcciones de bugs (julio 2026): PARTIAL_WIN en dashboard, "
+    "P&L por pierna, renovación de suscripción, depósito/retiro, etc.\n"
+    "✅ Diagnóstico mejorado — explica exactamente por qué no llegan alertas\n"
+    "✅ Mercado de labels corregido: fútbol muestra [1X2], resto [Ganador]\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
-    "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 24/08/2026_\n\n"
-    "🔜 *Canal gratuito de Telegram* — alertas de muestra para que "
-    "compruebes cómo funciona FiidesBot antes de suscribirte. "
-    "Lanzamiento inminente.\n"
-    "🔜 Más casas de apuestas — añadimos Bet365, Bwin, William Hill, "
-    "Betsson y más para ampliar las combinaciones disponibles\n"
-    "🔜 Más cobertura live — scrapers adicionales para detectar más "
-    "surebets en tiempo real\n"
-    "🔜 Integración web completa — registra y gestiona todas tus "
-    "apuestas directamente desde las alertas del bot\n\n"
+    "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "🔜 Valuebets — alertas de apuestas con valor esperado positivo\n"
+    "🔜 Más casas de apuestas — Codere, Sportium y Bwin con datos propios\n"
+    "🔜 Alertas WebSocket — latencia <100ms en vez del escaneo cada 10 min\n"
+    "🔜 Calculadora de stake avanzada (Kelly, plana, proporcional)\n"
+    "🔜 Estadísticas personales de surebets aprovechadas vs perdidas\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_AVISOS = (
-    "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 24/08/2026_\n\n"
-    "✅ *Codere y Winamax activas con scraper directo*\n"
-    "Detectamos odds en tiempo real de Codere y Winamax sin necesidad de proxy. "
-    "Otras casas españolas (Sportium, Bwin, William Hill, Betsson...) "
-    "requieren proxy residencial y se activarán próximamente.\n\n"
+    "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "⚠️ *Cobertura de casas españolas limitada*\n"
+    "Las casas como Codere, Sportium, Bwin y William Hill España "
+    "requieren proxies residenciales para acceder a sus odds. "
+    "Estamos trabajando en activarlas próximamente.\n\n"
     "ℹ️ *Fuente de datos*\n"
-    "Las surebets se detectan vía scrapers directos (Winamax, Codere) "
-    "y The Odds API para mercados internacionales. "
+    "Las surebets se detectan vía The Odds API (mercados internacionales). "
     "Cuantas más casas tengas activadas, más oportunidades verás.\n\n"
     "_Esta sección se actualiza con comunicados importantes "
     "sobre el servicio o cambios de precios._\n"
@@ -536,11 +449,6 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
         for bk in DEFAULT_USER_CONFIG["bookmakers"]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
-        cfg.get("bookmakers", {}).pop("marathonbet", None)   # eliminada del mercado español
-        # Migrar casas nuevas que se añadieron con default=False por error — activarlas para usuarios existentes
-        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
-            if cfg.get("bookmakers", {}).get(_bk_new) is False:
-                cfg["bookmakers"][_bk_new] = True
         # Migrar min_profit_surebet de 3.0 (default antiguo) a 1.5 (más útil en la práctica)
         if cfg.get("min_profit_surebet") == 3.0:
             cfg["min_profit_surebet"] = 1.5
@@ -552,8 +460,6 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
         for sp in DEFAULT_USER_CONFIG["sports"]:
             if sp not in cfg.get("sports", {}):
                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
-        for _removed_sp in ["golf", "cricket"]:
-            cfg.get("sports", {}).pop(_removed_sp, None)
         subs[uid] = {"name": sub.get("name", str(uid)), "expires": expires, "config": cfg,
                      "is_trial": cfg.get("_is_trial", False)}
     refs  = {int(k): v for k, v in data.get("referrals", {}).items()}
@@ -647,10 +553,6 @@ async def cargar_db():
                         for bk in DEFAULT_USER_CONFIG["bookmakers"]:
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
-                        cfg.get("bookmakers", {}).pop("marathonbet", None)
-                        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
-                            if cfg.get("bookmakers", {}).get(_bk_new) is False:
-                                cfg["bookmakers"][_bk_new] = True
                         if cfg.get("min_profit_surebet") == 3.0:
                             cfg["min_profit_surebet"] = 1.5
                         # Migrar basketball_nba/euroleague -> basketball
@@ -661,8 +563,6 @@ async def cargar_db():
                         for sp in DEFAULT_USER_CONFIG["sports"]:
                             if sp not in cfg.get("sports", {}):
                                 cfg.setdefault("sports", {})[sp] = DEFAULT_USER_CONFIG["sports"][sp]
-                        for _removed_sp in ["golf", "cricket"]:
-                            cfg.get("sports", {}).pop(_removed_sp, None)
                         name = sub.get("telegramName") or file_subs.get(uid, {}).get("name", str(uid))
                         subscriptions[uid] = {"name": name, "expires": expires, "config": cfg,
                                               "is_trial": cfg.get("_is_trial", False)}
@@ -719,7 +619,6 @@ async def cargar_db():
 
     # ── Restaurar alerta_cache desde disco ────────────────────
     _load_alerts_cache()
-    _load_banned()
 
     # ── Si había fichero local: sync a API y renombrar ───────
     if file_subs and api_ok:
@@ -729,100 +628,6 @@ async def cargar_db():
             logger.info(f"[DB] Fichero migrado → {DB_FILE}.migrated")
         except Exception as e:
             logger.error(f"[DB] No se pudo renombrar el fichero: {e}")
-
-    # Marcar dirty para persistir migraciones (casas nuevas, sports limpiados)
-    guardar_db()
-
-# ============================================================
-# BAN DE USUARIOS
-# ============================================================
-BANNED_FILE = "banned_users.json"
-banned_users: dict = {}  # {user_id: {"ts": ..., "motivo": ..., "by": ...}}
-
-def _save_banned():
-    try:
-        with open(BANNED_FILE, "w", encoding="utf-8") as f:
-            json.dump({str(k): v for k, v in banned_users.items()}, f, ensure_ascii=False, default=str)
-    except Exception as e:
-        logger.warning(f"[ban] Error guardando: {e}")
-
-def _load_banned():
-    global banned_users
-    if not os.path.exists(BANNED_FILE):
-        return
-    try:
-        with open(BANNED_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        banned_users = {int(k): v for k, v in data.items()}
-        logger.info(f"[ban] {len(banned_users)} usuarios baneados cargados")
-    except Exception as e:
-        logger.warning(f"[ban] Error cargando: {e}")
-
-def is_banned(user_id: int) -> bool:
-    return user_id in banned_users
-
-async def cmd_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    if not context.args:
-        await update.message.reply_text("Uso: /ban <user_id> [motivo]"); return
-    try:
-        target = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ ID inválido."); return
-    if target in ADMIN_IDS:
-        await update.message.reply_text("❌ No puedes banear a un administrador."); return
-    motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Sin motivo especificado"
-    banned_users[target] = {
-        "ts": local_now().isoformat(),
-        "motivo": motivo,
-        "by": update.effective_user.id,
-    }
-    _save_banned()
-    await update.message.reply_text(
-        f"🚫 *Usuario {target} baneado*\nMotivo: {motivo}",
-        parse_mode="Markdown")
-    try:
-        await context.bot.send_message(
-            chat_id=target,
-            text="🚫 Tu acceso a FiidesBot ha sido restringido por el administrador.\n"
-                 "Si crees que es un error, contacta con soporte.")
-    except Exception:
-        pass
-
-async def cmd_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    if not context.args:
-        await update.message.reply_text("Uso: /unban <user_id>"); return
-    try:
-        target = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ ID inválido."); return
-    if target not in banned_users:
-        await update.message.reply_text(f"ℹ️ El usuario {target} no está baneado."); return
-    del banned_users[target]
-    _save_banned()
-    await update.message.reply_text(f"✅ *Usuario {target} desbaneado*", parse_mode="Markdown")
-    try:
-        await context.bot.send_message(
-            chat_id=target,
-            text="✅ Tu acceso a FiidesBot ha sido restaurado. Escribe /start para continuar.")
-    except Exception:
-        pass
-
-async def cmd_baneados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    if not banned_users:
-        await update.message.reply_text("✅ No hay usuarios baneados actualmente."); return
-    lines = ["🚫 *Usuarios baneados*\n━━━━━━━━━━━━━━━━━━\n"]
-    for uid, info in banned_users.items():
-        ts     = info.get("ts", "—")[:10]
-        motivo = info.get("motivo", "—")
-        lines.append(f"• `{uid}` — {motivo} _{ts}_")
-    lines.append(f"\n_Total: {len(banned_users)}_")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 # ============================================================
 # SUSCRIPCIONES Y CRÉDITOS
@@ -865,12 +670,7 @@ def tiene_suscripcion(user_id):
     if sub["expires"] is None: return True
     return sub["expires"] > datetime.now()
 
-def ha_pagado_antes(user_id):
-    """True si el usuario alguna vez tuvo una suscripción (aunque esté caducada)."""
-    return user_id in subscriptions
-
 def dias_restantes(user_id):
-    if user_id in ADMIN_IDS: return 9999
     cache = subscription_api_cache.get(user_id)
     if cache and cache.get("subscribed") and cache.get("daysLeft") is not None:
         return cache["daysLeft"]
@@ -902,11 +702,10 @@ def activar_usuario(user_id, dias, nombre=None, plan="PRO"):
         subscriptions[user_id]["expires"] += timedelta(days=dias)
         subscriptions[user_id]["plan"] = plan  # actualiza plan aunque se renueve
     else:
-        existing_config = subscriptions.get(user_id, {}).get("config", deepcopy(DEFAULT_USER_CONFIG))
         subscriptions[user_id] = {
             "name":    nombre_guardado,
             "expires": datetime.now() + timedelta(days=dias),
-            "config":  existing_config,
+            "config":  deepcopy(DEFAULT_USER_CONFIG),
             "plan":    plan,
         }
     # Limpiar flag de trial al activar suscripción real
@@ -957,81 +756,6 @@ async def tarea_flush_db(context: ContextTypes.DEFAULT_TYPE):
         await flush_to_api()
 
 # ============================================================
-# TAREA SYNC DESDE API (cada 5min — recoge pagos Stripe nuevos)
-# ============================================================
-async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
-    """Sincroniza suscripciones desde la API para activar pagos Stripe al instante."""
-    try:
-        headers = {"x-bot-secret": DUALSTATS_API_KEY}
-        async with aiohttp.ClientSession() as s:
-            async with s.get(f"{DUALSTATS_API_URL}/users", headers=headers,
-                             timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    return
-                api_data = await resp.json()
-
-        for sub in api_data.get("botSubscriptions", []):
-            uid = int(sub["telegramId"])
-            exp_str = sub.get("expiresAt")
-            expires = None
-            if exp_str:
-                try:
-                    expires = datetime.fromisoformat(exp_str.replace("Z", "+00:00")).replace(tzinfo=None)
-                except Exception:
-                    pass
-            existing = subscriptions.get(uid)
-            if existing:
-                # Only extend expiry — never shrink (protects manually given subscriptions)
-                if expires and (existing.get("expires") is None or expires > existing.get("expires")):
-                    existing["expires"] = expires
-                    existing["is_trial"] = False
-                    existing.get("config", {}).pop("_is_trial", None)
-                    try:
-                        nl = "\n"
-                        exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
-                        name = existing.get("name") or str(uid)
-                        msg_r = f"🔄 *Renovación*{nl}{name} (`{uid}`){nl}⏰ Nueva exp: {exp_s}"
-                        await context.bot.send_message(chat_id=ADMIN_ID, text=msg_r, parse_mode="Markdown")
-                        await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_r, parse_mode="Markdown")
-                    except Exception:
-                        pass
-            else:
-                # New subscription — add to in-memory dict (Stripe payment just processed)
-                cfg = sub.get("config") or deepcopy(DEFAULT_USER_CONFIG)
-                for k, v in DEFAULT_USER_CONFIG.items():
-                    if k not in cfg:
-                        cfg[k] = deepcopy(v)
-                for bk in DEFAULT_USER_CONFIG["bookmakers"]:
-                    cfg.setdefault("bookmakers", {})[bk] = cfg["bookmakers"].get(bk, DEFAULT_USER_CONFIG["bookmakers"][bk])
-                for sp in DEFAULT_USER_CONFIG["sports"]:
-                    cfg.setdefault("sports", {})[sp] = cfg["sports"].get(sp, DEFAULT_USER_CONFIG["sports"][sp])
-                cfg.pop("_is_trial", None)
-                subscriptions[uid] = {
-                    "name":     sub.get("telegramName") or str(uid),
-                    "expires":  expires,
-                    "config":   cfg,
-                    "is_trial": False,
-                }
-                creditos[uid] = sub.get("credits") or creditos.get(uid, 0)
-                logger.info(f"[sync] Suscripción nueva cargada desde API: {uid}")
-                try:
-                    nl = "\n"
-                    exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
-                    name = sub.get("telegramName") or str(uid)
-                    msg_n = f"💳 *Nuevo pago*{nl}{name} (`{uid}`){nl}⏰ Expira: {exp_s}"
-                    await context.bot.send_message(chat_id=ADMIN_ID, text=msg_n, parse_mode="Markdown")
-                    await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_n, parse_mode="Markdown")
-                except Exception:
-                    pass
-
-        for u in api_data.get("linkedUsers", []):
-            uid = int(u["telegramId"])
-            dualstats_vinculados.add(uid)
-            dualstats_plan[uid] = u["plan"]
-    except Exception as e:
-        logger.error(f"[sync] Error: {e}")
-
-# ============================================================
 # TAREA VERIFICAR SUSCRIPCIONES
 # ============================================================
 async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
@@ -1047,7 +771,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                     _discard_aviso(uid, "7d"); _discard_aviso(uid, "1d")
                     _add_aviso(uid, "expired")
                     await context.bot.send_message(chat_id=uid,
-                        text="😢 *Tu suscripción a FiidesBot ha caducado.*\n\n"
+                        text="😢 *Tu suscripción a FidesBot ha caducado.*\n\n"
                              "Ya no recibirás alertas hasta que renueves.\n\n"
                              "👉 Escribe /start y pulsa 💳 *Suscribirse* para continuar.",
                         parse_mode="Markdown")
@@ -1057,7 +781,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=uid,
                         text="⚠️ *¡Tu suscripción caduca mañana!*\n\n"
                              "Renueva hoy para no perder ninguna alerta.\n\n"
-                             "👉 /start → 🔄 Renovar suscripción",
+                             "👉 /start → 💳 Suscribirse",
                         parse_mode="Markdown")
             elif dias <= 7:
                 if f"{uid}_7d" not in avisos_enviados:
@@ -1066,10 +790,9 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                         text=f"🔔 *Tu suscripción caduca en {dias} días.*\n\n"
                              f"Para no perder acceso, renueva antes del "
                              f"{expires.strftime('%d/%m/%Y')}.\n\n"
-                             f"👉 /start → 🔄 Renovar suscripción",
+                             f"👉 /start → 💳 Suscribirse",
                         parse_mode="Markdown")
-        except Exception as e:
-            logger.debug("Reminder send ignored (user may have blocked bot): %s", e)
+        except: pass
     guardar_db()
 
 # ============================================================
@@ -1162,11 +885,9 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
             b2 = max(e2, key=lambda x: x["price"])
             if not son_casas_clon(b1["bookmaker_key"], b2["bookmaker_key"]):
                 result = calcular_surebet(b1["price"], b2["price"])
-                if result and result["profit"] > 15.0:
-                    result = None  # cap duro: >15% son casi siempre errores de parsing o cuotas stale
                 if result:
-                    # Fútbol, americano y rugby pueden terminar en empate
-                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "rugbyleague"}
+                    # Fútbol/americano: empate posible. Basket: sin empate pero usuario lo bloquea
+                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "basketball"}
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
@@ -1194,13 +915,11 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
                             "profit_base":result["profit_base"],"profit_max":result["profit_max"],
                             "prob_middle":result["prob_middle"],"gap":result["gap"],
                             "profit":result["profit_base"],"legs":[
-                            {"bookmaker":oe["bookmaker_title"],"bookmaker_key":oe["bookmaker_key"],
-                             "region":BOOKMAKER_REGION.get(oe["bookmaker_key"],""),
-                             "outcome":"Over","odd":oe["price"],"stake_pct":result["stake1_pct"],
+                            {"bookmaker":oe["bookmaker_title"],"outcome":"Over",
+                             "odd":oe["price"],"stake_pct":result["stake1_pct"],
                              "market":"totals","point":oe["point"],"description":""},
-                            {"bookmaker":ue["bookmaker_title"],"bookmaker_key":ue["bookmaker_key"],
-                             "region":BOOKMAKER_REGION.get(ue["bookmaker_key"],""),
-                             "outcome":"Under","odd":ue["price"],"stake_pct":result["stake2_pct"],
+                            {"bookmaker":ue["bookmaker_title"],"outcome":"Under",
+                             "odd":ue["price"],"stake_pct":result["stake2_pct"],
                              "market":"totals","point":ue["point"],"description":""},
                         ]}); break
     return apuestas
@@ -1236,7 +955,7 @@ def calcular_stakes(total, legs):
         stake_redondeado = redondear_stake(stake_exacto)
         stakes_redondeados.append(stake_redondeado)
         total_redondeado += stake_redondeado
-    ganancia = round(min(s * l["odd"] for s, l in zip(stakes_redondeados, legs)) - total_redondeado, 2)
+    ganancia = round(stakes_redondeados[0] * legs[0]["odd"] - total_redondeado, 2)
     for i, leg in enumerate(legs):
         stake = stakes_redondeados[i]
         stake_str = f"{stake:.0f}" if stake == int(stake) else f"{stake:.1f}"
@@ -1248,92 +967,84 @@ def calcular_stakes(total, legs):
 # ============================================================
 # FETCH Y ESCANEO
 # ============================================================
+async def fetch_odds(sport_key, live=False):
+    global api_credits_remaining, api_credits_used
+    url = (f"{ODDS_API_BASE}/sports/{sport_key}/odds"
+           f"?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals"
+           f"&oddsFormat=decimal&inPlay={'true' if live else 'false'}")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                # Capture credit headers from The Odds API
+                remaining = resp.headers.get("x-requests-remaining")
+                used      = resp.headers.get("x-requests-used")
+                if remaining is not None:
+                    api_credits_remaining = int(remaining)
+                if used is not None:
+                    api_credits_used = int(used)
 
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status in (401, 422, 429):
+                    body = await resp.text()
+                    logger.error(f"[API] {sport_key} HTTP {resp.status} — cuota agotada o clave inválida: {body[:200]}")
+                    if api_credits_remaining == 0:
+                        logger.error("[API] ⚠️  0 créditos restantes — desactivando escaneo hasta recarga mensual.")
+                else:
+                    logger.warning(f"[API] {sport_key} HTTP {resp.status}")
+                return []
+    except Exception as e:
+        logger.error(f"Error {sport_key}: {e}"); return []
 
-# ── Odds API sport_key → VPS SportType (for DualStats event filtering) ─────────
+# ── Odds API sport_key → VPS SportType (for filtering DualStats events) ────────
 _VPS_SPORT_MAP = {
-    "soccer":               "FOOTBALL",
-    "basketball":           "BASKETBALL",
-    "tennis":               "TENNIS",
-    "baseball_mlb":         "BASEBALL",
-    "americanfootball_nfl": "AMERICANFOOTBALL",
-    "icehockey_nhl":        "ICEHOCKEY",
-    "volleyball":           "VOLLEYBALL",
-    "rugbyleague":          "RUGBYLEAGUE",
-}
-
-_VPS_BOOKMAKER_TITLES = {
-    "winamax":  "Winamax",
-    "codere":   "Codere",
-    "daznbet":  "DaznBet",
-    "betfair":  "Betfair",
-    "bet365":   "bet365",
-    "betsson":  "Betsson",
-    "williamhill": "William Hill",
+    "soccer": "FOOTBALL", "basketball": "BASKETBALL", "tennis": "TENNIS",
+    "baseball_mlb": "BASEBALL", "icehockey_nhl": "HOCKEY",
+    "rugbyleague": "RUGBY", "cricket": "CRICKET", "golf": "GOLF",
 }
 
 def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
-    """Convert a VPS scraper event (from DualStats /api/bot/odds) to Odds API format."""
-    try:
-        event_name: str = ev.get("eventName", "")
-        # Parse home/away from "Team A v Team B" or "Team A - Team B" or "Team A vs Team B"
-        import re as _re
-        sep_match = _re.split(r" v | vs | - | — ", event_name, maxsplit=1)
-        if len(sep_match) == 2:
-            home_team = sep_match[0].strip()
-            away_team = sep_match[1].strip()
-        else:
-            # Can't split: use eventName as both (degenerate)
-            home_team = event_name
-            away_team = event_name
-
-        bookmakers_out = []
-        for bo in ev.get("bookmakerOdds", []):
-            bk_key   = bo.get("bookmaker", "")
-            bk_title = _VPS_BOOKMAKER_TITLES.get(bk_key, bk_key.title())
-            mkt_key  = bo.get("market", "h2h")
-            raw_outcomes = bo.get("outcomes") or []
-
-            if mkt_key == "h2h":
-                # [{name, odds}, ...]
-                outcomes_out = [
-                    {"name": o.get("name", ""), "price": float(o.get("odds", 0))}
-                    for o in raw_outcomes
-                    if o.get("odds", 0) > 1.0
-                ]
-            elif mkt_key == "totals":
-                # [{line, over, under}, ...]
-                outcomes_out = []
-                for o in raw_outcomes:
-                    line = o.get("line")
-                    if o.get("over", 0) > 1.0:
-                        outcomes_out.append({"name": "Over",  "price": float(o["over"]),  "point": line})
-                    if o.get("under", 0) > 1.0:
-                        outcomes_out.append({"name": "Under", "price": float(o["under"]), "point": line})
-            else:
-                continue  # skip unknown markets
-
-            if outcomes_out:
-                bookmakers_out.append({
-                    "key":    bk_key,
-                    "title":  bk_title,
-                    "markets": [{"key": mkt_key, "outcomes": outcomes_out}],
-                })
-
-        if not bookmakers_out:
-            return None
-
-        return {
-            "id":             ev.get("eventKey", ""),
-            "sport_key":      sport_key,
-            "sport_title":    sport_key.replace("_", " ").title(),
-            "home_team":      home_team,
-            "away_team":      away_team,
-            "commence_time":  ev.get("startTime") or "",
-            "bookmakers":     bookmakers_out,
-        }
-    except Exception:
+    """Convert one DualStats /api/bot/odds event to The Odds API event format."""
+    bk_map: dict[str, dict] = {}  # bookmaker_key → {key, title, markets:[...]}
+    for item in ev.get("bookmakerOdds", []):
+        bk  = item["bookmaker"]
+        mkt = item["market"]
+        raw = item.get("outcomes", [])
+        outcomes_api: list[dict] = []
+        if mkt == "h2h":
+            for o in (raw if isinstance(raw, list) else []):
+                outcomes_api.append({"name": o.get("name", ""), "price": float(o.get("odds", 0))})
+        elif mkt == "totals":
+            for o in (raw if isinstance(raw, list) else []):
+                line = o.get("line")
+                if o.get("over"):
+                    outcomes_api.append({"name": "Over",  "price": float(o["over"]),  "point": line})
+                if o.get("under"):
+                    outcomes_api.append({"name": "Under", "price": float(o["under"]), "point": line})
+        if not outcomes_api:
+            continue
+        if bk not in bk_map:
+            bk_map[bk] = {"key": bk, "title": BOOKMAKER_NAMES.get(bk, bk.title()), "markets": []}
+        bk_map[bk]["markets"].append({"key": mkt, "outcomes": outcomes_api})
+    if not bk_map:
         return None
+    parts = ev.get("eventName", "").split(" vs ", 1)
+    if len(parts) == 2:
+        home, away = parts[0].strip(), parts[1].strip()
+    else:
+        parts2 = ev.get("eventName", "").split(" - ", 1)
+        home = parts2[0].strip() if parts2 else ev.get("eventName", "")
+        away = parts2[1].strip() if len(parts2) > 1 else ""
+    return {
+        "id":            ev.get("eventKey", ""),
+        "sport_key":     sport_key,
+        "sport_title":   ev.get("league") or LEAGUE_MAP.get(sport_key, sport_key),
+        "commence_time": ev.get("startTime") or "2099-01-01T00:00:00Z",
+        "home_team":     home,
+        "away_team":     away,
+        "_source":       "dualstats",      # internal tag — not sent to Telegram
+        "bookmakers":    list(bk_map.values()),
+    }
 
 async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
     """Fetch VPS scraper odds from DualStats /api/bot/odds endpoint."""
@@ -1367,64 +1078,14 @@ async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
 
 # ── Cross-source matching engine (Odds API UUID ↔ DualStats eventKey) ─────────
 
-# Words that are ALWAYS safe to strip (club-type indicators, never differentiate clubs).
-_STRUCTURAL_STOP_WORDS: frozenset[str] = frozenset({
-    "fc", "cf", "cd", "sd", "club", "de", "del", "la", "el", "ac", "as", "sk",
-})
-# Words stripped CONDITIONALLY: only when the result is not a bare geographic residual.
-# "real" is kept in "Real Madrid" → "real madrid" so it doesn't collapse to just "madrid",
-# preventing same-city club collisions even if new qualifiers are later added to stop words.
-_SOFT_STOP_WORDS: frozenset[str] = frozenset({"real"})
-# Combined set — used by _team_tokens() for last-token discrimination filtering.
-_TEAM_STOP_WORDS: frozenset[str] = _STRUCTURAL_STOP_WORDS | _SOFT_STOP_WORDS
-
-# Reserve/sub-club descriptors: if one team has these and the other doesn't,
-# similarity is hard-locked to 0.0 regardless of JW score (Porto ≠ Porto B).
-_RESERVE_DESCRIPTORS: frozenset[str] = frozenset({
-    "b", "ii", "iii", "u19", "u21", "u23", "femenino", "women", "femenil"
-})
-
-# Single geographic tokens shared by multiple clubs from the same city.
-# If stripping stop words leaves ONLY these tokens, the name is geo-ambiguous and
-# soft stop words are retained so the clubs remain distinguishable via JW.
-_GEO_RESIDUALS: frozenset[str] = frozenset({
-    "madrid", "barcelona", "manchester", "paris", "london", "milan",
-    "bilbao", "valencia", "sevilla", "porto", "lisbon", "amsterdam",
-    "munich", "berlin", "rome", "moscow", "zagreb", "glasgow",
-})
+_TEAM_STOP_WORDS = frozenset({"fc", "cf", "cd", "sd", "real", "club", "de", "del", "la", "el", "ac", "as", "sk"})
 
 def _normalize_team(name: str) -> str:
-    """Lowercase, remove accents, strip club suffixes.
-
-    Two-phase stripping:
-    1. Structural stop words (fc, club, de…) are always removed.
-    2. Soft stop words (real) are removed ONLY when the result is unambiguous —
-       i.e., not a bare city name shared by multiple clubs.
-       "Real Madrid" → "real madrid" (guard fires; "madrid" ∈ _GEO_RESIDUALS).
-       "Real Betis"  → "betis"       (guard silent; "betis" ∉ _GEO_RESIDUALS).
-    """
+    """Lowercase, remove accents, strip common club suffixes."""
     nfkd = unicodedata.normalize("NFKD", name.lower())
     ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
     tokens = re.sub(r"[^a-z0-9 ]", " ", ascii_str).split()
-    after_structural = [t for t in tokens if t not in _STRUCTURAL_STOP_WORDS]
-    after_all = [t for t in after_structural if t not in _SOFT_STOP_WORDS]
-    # Guard: if full strip leaves only geographic residuals, keep soft-stop tokens
-    # so different clubs from the same city are still distinguishable by JW.
-    if after_all and all(t in _GEO_RESIDUALS for t in after_all):
-        result = after_structural
-    else:
-        result = after_all
-    return " ".join(result) if result else " ".join(tokens)
-
-def _team_tokens(normalized: str) -> list[str]:
-    """Tokens significativos de un nombre ya normalizado (excluye stop words y tokens ≤2 chars)."""
-    return [t for t in normalized.split() if t not in _TEAM_STOP_WORDS and len(t) > 2]
-
-def _has_reserve_mismatch(tokens_a: list[str], tokens_b: list[str]) -> bool:
-    """True si un equipo tiene descriptor de reserva/filial y el otro no (Porto ≠ Porto B)."""
-    res_a = set(tokens_a) & _RESERVE_DESCRIPTORS
-    res_b = set(tokens_b) & _RESERVE_DESCRIPTORS
-    return res_a != res_b
+    return " ".join(t for t in tokens if t not in _TEAM_STOP_WORDS)
 
 def _jaro(s1: str, s2: str) -> float:
     if s1 == s2:
@@ -1477,102 +1138,9 @@ def _event_team_similarity(ev_a: dict, ev_b: dict) -> float:
     ab = _normalize_team(ev_b.get("away_team", ""))
     if not (ha and aa and hb and ab):
         return 0.0
-
-    # Hard-lock: reserva vs equipo principal — ignorar JW por alto que sea
-    if (_has_reserve_mismatch(_team_tokens(ha), _team_tokens(hb)) or
-            _has_reserve_mismatch(_team_tokens(aa), _team_tokens(ab))):
-        return 0.0
-
-    jw_direct  = (_jaro_winkler(ha, hb) + _jaro_winkler(aa, ab)) / 2
-    jw_reverse = (_jaro_winkler(ha, ab) + _jaro_winkler(aa, hb)) / 2
-    global_score = max(jw_direct, jw_reverse)
-
-    if global_score < 0.82:
-        return global_score
-
-    # Last-token disambiguation: catches "Manchester United" vs "Manchester City",
-    # "West Ham" vs "West Brom", "Inter Miami" vs "Inter Milan", etc.
-    # If last tokens diverge (JW < 0.85) → teams are different despite high global JW.
-    if jw_direct >= jw_reverse:
-        pairs = [(ha, hb), (aa, ab)]
-    else:
-        pairs = [(ha, ab), (aa, hb)]
-
-    def _last_token_ok(na: str, nb: str) -> bool:
-        ta, tb = _team_tokens(na), _team_tokens(nb)
-        if not ta or not tb:
-            return True   # nombre muy corto — confiar en JW global
-        # Geo-residual count guard (Q2): if one name is a pure geographic token
-        # ("barcelona") and the other has additional discriminating tokens
-        # ("atletico barcelona"), reject immediately — they are different clubs.
-        if len(ta) != len(tb):
-            set_a, set_b = set(ta), set(tb)
-            if (set_a.issubset(_GEO_RESIDUALS) or set_b.issubset(_GEO_RESIDUALS)) and set_a != set_b:
-                return False
-        la, lb = ta[-1], tb[-1]
-        # Aplicar solo si ambos tokens son palabras reales (len > 2).
-        # Acrónimos/sufijos cortos (len ≤ 2: "sg", "bk", "cf") no son discriminadores fiables.
-        if len(la) <= 2 or len(lb) <= 2:
-            return True
-        return _jaro_winkler(la, lb) >= 0.85
-
-    if not all(_last_token_ok(a, b) for a, b in pairs):
-        return 0.0  # tokens discriminadores divergen → equipos distintos
-
-    return global_score
-
-def _run_normalize_tests() -> None:
-    """
-    Q2 regression suite — call manually to verify the normalisation + JW pipeline.
-    Covers geo-collision, single-token geographic names, and soft-stop-word guard.
-    """
-    def sim(ha: str, aa: str, hb: str, ab: str) -> float:
-        return _event_team_similarity(
-            {"home_team": ha, "away_team": aa},
-            {"home_team": hb, "away_team": ab},
-        )
-
-    # ── _normalize_team ──────────────────────────────────────────────────────
-    assert _normalize_team("Real Madrid") == "real madrid",      "guard must retain 'real'"
-    assert _normalize_team("Real Betis") == "betis",             "non-geo residual → strip 'real'"
-    assert _normalize_team("Atletico Madrid") == "atletico madrid", "'atletico' is NOT a stop word"
-    assert _normalize_team("FC Barcelona") == "barcelona",       "structural 'fc' stripped"
-    assert _normalize_team("Barcelona") == "barcelona",          "single geo token — guard no-op"
-    assert _normalize_team("Manchester City") == "manchester city", "no stop words to strip"
-    assert _normalize_team("Manchester United") == "manchester united", "no stop words to strip"
-
-    # ── Q2 core case: single-token geo name vs multi-token composite ─────────
-    # "Barcelona" → "barcelona"; "Atletico Barcelona" → "atletico barcelona"
-    # JW("barcelona", "atletico barcelona") ≈ 0.61 < 0.82 → rejected
-    score = sim("Barcelona", "Sevilla", "Atletico Barcelona", "Malaga")
-    assert score == 0.0, f"Barcelona vs Atletico Barcelona must not match (got {score:.3f})"
-
-    # ── Geo-collision guard: Real Madrid vs Atletico Madrid ──────────────────
-    # JW("real madrid", "atletico madrid") ≈ 0.81 < 0.82 → rejected by global threshold
-    score = sim("Real Madrid", "Real Betis", "Atletico Madrid", "Valencia")
-    assert score == 0.0, f"Real Madrid vs Atletico Madrid must not match (got {score:.3f})"
-
-    # ── Same-city last-token rejection: Manchester United vs Manchester City ──
-    score = sim("Manchester United", "Liverpool", "Manchester City", "Arsenal")
-    assert score == 0.0, f"Man United vs Man City must not match (got {score:.3f})"
-
-    # ── Legitimate single-source match: FC Barcelona == Barcelona ────────────
-    score = sim("FC Barcelona", "Real Madrid", "Barcelona", "Real Madrid")
-    assert score > 0.82, f"FC Barcelona vs Barcelona must match (got {score:.3f})"
-
-    # ── PSG: short acronym token is skip (len ≤ 2) — should NOT false-reject ─
-    score = sim("Paris Saint-Germain", "Lyon", "PSG", "Olympique Lyonnais")
-    # Normalized: "paris germain" vs "psg", "lyon" vs "olympique lyonnais"
-    # JW global likely < 0.82, so 0.0 — this is correct (different names across APIs)
-    # The point is it must not CRASH and must return a float.
-    assert isinstance(score, float), "PSG test must return float"
-
-    # ── West Ham vs West Brom: len > 2 check rejects via JW(ham, brom) < 0.85 ─
-    score = sim("West Ham United", "Fulham", "West Bromwich Albion", "Brentford")
-    assert score == 0.0, f"West Ham vs West Brom must not match (got {score:.3f})"
-
-    print("_run_normalize_tests: all assertions passed ✓")
-
+    direct  = (_jaro_winkler(ha, hb) + _jaro_winkler(aa, ab)) / 2
+    reverse = (_jaro_winkler(ha, ab) + _jaro_winkler(aa, hb)) / 2
+    return max(direct, reverse)
 
 def _merge_cross_source_events(events: list, live: bool) -> list:
     """
@@ -1599,8 +1167,8 @@ def _merge_cross_source_events(events: list, live: bool) -> list:
 
         best_score, best_match = 0.0, None
         for oa in merged:
-            if _norm_sport_key(ds.get("sport_key", "")) != _norm_sport_key(oa.get("sport_key", "")):
-                continue  # sport mismatch — evita falsos matches entre deportes
+            if ds.get("sport_key") != oa.get("sport_key"):
+                continue  # strict sport_key equality — evita falsos matches entre deportes
             if not live and ds_time:
                 try:
                     oa_time = datetime.fromisoformat(oa.get("commence_time", "").replace("Z", ""))
@@ -1723,11 +1291,10 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     profit = ap["profit"]
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
-    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
-    except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
+    except: fecha_str = "??/??"
     def _leg_line(l):
         region_tag = f" [{l['region']}]" if l.get("region") else ""
         return (f"📕 {l['bookmaker']}{region_tag} 📍 {formatear_outcome(l)} "
@@ -1739,7 +1306,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
     return (f"{cabecera}{sospechoso}{draw_warn}\n\n"
-            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n"
+            f"{emoji} {nombre_deporte} — {liga}\n"
             f"🗓️ {fecha_str}{' 🎥 LIVE' if live else ''}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
@@ -1747,11 +1314,10 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
 def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
-    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
-    except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
+    except: fecha_str = "??/??"
     lineas = "".join([
         f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
         f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
@@ -1763,7 +1329,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     return (f"📢 Alerta Middlebets!{' 🎥 LIVE' if live else ''}\n"
             f"📈 Máx. si middle: +{ap['profit_max']:.2f}% | {peor_txt}\n"
             f"🍀 Probabilidad middle: {ap['prob_middle']:.2f}%\n\n"
-            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n🗓️ {fecha_str}\n"
+            f"{emoji} {nombre_deporte} — {liga}\n🗓️ {fecha_str}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
 
@@ -1776,22 +1342,29 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         cfg = get_config(uid)
         for sport, active in cfg["sports"].items():
             if active: all_sports.add(sport)
-    # Filtrar deportes pausados globalmente por el admin
-    _scanner_state = _load_scanner_state()
-    all_sports -= set(_scanner_state.get("disabled_sports", []))
     if not all_sports: return 0
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
     for sport_key in all_sports:
-        # Fetch only from VPS scrapers (Winamax + Codere via DualStats API)
+        # Concurrent fetch: The Odds API (international) + DualStats (VPS, ES casas)
+        if sport_key == "basketball":
+            odds_tasks = [fetch_odds(_bk, live=live) for _bk in BASKETBALL_API_KEYS]
+        else:
+            odds_tasks = [fetch_odds(sport_key, live=live)]
+        odds_tasks.append(fetch_dualstats_odds(sport_key, live=live))
+        results_list = await asyncio.gather(*odds_tasks, return_exceptions=True)
+
+        # Collect events from both sources, then merge cross-source by Jaro-Winkler team-name matching
         events: list[dict] = []
-        try:
-            events = await fetch_dualstats_odds(sport_key, live=live)
-        except Exception as e:
-            logger.error(f"fetch error {sport_key}: {e}")
+        for result in results_list:
+            if isinstance(result, Exception):
+                logger.error(f"fetch error {sport_key}: {result}")
+                continue
+            events.extend(result)
+        events = _merge_cross_source_events(events, live)
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
-            except (ValueError, KeyError): commence = None
+            except: commence = None
             # Pre-match: skip event when commence is unparseable
             if not live and commence is None: continue
             # Live: skip events con hora desconocida o que aún no han empezado (>5 min en el futuro)
@@ -1799,7 +1372,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
             for uid in targets:
                 if not tiene_suscripcion(uid): continue
                 # ── Comprobar pausa de alertas ──────────────────
-                if uid in pausa_alertas and local_now() < pausa_alertas[uid]: continue
+                if uid in pausa_alertas and datetime.now() < pausa_alertas[uid]: continue
                 cfg = get_config(uid)
                 if not cfg["sports"].get(sport_key, False): continue
                 if commence and not live:
@@ -1854,21 +1427,13 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                             "ts":         local_now().isoformat(),
                             "time":       event.get("commence_time", ""),
                         }
-                        # Botones fila 1: ✅/❌ | Fila 2: links directos a casas (no cuentan contra el límite 4096)
-                        link_btns = [
-                            InlineKeyboardButton(f"🔗 {leg['bookmaker']}", url=BOOKMAKER_URLS[leg["bookmaker_key"]])
-                            for leg in ap.get("legs", [])
-                            if leg.get("bookmaker_key", "") in BOOKMAKER_URLS
-                        ]
-                        kb_rows = [[
+                        kb = InlineKeyboardMarkup([[
                             InlineKeyboardButton("✅ Hecha",    callback_data=f"AH_{uid}_{alert_id}"),
                             InlineKeyboardButton("❌ No hecha", callback_data=f"ANH_{uid}_{alert_id}"),
-                        ]]
-                        if link_btns:
-                            kb_rows.append(link_btns[:4])  # máx 4 botones por fila
-                        kb = InlineKeyboardMarkup(kb_rows)
+                        ]])
                     try:
                         if kb:
+                            # tg_send + asyncio.shield para capturar message_id para edición DualStats
                             fut = await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], reply_markup=kb)
                             if asyncio.isfuture(fut):
                                 try:
@@ -1876,35 +1441,10 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                                     if sent and cache_key in alerta_cache:
                                         alerta_cache[cache_key]["msg_id"] = sent.message_id
                                         _save_alerts_cache()
-                                except (asyncio.TimeoutError, asyncio.CancelledError):
-                                    # Shield timeout: fut sigue vivo en la cola.
-                                    # Registrar done_callback con deadline para capturar msg_id cuando el sender
-                                    # lo resuelva sin actualizar entradas obsoletas si el bot tardó demasiado.
-                                    import time as _time
-                                    _cb_deadline = _time.monotonic() + 60.0  # 60s máximo de espera post-timeout
-                                    def _capture_msg_id(
-                                        f: asyncio.Future,
-                                        _ck: str = cache_key,
-                                        _dl: float = _cb_deadline,
-                                    ) -> None:
-                                        try:
-                                            if _time.monotonic() > _dl:
-                                                return   # demasiado tarde — no actualizar cache obsoleta
-                                            if f.cancelled() or f.exception():
-                                                return
-                                            result = f.result()
-                                            if result and _ck in alerta_cache:
-                                                alerta_cache[_ck]["msg_id"] = result.message_id
-                                                _save_alerts_cache()
-                                        except Exception:
-                                            pass
-                                    if not fut.done():
-                                        fut.add_done_callback(_capture_msg_id)
-                                    logger.debug(f"[DualStats] shield timeout uid={uid} — done_callback registrado (deadline 60s)")
                                 except Exception:
-                                    logger.warning(f"[DualStats] Error capturando message_id uid={uid}")
+                                    logger.warning(f"[DualStats] No se pudo capturar message_id uid={uid}")
                             elif fut is not None:
-                                # Direct send (queue=None) — fut ES el Message
+                                # Direct send (queue None) — fut ES el Message
                                 if cache_key in alerta_cache:
                                     alerta_cache[cache_key]["msg_id"] = fut.message_id
                                     _save_alerts_cache()
@@ -1921,30 +1461,32 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     if not user_ids:
         stats["surebets_encontradas"]  = total_surebets
         stats["middlebets_encontradas"] = total_middles
-        stats["ultima_actualizacion"]   = local_now()
+        stats["ultima_actualizacion"]   = datetime.now()
         interval = BOT_CONFIG["scan_live_interval"] if live else BOT_CONFIG["scan_prematch_interval"]
-        stats["proxima_actualizacion"]  = local_now() + timedelta(seconds=interval)
+        stats["proxima_actualizacion"]  = datetime.now() + timedelta(seconds=interval)
     logger.info(f"Escaneo {'LIVE' if live else 'PRE'}: {total_surebets} surebets, {total_middles} middles")
     return total_surebets + total_middles
 
 async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[prematch] Sin créditos API — escaneo omitido.")
+        return
     await escanear_y_alertar(context.application, live=False)
 
 async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     global live_empty_streak
-    # Prune stale live deduplication entries (live games never last >3h)
-    cutoff = datetime.now() - timedelta(hours=3)
-    stale = [k for k, v in live_sent_surebets.items() if v["ts"] < cutoff]
-    if stale:
-        for k in stale:
-            del live_sent_surebets[k]
-        logger.debug(f"[live_cache] Pruned {len(stale)} stale entries, {len(live_sent_surebets)} remaining")
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[live] Sin créditos API — escaneo omitido.")
+        return
     found = await escanear_y_alertar(context.application, live=True)
     if found == 0:
         live_empty_streak += 1
     else:
         live_empty_streak = 0
-
+    # Log créditos tras cada ciclo live
+    if api_credits_remaining is not None:
+        logger.info(f"[API] Créditos restantes: {api_credits_remaining} | Usados: {api_credits_used}"
+                    + (" ⚠️ BAJOS" if api_credits_remaining < 500 else ""))
 
 # ============================================================
 # MENÚ NO SUSCRITO
@@ -1966,7 +1508,7 @@ async def menu_no_suscrito(update):
         [InlineKeyboardButton("💳 Suscribirse", callback_data="suscribirse")],
     ]
     texto = (
-        "🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        "🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         "🎫 Suscripción: *NO* ❌\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "• 💎 Surebets 🔒\n• 🎯 Middlebets 🔒\n• 📊 Valuebets 🔒\n• ⚡ LIVE 🔒\n"
@@ -2000,12 +1542,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     args    = context.args
 
-    if is_banned(user_id):
-        await update.message.reply_text(
-            "🚫 Tu acceso a FiidesBot está restringido.\n"
-            "Si crees que es un error, contacta con soporte.")
-        return
-
     # ── Vinculación DualStats (token CONNECT_xxxx) ─────────
     if args and args[0].startswith("CONNECT_"):
         token = args[0][len("CONNECT_"):]
@@ -2029,8 +1565,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=ADMIN_ID,
                         text=f"🔗 *Nuevo referido*\n{user.full_name} (ID: `{user_id}`) por ID `{ref_id}`",
                         parse_mode="Markdown")
-                except Exception as e:
-                    logger.debug("Referral notify ignored: %s", e)
+                except: pass
 
     if user_id not in creditos:
         creditos[user_id] = CREDITOS_INICIALES
@@ -2048,22 +1583,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         guardar_db()
         try:
-            nl = "\n"
-            msg_prueba = (
-                f"🆕 *Nuevo usuario en prueba*{nl}"
-                f"{user.full_name} (`{user_id}`){nl}"
-                f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"
-            )
-            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_prueba, parse_mode="Markdown")
-            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_prueba, parse_mode="Markdown")
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(f"🆕 *Nuevo usuario en prueba*\n"
+                      f"{user.full_name} (`{user_id}`)\n"
+                      f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"),
+                parse_mode="Markdown")
         except Exception:
             pass
         await update.message.reply_text(
-            f"🎁 *¡Bienvenido a FiidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎁 *¡Bienvenido a FidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
             f"Tienes *3 días de prueba gratuita* para descubrir cómo funcionan las alertas "
             f"de surebets y middlebets en tiempo real.\n\n"
             f"⏰ Tu prueba expira el *{trial_exp.strftime('%d/%m/%Y a las %H:%M')}*\n\n"
-            f"_Cuando termine, elige un plan desde el menú para seguir recibiendo alertas._",
+            f"_Cuando termine, contacta con el administrador para continuar recibiendo alertas._",
             parse_mode="Markdown")
     else:
         guardar_db()
@@ -2078,8 +1611,7 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     await update.message.reply_text(
         f"🪪 *Tu ID de Telegram:*\n`{uid}`\n\n"
-        "Puedes suscribirte directamente desde el menú principal del bot.\n"
-        "Si necesitas ayuda, comparte este ID con soporte.",
+        "Comparte este ID con el administrador para activar tu suscripción.",
         parse_mode="Markdown")
 
 async def cmd_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2098,15 +1630,19 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
-    ahora   = local_now()
+    ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
-    casas_activas = sum(1 for v in BOOKMAKERS.values() if "✅" in v.get("status", ""))
-    casas_str   = f" • {casas_activas}/{len(BOOKMAKERS)} casas con scraper activo (detalle en /casas)"
+    casas_str   = "\n".join([f" • 🟢 {n}: Activa" for n in BOOKMAKER_NAMES.values()])
+    total_subs  = len([u for u in subscriptions if tiene_suscripcion(u)])
+    creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
+                      if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
+    creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
     await update.message.reply_text(
-        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
         f" • ⏱️ Próx. actualización: {proxima}\n"
+        f" • 👥 Suscriptores activos: {total_subs}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📡 *Casas monitorizadas:*\n{casas_str}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -2117,7 +1653,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆕 {ahora.strftime('%d/%m/%Y %H:%M')}\n"
         f"⏱️ Pre-partido: cada {BOT_CONFIG['scan_prematch_interval']//60} min | "
         f"Live: cada {BOT_CONFIG['scan_live_interval']//60} min\n"
-        f"",
+        f"{creditos_linea}{creditos_alerta}",
         parse_mode="Markdown")
 
 # ============================================================
@@ -2140,14 +1676,14 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         icono_sub         = "🆕"
         dias_str_completo = f"PRUEBA — {horas_left}h restantes\n🗓️ Hasta {expires_dt.strftime('%d/%m/%y %H:%M')}"
         aviso = (f"\n⚠️ *Prueba gratuita: {horas_left}h restantes.* "
-                 f"Pulsa 🔄 Renovar para continuar.") if horas_left < 24 else ""
+                 f"Contacta con el administrador para continuar.") if horas_left < 24 else ""
     elif dias == 9999:
         dias_str_completo = "∞ días restantes"
         aviso = ""
     else:
         fecha_str         = expires_dt.strftime("%d/%m/%y %H:%M") if expires_dt else "—"
         dias_str_completo = f"{dias} días restantes\n🗓️ Termina {fecha_str}"
-        aviso = f"\n⚠️ *¡Suscripción caduca en {dias} días!* Pulsa 🔄 Renovar abajo." if dias <= 5 else ""
+        aviso = f"\n⚠️ *¡Suscripción caduca en {dias} días!* Renueva pronto." if dias <= 5 else ""
 
     # ── Botón DualStats con estado ─────────────────────────
     ds_label = "📈 DualStats ✅" if user_id in dualstats_vinculados else "📈 DualStats"
@@ -2167,7 +1703,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("💰 Créditos",     callback_data="mis_creditos")],
         [InlineKeyboardButton("🆘 Soporte",      callback_data="soporte"),
          InlineKeyboardButton("🆕 Novedades",    callback_data="novedades")],
-        [InlineKeyboardButton("🔄 Renovar suscripción", callback_data="suscribirse")],
+        [InlineKeyboardButton("💳 Suscribirse",  callback_data="suscribirse")],
     ]
     surebets_icon  = "✅" if cfg.get("surebets_on", True) else "❌"
     middles_icon   = "✅" if cfg.get("middlebets_on", False) else "❌"
@@ -2180,7 +1716,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mins = int((pausa_alertas[user_id] - datetime.now()).total_seconds() / 60)
         pausa_str = f"\n⏸️ *Alertas pausadas* — {mins} min restantes"
     texto = (
-        f"🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👤 *{nombre}* — {icono_sub} *{dias_str_completo}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"• 💎 Surebets {surebets_icon}\n• 🎯 Middlebets {middles_icon}\n"
@@ -2196,7 +1732,6 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━{aviso}"
     )
     if update.callback_query:
-        await update.callback_query.answer()
         await update.callback_query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     else:
         await update.message.reply_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -2204,34 +1739,9 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # PANELES ESTADÍSTICAS (sin cambios)
 # ============================================================
-EJEMPLO_SUREBET_MSG = (
-    "📊 *Ejemplo Surebet*\n\n"
-    "💵 *Beneficio: \\+6\\.12%*\n"
-    "📢 *Alerta Surebets\\!*\n\n"
-    "💎 Profit: \\+6\\.12%\n"
-    "⚽ Fútbol\n"
-    "🗓️ 12/04 21:00\n"
-    "🏆 *Real Madrid \\- Villarreal CF* \\(LaLiga\\)\n"
-    "🎯 Mercado: Prop Jugador\n"
-    "📕 *Winamax* 📍 Kylian Mbappé \\+1\\.5 remates a puerta 🎲 @2\\.20 💰 48\\.31%\n"
-    "📕 *Codere* 📍 Kylian Mbappé \\-1\\.5 remates a puerta 🎲 @2\\.05 💰 51\\.69%\n"
-    "⏱ Enviada a las 20:58:14\n\n"
-    "📚 *Explicación:*\n"
-    "• Profit \\(\\+6\\.12%\\): beneficio garantizado sea cual sea el resultado\\.\n"
-    "• Cada línea: casa de apuestas, selección, cuota \\(@\\) y stake \\(💰\\)\\.\n"
-    "• El stake indica cuánto apostar por cada 100€: 48\\.31€ en Winamax y 51\\.69€ en Codere\\.\n"
-    "• Ambas apuestas cubren resultados opuestos → ganas siempre\\.\n\n"
-    "💡 *Recomendación:*\n"
-    "• Apuesta cantidades sin decimales, idealmente múltiplos de 5€\\.\n"
-    "• Coloca primero la apuesta con mayor cuota\\.\n"
-    "• Verifica las cuotas antes de apostar — cambian rápido\\.\n\n"
-    "⚠️ *Atención:*\n"
-    "• Revisa cuotas y reglas antes de apostar\\. Puede haber errores\\."
-)
-
 async def panel_surebets(update, context):
     await update.callback_query.answer()
-    ahora   = local_now()
+    ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
@@ -2247,40 +1757,12 @@ async def panel_surebets(update, context):
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Buscar surebets ahora", callback_data="buscar_surebets")],
-            [InlineKeyboardButton("📖 Ejemplo Surebet",       callback_data="ejemplo_surebet")],
             [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
-EJEMPLO_MIDDLE_MSG = (
-    "📊 *Ejemplo Middlebet*\n\n"
-    "👑 *Valor Esperado: \\+2\\.78% \\- \\+105\\.58%*\n"
-    "📢 *Alerta Middlebets\\!*\n\n"
-    "💎 Valor esperado: \\+2\\.78% \\(Sin riesgo\\)\n"
-    "📉 Mín\\. 2\\.78% \\| 📈 Máx\\. 105\\.58%\n"
-    "🍀 Probabilidad middle: 22\\.40%\n\n"
-    "⚽ Fútbol\n"
-    "🗓️ 15/04 20:00\n"
-    "🏆 *Sevilla FC \\- Real Betis* \\(LaLiga\\)\n"
-    "🎯 Mercado: Total Goles \\+/\\- 2\\.0\n"
-    "📕 *Winamax* 📍 Más 1\\.5 goles 🎲 @1\\.70 💰 60\\.47%\n"
-    "📕 *Codere* 📍 Menos 2\\.5 goles 🎲 @2\\.60 💰 39\\.53%\n"
-    "⏱ Enviada a las 19:58:32\n\n"
-    "📚 *Explicación:*\n"
-    "• Una Middlebet cubre dos líneas que dejan una ventana de doble ganancia\\.\n"
-    "• Mín\\. \\(\\+2\\.78%\\): lo que ganas sí o sí, aunque solo caiga uno de los dos lados\\.\n"
-    "• Máx\\. \\(\\+105\\.58%\\): lo que ganas si hay exactamente 2 goles \\(ambas apuestas ganan\\)\\.\n"
-    "• Probabilidad middle \\(🍀 22\\.40%\\): estimación de que el resultado caiga en la ventana\\.\n\n"
-    "💡 *Recomendación:*\n"
-    "• Middlebets con mínimo ≥ 0% son sin riesgo — nunca pierdes aunque la ventana falle\\.\n"
-    "• Prioriza las que tienen mayor probabilidad de middle \\(\\>15%\\)\\.\n"
-    "• Coloca primero la apuesta con mayor cuota\\.\n\n"
-    "⚠️ *Atención:*\n"
-    "• Revisa cuotas y reglas antes de apostar\\. Puede haber errores\\."
-)
-
 async def panel_middles(update, context):
     await update.callback_query.answer()
-    ahora   = local_now()
+    ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
@@ -2289,64 +1771,33 @@ async def panel_middles(update, context):
         f"🎯 Nº Middlebets: *{stats['middlebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Información:*\n• Apuestas en dos casas con un rango de resultados ganador.\n"
+        f"💡 *Información:*\n• Zona donde ganas las dos apuestas a la vez.\n"
         f"• Si el resultado cae en el middle, ganas las DOS apuestas.\n"
-        f"• Si no cae en el middle, la pérdida es mínima o nula.\n\n"
+        f"• Riesgo 0 — matemáticamente superior a una surebet.\n\n"
         f"⚠️ *Atención:*\n• La probabilidad del middle es una estimación.\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Buscar middlebets ahora", callback_data="buscar_middles")],
-            [InlineKeyboardButton("📖 Ejemplo Middlebet",       callback_data="ejemplo_middle")],
             [InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
-EJEMPLO_VALUE_MSG = (
-    "📊 *Ejemplo Valuebet*\n\n"
-    "💎 *Valor esperado: \\+7\\.50%*\n"
-    "🍀 Probabilidad real: 50\\.0%\n"
-    "🏀 Baloncesto\n"
-    "🗓️ 10/04 00:40\n"
-    "🏆 *WAS Wizards \\– NY Knicks* \\(NBA\\)\n"
-    "📕 *Sportium* 📍 Rudy Gobert \\-9\\.5 rebotes \\(Prop jugador\\) 🎲 @2\\.15\n"
-    "⏱ Enviada a las 00:38:11\n\n"
-    "📚 *Explicación:*\n"
-    "• Una Valuebet es una apuesta donde la cuota pagada supera la cuota justa del mercado\\.\n"
-    "• La cuota justa para probabilidad 50% es @2\\.00\\.\n"
-    "• Sportium paga @2\\.15 → hay sobrevalor de \\+7\\.50%\\.\n"
-    "• A largo plazo y con volumen suficiente, esto genera beneficio consistente\\.\n\n"
-    "📐 *Cálculo:*\n"
-    "• EV \\= \\(prob\\.ganar × beneficio neto\\) \\- \\(prob\\.perder × pérdida\\)\n"
-    "• EV \\= \\(50% × 1\\.15€\\) \\- \\(50% × 1€\\) \\= \\+0\\.075€ por euro apostado\n\n"
-    "💡 *Recomendación:*\n"
-    "• Comprueba que la cuota sigue siendo ≥ @2\\.15 antes de apostar\\.\n"
-    "• No apuestes más del 2\\-3% de tu bankroll por valuebet\\.\n"
-    "• Necesitas volumen — mínimo 50 valuebets para que el EV se materialice\\.\n\n"
-    "⚠️ *Atención:*\n"
-    "• No garantiza ganancia inmediata — cada apuesta individual puede perderse\\.\n"
-    "• Revisa cuotas, jugadores y reglas antes de apostar\\. Puede haber errores\\."
-)
-
 async def panel_valuebets(update, context):
     await update.callback_query.answer()
-    ahora   = local_now()
+    ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     volver  = "menu_principal" if tiene_suscripcion(update.effective_user.id) else "menu_no_suscrito"
     await update.callback_query.edit_message_text(
         f"📊 *Panel Valuebets*\n━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ Actualizado cada ~{BOT_CONFIG['scan_prematch_interval']//60} min\n\n"
         f"📊 Nº Valuebets: *{stats['valuebets_encontradas']}* ⏳ Act: {ultima}\n"
         f"🕐 Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Información:*\n• Apuestas con valor esperado \\(EV\\) positivo a largo plazo.\n"
+        f"💡 *Información:*\n• Apuestas con valor esperado positivo a largo plazo.\n"
         f"• No garantizan ganancia en cada apuesta individual.\n"
         f"• Requieren volumen para ver beneficio consistente.\n\n"
         f"⚠️ *Próximamente disponible.*\n"
         f"━━━━━━━━━━━━━━━━━━\n🆕 {ahora.strftime('%d/%m/%Y %H:%M')}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Ejemplo Valuebet", callback_data="ejemplo_valuebet")],
-            [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
-        ]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]),
         parse_mode="Markdown")
 
 async def panel_freebets(update, context):
@@ -2410,7 +1861,7 @@ async def freebet_casa_seleccionada(update, context, casa_key):
     halladas = []
     for sport_key in sports_on:
         try:
-            events = await fetch_dualstats_odds(sport_key, live=False)
+            events = await fetch_odds(sport_key, live=False)
         except Exception:
             continue
         for event in events:
@@ -2492,7 +1943,7 @@ async def mis_referidos(update, context):
         f"• Sin límite de referidos.\n━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📤 Compartir invitación",
-                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FiidesBot%20y%20gana%20créditos%20gratis!")],
+                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FidesBot%20y%20gana%20créditos%20gratis!")],
             [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
         ]), parse_mode="Markdown")
 
@@ -2525,7 +1976,7 @@ async def mis_creditos(update, context):
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎁 Buscar surebets", callback_data="panel_freebets")],
             [InlineKeyboardButton("👥 Mis referidos",   callback_data="mis_referidos")],
-            [InlineKeyboardButton("🔄 Renovar" if suscrito else "💳 Suscribirse", callback_data="suscribirse")],
+            [InlineKeyboardButton("💳 Suscribirse",     callback_data="suscribirse")],
             [InlineKeyboardButton("🔙 Volver",          callback_data=volver)],
         ]), parse_mode="Markdown")
 
@@ -2553,7 +2004,7 @@ async def menu_alertas(update, context):
     await update.callback_query.edit_message_text(
         f"🔔 *Alertas*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"• 💎 Surebets: {'✅ ON' if s else '❌ OFF'}\n  Arbitraje puro. Ganancia garantizada.\n\n"
-        f"• 🎯 Middlebets: {'✅ ON' if m else '❌ OFF'}\n  Si cae en el middle, ganas las dos. Si no, pérdida mínima.\n\n"
+        f"• 🎯 Middlebets: {'✅ ON' if m else '❌ OFF'}\n  Siempre ganas algo. Si cae en el middle, ganas las dos.\n\n"
         f"• 📊 Valuebets: {'✅ ON' if v else '❌ OFF'}\n  Apuestas con valor esperado positivo.\n\n"
         f"• ⚡ LIVE: {'✅ ON' if l else '❌ OFF'}\n  Alertas durante el partido en directo.\n\n"
         f"━━━━━━━━━━━━━━━━━━{pausa_info}",
@@ -2576,7 +2027,7 @@ async def menu_config(update, context):
     cfg = get_config(update.effective_user.id)
     await update.callback_query.edit_message_text(
         f"⚙️ *Configuración*\n━━━━━━━━━━━━━━━━━━\n"
-        f"💎 Profit mín. Surebet: *{cfg.get('min_profit_surebet', 1.0)}%*\n"
+        f"💎 Profit mín. Surebet: *{cfg.get('min_profit_surebet',3.0)}%*\n"
         f"🎯 Profit mín. Middle: *{cfg.get('min_profit_middle',2.0)}%*\n"
         f"🍀 Prob. mín. Middle: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit mín. Value: *{cfg.get('min_profit_value',5.0)}%*\n"
@@ -2590,12 +2041,13 @@ async def menu_config(update, context):
             [InlineKeyboardButton(f"🍀 Prob. Middle mín: {cfg.get('min_prob_middle',5.0)}%", callback_data="cfg_prob_middle")],
             [InlineKeyboardButton(f"📊 Profit Value: {cfg.get('min_profit_value',5.0)}%",    callback_data="cfg_profit_value")],
             [InlineKeyboardButton(f"📆 Filtro Pre-partido: {cfg['max_days']} días",           callback_data="cfg_days")],
-            [InlineKeyboardButton(f"🏅 Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])})", callback_data="cfg_deportes")],
-            [InlineKeyboardButton(f"🏦 Casas de apuestas ({sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])})", callback_data="cfg_casas")],
+            [InlineKeyboardButton("🏅 Deportes",         callback_data="cfg_deportes")],
+            [InlineKeyboardButton("🏦 Casas de apuestas", callback_data="cfg_casas")],
             [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
 async def menu_cfg_deportes(update, context):
+    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
     keyboard = [[InlineKeyboardButton(
         ("✅ " if cfg["sports"].get(k) else "❌ ") + emoji + " " + nombre,
@@ -2604,44 +2056,21 @@ async def menu_cfg_deportes(update, context):
                      InlineKeyboardButton("❌ Ninguno", callback_data="deportes_ninguno")])
     keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
-        f"🏅 *Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])} activos)*\n"
-        f"Elige los deportes para los que quieres recibir alertas de surebets y middlebets.\n"
-        f"_Toca cualquier deporte para activarlo o desactivarlo._",
+        "🏅 *Deportes*\nToca para activar o desactivar.",
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def menu_cfg_casas(update, context):
+    await update.callback_query.answer()
     cfg = get_config(update.effective_user.id)
-    activas = sum(cfg["bookmakers"].values())
-    casas_sel = [n for k, n in BOOKMAKER_NAMES.items() if cfg["bookmakers"].get(k)] or ["Ninguna"]
-    casas_lista = [f"• {n}" for n in casas_sel]
-    texto = (
-        f"🏠 *Configuración Casas:*\n"
-        f"📊 Estado: *{activas}/{len(BOOKMAKER_NAMES)}* casas activas\n\n"
-        f"✅ *Casas seleccionadas:*\n" + "\n".join(casas_lista) + "\n\n"
-        f"💡 *Información:*\n"
-        f"• Más casas → más apuestas.\n"
-        f"• Surebets y Middlebets: 2 casas mín.\n"
-        f"• Valuebets: 1 casa mín.\n\n"
-        f"_Toca cualquier casa para activarla o desactivarla._"
-    )
-    # Botones de casas de 2 en 2
-    keyboard = []
-    items = list(BOOKMAKER_NAMES.items())
-    for i in range(0, len(items), 2):
-        fila = [
-            InlineKeyboardButton(
-                ("✅ " if cfg["bookmakers"].get(k) else "❌ ") + n,
-                callback_data=f"book_{k}"
-            ) for k, n in items[i:i+2]
-        ]
-        keyboard.append(fila)
-    keyboard.append([
-        InlineKeyboardButton("✅ Seleccionar todo", callback_data="casas_todas"),
-        InlineKeyboardButton("🔴 Deseleccionar todo", callback_data="casas_ninguna"),
-    ])
+    keyboard = [[InlineKeyboardButton(
+        ("✅ " if cfg["bookmakers"].get(k) else "❌ ") + n,
+        callback_data=f"book_{k}")] for k, n in BOOKMAKER_NAMES.items()]
+    keyboard.append([InlineKeyboardButton("✅ Todas",  callback_data="casas_todas"),
+                     InlineKeyboardButton("❌ Ninguna", callback_data="casas_ninguna")])
     keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
-        texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        "🏦 *Casas de apuestas*\nToca para activar o desactivar.",
+        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ============================================================
 # TECLADO NUMÉRICO
@@ -2786,6 +2215,29 @@ async def handle_numerico(update, context, tipo, accion):
 # ============================================================
 # SUSCRIPCIÓN / SOPORTE / TYC / ESTADO
 # ============================================================
+def get_texto_plan(dias, user_id, tracker=False):
+    iban     = "ES04 1583 0001 1191 8598 6678"
+    titular  = "Juan Portal Bosch / Alejandro de Quevedo Gallego"
+    sufijo   = "T" if tracker else ""
+    concepto = f"FidesBot {user_id} {dias}D{sufijo}"
+    base = (f"💳 *Transferencia bancaria*\nIBAN: `{iban}`\nTitular: {titular}\n\n"
+            f"📌 *Concepto del pago:*\n`{concepto}`\n"
+            f"Copia exactamente este concepto al hacer la transferencia\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"Una vez realizado el pago pulsa el botón de abajo.\n"
+            f"Recibirás confirmación lo antes posible 🚀")
+    if tracker:
+        return (f"🔗 *Plan PRO+Tracker — 1 mes — 49,99€*\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"✅ Incluye:\n• Todas las alertas de FidesBot\n"
+                f"• Registro automático en DualStats Tracker\n"
+                f"• Botones ✅/❌ en cada alerta\n"
+                f"• Estadísticas web completas (ROI, P&L…)\n\n"
+                f"🎁 *1er mes: 39,99€* _(luego 49,99€)_\n\n{base}")
+    if dias == 7:    return f"🗓️ *Plan PRO 1 semana — 17€*\n━━━━━━━━━━━━━━━━━━\n\n{base}"
+    elif dias == 14: return f"📅 *Plan PRO 2 semanas — 25€*\n━━━━━━━━━━━━━━━━━━\n\n{base}"
+    else: return (f"💎 *Plan PRO 1 mes — 45€* ⭐\n━━━━━━━━━━━━━━━━━━\n\n"
+                  f"🎁 *OFERTA NUEVO USUARIO: 35€*\n_(45€ los meses siguientes)_\n\n{base}")
+
 async def pagar_plan_stripe(update, context, plan_key: str):
     """Genera un link de Stripe y lo manda al usuario."""
     query = update.callback_query
@@ -2803,18 +2255,15 @@ async def pagar_plan_stripe(update, context, plan_key: str):
         if not checkout_url:
             await msg.edit_text("❌ Error al generar el enlace. Inténtalo de nuevo más tarde.")
             return
-        nuevo = not ha_pagado_antes(user_id)
         plan_info = {
-            "bot_7":       ("🗓️ PRO 1 semana",     "19,99€"),
-            "bot_14":      ("📅 PRO 2 semanas",    "32,99€"),
-            "bot_30":      ("💎 PRO 1 mes",        "34,99€" if nuevo else "44,99€"),
-            "bot_tracker": ("🔗 PRO+Tracker 1 mes", "39,99€" if nuevo else "49,99€"),
+            "bot_7":       ("🗓️ PRO 1 semana",          "17€"),
+            "bot_14":      ("📅 PRO 2 semanas",          "25€"),
+            "bot_30":      ("💎 PRO 1 mes",              "45€"),
+            "bot_tracker": ("🔗 PRO+Tracker 1 mes",      "49,99€"),
         }
         label, precio = plan_info.get(plan_key, ("Plan", ""))
-        primer_mes = nuevo and plan_key in ("bot_30", "bot_tracker")
-        oferta_txt = "\n_✨ Precio especial de bienvenida — primer mes_" if primer_mes else ""
         await msg.edit_text(
-            f"💳 *{label} — {precio}*{oferta_txt}\n\n"
+            f"💳 *{label} — {precio}*\n\n"
             f"Pulsa el botón para pagar de forma segura con Stripe.\n"
             f"Tu suscripción se activará *automáticamente* al completar el pago ✅",
             parse_mode="Markdown",
@@ -2831,22 +2280,74 @@ async def mostrar_suscripcion(update, context):
     await update.callback_query.answer()
     user_id  = update.effective_user.id
     suscrito = tiene_suscripcion(user_id)
-    nuevo    = not ha_pagado_antes(user_id)
     volver   = "menu_principal" if suscrito else "menu_no_suscrito"
-    if nuevo:
-        btn_30      = "💎 1 mes — 34,99€ ✨ Oferta 1er mes"
-        btn_tracker = "🔗 1 mes — 39,99€ ✨ Oferta 1er mes"
-    else:
-        btn_30      = "💎 1 mes — 44,99€"
-        btn_tracker = "🔗 1 mes — 49,99€"
     await update.callback_query.edit_message_text(SUSCRIPCION,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗓️ PRO · 1 semana — 19,99€",  callback_data="stripe_bot_7")],
-            [InlineKeyboardButton("📅 PRO · 2 semanas — 32,99€", callback_data="stripe_bot_14")],
-            [InlineKeyboardButton(btn_30,                        callback_data="stripe_bot_30")],
-            [InlineKeyboardButton(btn_tracker,                   callback_data="stripe_bot_tracker")],
-            [InlineKeyboardButton("🔙 Volver",                   callback_data=volver)],
+            [InlineKeyboardButton("— PRO —", callback_data="bloqueado")],
+            [InlineKeyboardButton("🗓️ 1 semana — 17€",              callback_data="stripe_bot_7")],
+            [InlineKeyboardButton("📅 2 semanas — 25€",             callback_data="stripe_bot_14")],
+            [InlineKeyboardButton("💎 1 mes — 45€ (35€ 1er mes) ⭐", callback_data="stripe_bot_30")],
+            [InlineKeyboardButton("— PRO+Tracker —",                callback_data="bloqueado")],
+            [InlineKeyboardButton("🔗 1 mes — 49,99€ (39,99€ 1er mes)", callback_data="stripe_bot_tracker")],
+            [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
         ]), parse_mode="Markdown")
+
+async def mostrar_plan(update, context, dias, tracker=False):
+    user_id = update.effective_user.id
+    if tracker:
+        label = "PRO+Tracker (1 mes)"
+        cb    = "pago_plan_tracker_30"
+    else:
+        label = {7:"PRO 1 semana", 14:"PRO 2 semanas"}.get(dias,"PRO 1 mes")
+        cb    = f"pago_plan_{dias}"
+    texto = get_texto_plan(dias, user_id, tracker=tracker)
+    await update.callback_query.edit_message_text(texto,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"✅ Ya he pagado — {label}", callback_data=cb)],
+            [InlineKeyboardButton("🔙 Volver a planes", callback_data="suscribirse")],
+        ]), parse_mode="Markdown")
+
+async def pago_realizado(update, context, dias=30, tracker=False):
+    await update.callback_query.answer()
+    user   = update.effective_user
+    user_id = user.id; nombre = user.full_name
+    suscrito = tiene_suscripcion(user_id)
+    volver   = "menu_principal" if suscrito else "menu_no_suscrito"
+    if tracker:
+        plan_label = "PRO+TRACKER (1 mes)"
+        concepto   = f"FidesBot {user_id} 30DT"
+    else:
+        plan_label = {7:"PRO 1 SEMANA", 14:"PRO 2 SEMANAS"}.get(dias,"PRO 1 MES")
+        concepto   = f"FidesBot {user_id} {dias}D"
+    if suscrito:
+        await update.callback_query.edit_message_text(
+            f"ℹ️ *Ya tienes una suscripción activa*\n\n"
+            f"Si quieres renovar o ampliar tu suscripción, contacta directamente con el administrador.\n\n"
+            f"Tu ID: `{user_id}`\nConcepto de pago: `{concepto}`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]])); return
+    try:
+        sufijo_t = "_T" if tracker else ""
+        await context.bot.send_message(chat_id=PAGOS_GROUP_ID,
+            text=f"💰 *Nuevo pago notificado*\n━━━━━━━━━━━━━━━━━━\n"
+                 f"👤 *{nombre}*\n🪪 ID: `{user_id}`\n📅 Plan: *{plan_label}*\n━━━━━━━━━━━━━━━━━━\nPulsa el botón para activar:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                f"✅ Activar {plan_label}",
+                callback_data=f"admin_activar_rapido_{user_id}_{dias}{sufijo_t}"
+            )]]), parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error notificando grupo: {e}")
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID,
+                text=f"💰 *Nuevo pago notificado*\n👤 *{nombre}*\n🪪 ID: `{user_id}`\nPlan: {plan_label}\n\nPara activar:\n`activar {user_id} {dias}`",
+                parse_mode="Markdown")
+        except: pass
+    await update.callback_query.edit_message_text(
+        f"✅ *¡Notificación enviada!*\n\n"
+        f"El administrador ha recibido tu solicitud.\nRecibirás confirmación lo antes posible 🚀\n\n"
+        f"Tu ID: `{user_id}`\nPlan elegido: *{plan_label}*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data=volver)]]))
 
 async def mostrar_hub_soporte(update, context):
     query  = update.callback_query
@@ -2921,13 +2422,10 @@ async def mostrar_novedades(update, context):
         await update.message.reply_text(NOVEDADES_HUB, reply_markup=kb, parse_mode="Markdown")
 
 async def novedades_subpagina(update, context, texto):
-    try:
-        await update.callback_query.edit_message_text(texto,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="novedades")]]),
-            parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"[novedades_subpagina] FALLO: {type(e).__name__}: {e}")
-        raise
+    await update.callback_query.answer()
+    await update.callback_query.edit_message_text(texto,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="novedades")]]),
+        parse_mode="Markdown")
 
 async def soporte_mi_id(update, context):
     await update.callback_query.answer()
@@ -2935,18 +2433,20 @@ async def soporte_mi_id(update, context):
     await update.callback_query.edit_message_text(
         f"🪪 *Tu ID de Telegram*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"`{uid}`\n\n"
-        "_Puedes suscribirte directamente desde el menú principal. Si necesitas ayuda, comparte este ID con soporte._",
+        "_Comparte este ID con el administrador para activar o renovar tu suscripción._",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="soporte")]]),
         parse_mode="Markdown")
 
 async def soporte_estado_bot(update, context):
     await update.callback_query.answer()
-    ahora   = local_now()
+    ahora   = datetime.now()
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
+    total_subs = len([u for u in subscriptions if tiene_suscripcion(u)])
     await update.callback_query.edit_message_text(
-        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"✅ Servicio operativo\n"
+        f"👥 Suscriptores activos: *{total_subs}*\n"
         f"⏱️ Último escaneo: *{ultima}*\n"
         f"⏭️ Próximo escaneo: *{proxima}*\n"
         f"💎 Surebets encontradas: *{stats['surebets_encontradas']}*\n"
@@ -2989,10 +2489,7 @@ async def ver_estado(update, context):
         f"👥 Referidos: *{len(mis_refs)}*\n\n"
         "🏅 *Deportes:*\n" + "\n".join(deportes_activos) + "\n\n"
         "🏦 *Casas:*\n" + ", ".join(casas_activas),
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Ver planes",        callback_data="suscribirse")],
-            [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
-        ]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver al panel", callback_data="menu_principal")]]),
         parse_mode="Markdown")
 
 # ============================================================
@@ -3015,7 +2512,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sc_me = _get_scanner_cfg(update.effective_user.id)
     scanner_line = f"🔎 Scanner: {'✅ ON' if sc_me.get('active') else '❌ OFF'} | Profit ≥{sc_me.get('minProfitPct', 1.5)}%"
     await update.message.reply_text(
-        f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👥 Suscriptores activos: *{total}*\n"
         f"💎 Surebets: *{stats['surebets_encontradas']}*\n"
         f"🎯 Middles: *{stats['middlebets_encontradas']}*\n"
@@ -3054,15 +2551,8 @@ async def handle_admin_callback(update, context):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="admin_volver")]]),
             parse_mode="Markdown")
     elif data == "admin_broadcast":
-        await query.edit_message_text(
-            "📢 *Mensaje a todos los suscriptores*\n\nEscribe el mensaje a enviar:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_broadcast_cancel")]]),
-            parse_mode="Markdown")
+        await query.edit_message_text("📢 Escribe el mensaje para todos:")
         context.user_data["admin_waiting"] = "broadcast"
-    elif data == "admin_broadcast_cancel":
-        context.user_data.pop("admin_waiting", None)
-        await query.edit_message_text("❌ Broadcast cancelado.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="admin_volver")]]))
     elif data == "admin_reflink":
         link = f"https://t.me/{BOT_USERNAME}?start={ADMIN_ID}"
         await query.edit_message_text(f"🔗 *Tu link de referido:*\n`{link}`",
@@ -3085,7 +2575,7 @@ async def handle_admin_callback(update, context):
         sc = _get_scanner_cfg(uid_query)
         scanner_line = f"🔎 Scanner: {'✅ ON' if sc.get('active') else '❌ OFF'} | Profit ≥{sc.get('minProfitPct', 1.5)}%"
         await query.edit_message_text(
-            f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+            f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
             f"👥 *{total}* suscriptores\n{scanner_line}\n━━━━━━━━━━━━━━━━━━",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Activar usuario",   callback_data="admin_activar"),
@@ -3149,10 +2639,10 @@ async def cmd_scanner_config(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if len(args) >= 2 and args[0].isdigit():
         uid = int(args[0])
         try: profit = float(args[1].replace(",", "."))
-        except (ValueError, TypeError): pass
+        except: pass
     elif args:
         try: profit = float(args[0].replace(",", "."))
-        except (ValueError, TypeError): pass
+        except: pass
     if profit is not None:
         _set_scanner_cfg(uid, minProfitPct=profit)
     sc = _get_scanner_cfg(uid)
@@ -3171,136 +2661,6 @@ async def cmd_scanner_config(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode="Markdown")
 
 # ============================================================
-# GESTIÓN DE CASAS (toggle scraper ON/OFF — solo admins)
-# ============================================================
-
-async def _mostrar_casas(target):
-    """target puede ser un Message o un CallbackQuery."""
-    state    = _load_scanner_state()
-    disabled = set(state.get("disabled_scrapers", []))
-    n_casas   = len(BOOKMAKERS)
-    n_scrapers = len(SCRAPER_DISPLAY)
-    activos   = n_scrapers - len(disabled & SCRAPER_DISPLAY.keys())
-
-    lines = [f"🏠 *Casas de apuestas — Scanner* ({n_casas} casas · {activos}/{n_scrapers} scrapers activos)\n━━━━━━━━━━━━━━━━━━"]
-    keyboard = []
-    for key, (emoji, nombre, nota) in SCRAPER_DISPLAY.items():
-        activo = key not in disabled
-        estado = "✅" if activo else "❌"
-        extra  = " _(sub-scraper)_" if key in EXTRA_SCRAPERS else ""
-        lines.append(f"{estado} {emoji} *{nombre}*{extra} — _{nota}_")
-        lbl = f"{'⏸ Pausar' if activo else '▶️ Activar'} {nombre}"
-        keyboard.append([InlineKeyboardButton(lbl, callback_data=f"scraper_toggle_{key}")])
-    keyboard.append([InlineKeyboardButton("🔄 Actualizar", callback_data="scraper_refresh")])
-
-    text   = "\n".join(lines)
-    markup = InlineKeyboardMarkup(keyboard)
-    if hasattr(target, "edit_message_text"):
-        await target.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await target.reply_text(text, parse_mode="Markdown", reply_markup=markup)
-
-async def cmd_casas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS: return
-    if update.message:
-        _auto_delete(context, update.message.chat_id, update.message.message_id)
-    await _mostrar_casas(update.message)
-
-async def handle_scraper_toggle(update, context):
-    query = update.callback_query
-    data  = query.data
-
-    if data == "scraper_refresh":
-        await _mostrar_casas(query)
-        return
-
-    key = data[len("scraper_toggle_"):]
-    if key not in SCRAPER_DISPLAY:
-        await query.answer("Casa no reconocida", show_alert=True)
-        return
-
-    state    = _load_scanner_state()
-    disabled = set(state.get("disabled_scrapers", []))
-    if key in disabled:
-        disabled.discard(key)
-        accion = "activado"
-    else:
-        disabled.add(key)
-        accion = "pausado"
-
-    state["disabled_scrapers"] = sorted(disabled)
-    _save_scanner_state(state)
-
-    nombre = SCRAPER_DISPLAY[key][1]
-    icono  = "✅" if accion == "activado" else "⏸"
-    await query.answer(f"{icono} {nombre} {accion}", show_alert=False)
-    await _mostrar_casas(query)
-
-# ============================================================
-# GESTIÓN DE DEPORTES (toggle sport ON/OFF — solo admins)
-# ============================================================
-
-async def _mostrar_deportes(target):
-    """target puede ser un Message o un CallbackQuery."""
-    state    = _load_scanner_state()
-    disabled = set(state.get("disabled_sports", []))
-    activos  = len(SPORT_DISPLAY) - len(disabled & SPORT_DISPLAY.keys())
-
-    lines = [f"🏅 *Deportes — Scanner* ({len(SPORT_DISPLAY)} deportes · {activos}/{len(SPORT_DISPLAY)} activos)\n━━━━━━━━━━━━━━━━━━"]
-    keyboard = []
-    for key, (emoji, nombre) in SPORT_DISPLAY.items():
-        activo = key not in disabled
-        estado = "✅" if activo else "❌"
-        nota   = SPORT_STATUS.get(key, "")
-        lines.append(f"{estado} {emoji} *{nombre}* — _{nota}_")
-        lbl = f"{'⏸ Pausar' if activo else '▶️ Activar'} {nombre}"
-        keyboard.append([InlineKeyboardButton(lbl, callback_data=f"sport_toggle_{key}")])
-    keyboard.append([InlineKeyboardButton("🔄 Actualizar", callback_data="sport_refresh")])
-
-    text   = "\n".join(lines)
-    markup = InlineKeyboardMarkup(keyboard)
-    if hasattr(target, "edit_message_text"):
-        await target.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await target.reply_text(text, parse_mode="Markdown", reply_markup=markup)
-
-async def cmd_deportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS: return
-    if update.message:
-        _auto_delete(context, update.message.chat_id, update.message.message_id)
-    await _mostrar_deportes(update.message)
-
-async def handle_sport_toggle(update, context):
-    query = update.callback_query
-    data  = query.data
-
-    if data == "sport_refresh":
-        await _mostrar_deportes(query)
-        return
-
-    key = data[len("sport_toggle_"):]
-    if key not in SPORT_DISPLAY:
-        await query.answer("Deporte no reconocido", show_alert=True)
-        return
-
-    state    = _load_scanner_state()
-    disabled = set(state.get("disabled_sports", []))
-    if key in disabled:
-        disabled.discard(key)
-        accion = "activado"
-    else:
-        disabled.add(key)
-        accion = "pausado"
-
-    state["disabled_sports"] = sorted(disabled)
-    _save_scanner_state(state)
-
-    nombre = SPORT_DISPLAY[key][1]
-    icono  = "✅" if accion == "activado" else "⏸"
-    await query.answer(f"{icono} {nombre} {accion}", show_alert=False)
-    await _mostrar_deportes(query)
-
-# ============================================================
 # ██████╗ ██╗   ██╗ █████╗ ██╗     ███████╗████████╗ █████╗ ████████╗███████╗
 # ██╔══██╗██║   ██║██╔══██╗██║     ██╔════╝╚══██╔══╝██╔══██╗╚══██╔══╝██╔════╝
 # ██║  ██║██║   ██║███████║██║     ███████╗   ██║   ███████║   ██║   ███████╗
@@ -3312,10 +2672,12 @@ async def handle_sport_toggle(update, context):
 # ── Helpers de pendientes ─────────────────────────────────
 
 def tiene_tracker(user_id: int) -> bool:
-    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web."""
+    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web.
+    Si el plan no está guardado aún (usuario vinculado antes de v23), devuelve True
+    para no bloquear a usuarios existentes — la API hará la comprobación final."""
     plan = dualstats_plan.get(user_id)
     if plan is None:
-        return False  # plan desconocido → no mostrar botones de Tracker sin plan confirmado
+        return True   # plan desconocido → dejar pasar, la API web lo validará
     return plan in ("PRO_TRACKER", "ENTERPRISE")
 
 def _uid_pendientes(user_id):
@@ -3359,7 +2721,7 @@ def _tiempo_relativo(ts_str: str) -> str:
         horas = mins // 60
         if horas < 24: return f"hace {horas}h"
         return f"hace {horas//24}d"
-    except (ValueError, TypeError):
+    except:
         return ""
 
 # ── Llamada a la API de DualStats ─────────────────────────
@@ -3421,19 +2783,12 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         guardar_db()
         # Refrescar caché de suscripción desde la API
         await refrescar_suscripcion(user_id)
-        try:
-            nl = "\n"
-            msg_v = f"🔗 *Vinculación DualStats*{nl}{user.full_name} (`{user_id}`){nl}Plan web: {plan_web or 'FREE'}"
-            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_v, parse_mode="Markdown")
-            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_v, parse_mode="Markdown")
-        except Exception:
-            pass
         try: await msg.delete()
-        except Exception as e: logger.debug("Delete msg ignored: %s", e)
+        except: pass
         plan_badge = " (PRO+Tracker ✨)" if plan_web in ("PRO_TRACKER", "ENTERPRISE") else ""
         await update.message.reply_text(
             f"✅ *¡Cuenta vinculada con éxito!{plan_badge}*\n\n"
-            "Tu cuenta de FiidesBot y DualStats Tracker están conectadas.\n\n"
+            "Tu cuenta de FidesBot y DualStats Tracker están conectadas.\n\n"
             "A partir de ahora, cuando pulses *✅ Hecha* en una alerta, "
             "podrás registrar la apuesta directamente desde aquí.",
             parse_mode="Markdown",
@@ -3446,7 +2801,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         dualstats_vinculados.add(user_id)
         guardar_db()
         try: await msg.delete()
-        except Exception as e: logger.debug("Delete msg ignored: %s", e)
+        except: pass
         await update.message.reply_text(
             "✅ *Vinculación registrada (modo desarrollo)*\n\n"
             "La API de DualStats aún no está configurada, pero tu cuenta "
@@ -3457,10 +2812,10 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
             ]]))
     else:
         try: await msg.delete()
-        except Exception as e: logger.debug("Delete msg ignored: %s", e)
+        except: pass
         await update.message.reply_text(
             "❌ *El enlace de vinculación no es válido o ha expirado.*\n\n"
-            "Ve a DualStats Tracker → Configuración → Conectar FiidesBot "
+            "Ve a DualStats Tracker → Configuración → Conectar FidesBot "
             "y genera un nuevo enlace.",
             parse_mode="Markdown")
     # Abrir menú si ya es suscriptor
@@ -3472,22 +2827,20 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
     await update.message.reply_text(
-        "🔗 *Vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+        "🔗 *Vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
         "Para vincular tu cuenta:\n\n"
-        "1️⃣ Pulsa el botón de abajo para abrir DualStats\n"
+        "1️⃣ Ve a *dualstats-tracker.vercel.app*\n"
         "2️⃣ Inicia sesión con tu cuenta\n"
-        "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
+        "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
         "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
         "Una vez vinculado, las alertas mostrarán botones ✅/❌ "
         "para registrar tus apuestas automáticamente.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🌐 Abrir DualStats", url="https://dualstats-tracker.vercel.app")
-        ]]),
         parse_mode="Markdown")
 
 # ── Panel DualStats en el menú principal ─────────────────
 
 async def panel_dualstats(update, context):
+    await update.callback_query.answer()
     user_id   = update.effective_user.id
     vinculado = user_id in dualstats_vinculados
     n_pend      = len(_uid_pendientes(user_id))
@@ -3523,6 +2876,9 @@ async def panel_dualstats(update, context):
                 InlineKeyboardButton(f"📋 Pendientes ({n_pend})", callback_data="DS_pendientes"),
                 InlineKeyboardButton(f"🏆 Resultados ({n_res})",  callback_data="DS_resultados"),
             ])
+        keyboard.append([InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))])
+        keyboard.append([InlineKeyboardButton("🔓 Desvincular",     callback_data="DS_desvincular")])
+        keyboard.append([InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")])
 
         signo   = "+" if pnl_total >= 0 else ""
         pnl_str = f"{signo}{fmt_eur(pnl_total)}€"
@@ -3533,21 +2889,14 @@ async def panel_dualstats(update, context):
             estado_txt += "💡 Cuando pulses *Hecha* en una alerta, la apuesta se guarda automaticamente."
         else:
             estado_txt += "⚠️ Tu plan *PRO* no incluye integración con el bot.\nActualiza a *PRO+Tracker* para usar /pendientes y /resultados."
-            keyboard.append([InlineKeyboardButton("⬆️ Actualizar a PRO+Tracker", callback_data="stripe_bot_tracker")])
-
-        keyboard.append([InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))])
-        keyboard.append([InlineKeyboardButton("🔓 Desvincular",     callback_data="DS_desvincular")])
-        keyboard.append([InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")])
     else:
         keyboard = [
             [InlineKeyboardButton("🌐 Abrir DualStats", url=ds_url("/", "panel_open"))],
-            [InlineKeyboardButton("ℹ️ Cómo vincular",   callback_data="DS_info_vincular")],
+            [InlineKeyboardButton("🔗 Como vincular",   callback_data="DS_info_vincular")],
+            [InlineKeyboardButton("🔙 Volver",          callback_data="menu_principal")],
         ]
-        if not es_tracker:
-            keyboard.append([InlineKeyboardButton("⬆️ Obtener PRO+Tracker", callback_data="stripe_bot_tracker")])
-        keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data="menu_principal")])
         estado_txt = "❌ *No conectado*\n\n"
-        estado_txt += "🔗 Vincula tu cuenta para que las alertas se registren automáticamente.\n💎 Necesitas plan *PRO+Tracker* en DualStats para vincular."
+        estado_txt += "🔗 Vincula tu cuenta para que las alertas se registren automaticamente.\n💎 Necesitas plan *PRO+Tracker* en DualStats para vincular."
 
     await update.callback_query.edit_message_text(
         f"📈 *DualStats Tracker*\n"
@@ -3721,101 +3070,6 @@ async def mostrar_correccion_selector(query, context, p, flow):
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-# ── Scanner SCAN_AH_ / SCAN_ANH_ — Hecha / No hecha desde el nuevo scanner ──
-
-SCANNER_DIRECT_URL = "postgresql://postgres.xqyvgursuilukvskrlps:4-jbfd9eiaCNVdR@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
-
-async def _fetch_scanner_arb(arb_id: str) -> dict | None:
-    """Fetches arb + legs from detected_arbs / detected_arb_legs via asyncpg."""
-    import ssl as _ssl
-    _ssl_ctx = _ssl.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = _ssl.CERT_NONE
-    conn = None
-    try:
-        logging.info(f"[scanner_arb] fetching arb_id={arb_id!r}")
-        conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
-        arb = await conn.fetchrow(
-            "SELECT id, type, sport, is_live, event_name, market, profit_pct, detected_at "
-            "FROM detected_arbs WHERE id = $1", arb_id)
-        if not arb:
-            logging.warning(f"[scanner_arb] no row found for arb_id={arb_id!r}")
-            return None
-        legs = await conn.fetch(
-            "SELECT bookmaker, selection, odds, stake FROM detected_arb_legs WHERE arb_id = $1 ORDER BY id", arb_id)
-        return {
-            "type":       arb["type"],
-            "sport":      arb["sport"],
-            "is_live":    arb["is_live"],
-            "event_name": arb["event_name"],
-            "market":     arb["market"],
-            "profit_pct": arb["profit_pct"],
-            "detected_at": arb["detected_at"],
-            "legs": [{"bookmaker": r["bookmaker"], "outcome": r["selection"],
-                      "odd": float(r["odds"]), "stake_pct": float(r["stake"] or 50.0)} for r in legs],
-        }
-    except Exception as e:
-        logging.error(f"[scanner_arb] DB fetch failed for arb_id={arb_id!r}: {e}", exc_info=True)
-        return None
-    finally:
-        if conn:
-            try: await conn.close()
-            except Exception: pass
-
-async def handle_scanner_alerta_hecha(update, context, uid, arb_id):
-    """Handles ✅ Hecha button from scanner notifications (SCAN_AH_)."""
-    query = update.callback_query
-
-    if not tiene_suscripcion(uid):
-        await query.answer("Necesitas suscripción activa.", show_alert=True); return
-    if uid not in dualstats_vinculados:
-        await query.answer("Vincula tu cuenta DualStats primero.", show_alert=True); return
-    if not tiene_tracker(uid):
-        await query.answer("Tu plan PRO no incluye el Tracker. Actualiza a PRO+Tracker.", show_alert=True); return
-
-    arb = await _fetch_scanner_arb(arb_id)
-    if not arb:
-        await query.answer("⚠️ Alerta expirada o no encontrada.", show_alert=True); return
-
-    pid = uuid.uuid4().hex[:10]
-    pendiente = {
-        "id":        pid,
-        "ts":        local_now().isoformat(),
-        "evento":    arb["event_name"],
-        "sport_key": arb["sport"].lower(),
-        "liga":      "",
-        "legs":      arb["legs"],
-        "profit":    arb["profit_pct"],
-        "stake_sug": get_config(uid).get("stake", 100.0),
-        "tipo":      arb["type"].lower(),
-        "live":      arb["is_live"],
-        "time":      arb["detected_at"].isoformat() if arb["detected_at"] else "",
-        "estado":    "PENDIENTE",
-    }
-    agregar_pendiente(uid, pendiente)
-
-    try:
-        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
-    except Exception as e:
-        logger.debug("Edit reply markup ignored: %s", e)
-    await query.answer("✅ Guardada en pendientes")
-    await context.bot.send_message(
-        chat_id=uid,
-        text="✅ *Guardada en tus pendientes.*\n\nCompleta los detalles cuando acabes apostando.\n\n📋 /pendientes",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📋 Ir a pendientes", callback_data="DS_pendientes"),
-        ]]))
-
-async def handle_scanner_alerta_nohecha(update, context, uid, arb_id):
-    """Handles ❌ No hecha button from scanner notifications (SCAN_ANH_)."""
-    query = update.callback_query
-    try:
-        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([]))
-    except Exception as e:
-        logger.debug("Edit reply markup ignored: %s", e)
-    await query.answer("❌ Registrado como no realizada")
-
 async def handle_alerta_hecha(update, context, uid, alert_id):
     """Usuario pulsó ✅ Hecha en una alerta."""
     query     = update.callback_query
@@ -3857,10 +3111,8 @@ async def handle_alerta_hecha(update, context, uid, alert_id):
         await context.bot.edit_message_text(
             chat_id=uid, message_id=datos["msg_id"],
             text=datos["mensaje"] + "\n\n✅ *Hecha · Pendiente de registrar*\nUsa /pendientes cuando puedas.",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([]))
-    except Exception as e:
-        logger.debug("Edit message text ignored: %s", e)
+            parse_mode="Markdown")
+    except: pass
 
     await query.answer("✅ Guardada en pendientes")
 
@@ -3887,10 +3139,8 @@ async def handle_alerta_nohecha(update, context, uid, alert_id):
             await context.bot.edit_message_text(
                 chat_id=uid, message_id=datos["msg_id"],
                 text=datos["mensaje"] + "\n\n❌ *No realizada*",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([]))
-        except Exception as e:
-            logger.debug("Edit message text ignored: %s", e)
+                parse_mode="Markdown")
+        except: pass
 
     await query.answer("❌ Registrado como no realizada")
 
@@ -3909,11 +3159,8 @@ def _resumen_flow(pendiente, stakes, odds) -> str:
         )
     profit_real = (ganancia / total_inv * 100) if total_inv > 0 else 0
     aviso = ""
-    es_middle = pendiente.get("tipo") == "middlebet"
-    if profit_real < 0 and not es_middle:
+    if profit_real < 0:
         aviso = f"\n\n⚠️ _Con estas cuotas/stakes el ROI es {profit_real:.2f}% (perdida esperada)._"
-    elif profit_real < 0 and es_middle:
-        aviso = f"\n\n💡 _Peor caso si el middle no se cumple: {profit_real:.2f}%. Si se cumple la apuesta el beneficio es mayor._"
 
     return (f"📋 *RESUMEN DE TU APUESTA*\n━━━━━━━━━━━━━━━━━━\n"
             f"{emoji} {pendiente['evento']}\n\n"
@@ -4035,9 +3282,7 @@ async def handle_flow_confirmado(update, context, user_id, pid):
     flow  = context.user_data.get("ds_flow", {})
     p     = get_pendiente(user_id, pid)
     if not p:
-        await query.answer()
-        await query.edit_message_text("⚠️ Pendiente no encontrado. Puede que ya haya sido procesado.")
-        return
+        await query.answer("⚠️ Pendiente no encontrado", show_alert=True); return
 
     stakes_raw = flow.get("stakes", [])
     odds_raw   = flow.get("odds", [])
@@ -4104,7 +3349,6 @@ async def handle_flow_confirmado(update, context, user_id, pid):
             eliminar_pendiente(user_id, pid)
             if "ds_flow" in context.user_data:
                 del context.user_data["ds_flow"]
-            await query.answer()
             await query.edit_message_text(
                 f"⚠️ *Apuesta guardada como Borrador*\n\n"
                 f"Se registró en DualStats pero en estado *Borrador* porque las siguientes casas "
@@ -4143,7 +3387,6 @@ async def handle_flow_confirmado(update, context, user_id, pid):
     context.user_data.pop("ds_flow", None)
 
     web_txt = "✅ Registrado en DualStats Tracker." if registrado_en_web else "📱 Guardado localmente."
-    await query.answer("✅ Apuesta registrada")
     await query.edit_message_text(
         f"✅ *¡Apuesta registrada!*\n\n{web_txt}\n\n"
         f"Cuando conozcas el resultado, ve a /resultados para actualizarlo.",
@@ -4343,7 +3586,6 @@ async def handle_ganada_selector(update, context, user_id, rid):
             )])
 
     keyboard.append([InlineKeyboardButton("↩️ Cancelar", callback_data="DS_resultados")])
-    await query.answer()
     await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
@@ -4384,10 +3626,6 @@ async def handle_resultado(update, context, user_id, rid, resultado_str, won_leg
 
     reg["estado"]         = resultado_str
     reg["ts_result"]      = local_now().isoformat()
-    if resultado_str == "LOST" and ganancia_real is None and stakes:
-        ganancia_real = round(-sum(stakes), 2)
-    elif resultado_str == "VOID" and ganancia_real is None:
-        ganancia_real = 0.0
     if ganancia_real is not None:
         reg["ganancia_real"]  = ganancia_real
     if legs_resultado:
@@ -4684,7 +3922,7 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
             try:
                 ts    = datetime.fromisoformat(p["ts"])
                 horas = (ahora - ts).total_seconds() / 3600
-            except (ValueError, KeyError):
+            except:
                 continue
 
             recordatorio_12 = p.get("rec_12", False)
@@ -4744,8 +3982,7 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("🏆 Ver resultados", callback_data="DS_resultados"),
                         ]]))
-                except Exception as e:
-                    logger.debug("Recordatorio auto-registro ignored: %s", e)
+                except: pass
 
             # Recordatorio 24h
             elif horas >= 24 and not recordatorio_24:
@@ -4760,8 +3997,7 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("✏️ Completar ahora", callback_data=f"PC_{p['id']}"),
                         ]]))
-                except Exception as e:
-                    logger.debug("Recordatorio 24h ignored: %s", e)
+                except: pass
                 guardar_db()
 
             # Recordatorio 12h
@@ -4777,8 +4013,7 @@ async def tarea_recordatorios_pendientes(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("✏️ Ir a pendientes", callback_data="DS_pendientes"),
                         ]]))
-                except Exception as e:
-                    logger.debug("Recordatorio 12h ignored: %s", e)
+                except: pass
                 guardar_db()
 
 # ── Desvincular cuenta ────────────────────────────────────
@@ -4790,11 +4025,10 @@ async def handle_desvincular(update, context):
     guardar_db()
     await query.edit_message_text(
         "🔓 *Cuenta desvinculada*\n\n"
-        "Tu cuenta de FiidesBot ya no está conectada a DualStats Tracker.\n"
-        "Puedes volver a vincularla pulsando 📈 DualStats en el menú principal.",
+        "Tu cuenta de FidesBot ya no está conectada a DualStats Tracker.\n"
+        "Puedes volver a vincularla desde Configuración en la web.",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📈 Volver a DualStats", callback_data="panel_dualstats"),
-            InlineKeyboardButton("🔙 Menú",               callback_data="menu_principal"),
+            InlineKeyboardButton("🔙 Volver", callback_data="menu_principal"),
         ]]), parse_mode="Markdown")
 
 # ── Texto del flujo de completar ─────────────────────────
@@ -4883,76 +4117,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data    = query.data
     user_id = update.effective_user.id
 
-    if is_banned(user_id):
-        await query.answer("🚫 Tu acceso está restringido.", show_alert=True)
-        return
-
     # "bloqueado" necesita show_alert=True como primera (y única) respuesta
     if data == "bloqueado":
         await query.answer(BLOQUEADO_MSG, show_alert=True); return
 
-    # Checks que necesitan show_alert=True y deben ir ANTES del answer() blanket
-    if data == "escanear_ahora":
-        SCAN_COOLDOWN_S = 120
-        last_manual = ultimo_scan_manual.get(user_id)
-        if last_manual:
-            elapsed = (datetime.now() - last_manual).total_seconds()
-            if elapsed < SCAN_COOLDOWN_S:
-                secs_left = int(SCAN_COOLDOWN_S - elapsed)
-                await query.answer(f"⏳ Espera {secs_left}s antes del siguiente escaneo.", show_alert=True)
-                return
-
-    # Subscription check before blanket answer so BLOQUEADO_MSG show_alert=True works
-    _PUBLIC_PREFIXES = ("admin_", "scraper_", "sport_", "menu_no_suscrito", "suscribirse",
-                        "stripe_", "plan_", "soporte", "novedades", "tyc",
-                        "panel_freebets", "panel_valuebets", "mis_referidos",
-                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh", "sport_refresh",
-                        "menu_config", "cfg_deportes", "cfg_casas", "cfg_profit", "cfg_prob", "cfg_days")
-    if not any(data == p or data.startswith(p) for p in _PUBLIC_PREFIXES):
-        if not tiene_suscripcion(user_id):
-            await query.answer(BLOQUEADO_MSG, show_alert=True); return
-
-    # Callbacks que gestionan su propio answer() con mensajes de error personalizados.
-    # Si ya respondemos aquí con answer() vacío, su show_alert=True queda silenciado.
-    _OWN_ANSWER = ("NM|", "CSH|", "FKN|", "AH_", "ANH_", "SCAN_AH_", "SCAN_ANH_", "RES_", "DS_resumen_", "FL_confirm_", "PEC_", "FL_sc_yes_")
-    if not any(data.startswith(p) for p in _OWN_ANSWER):
-        await query.answer()
-
-    # ── Admin activar rápido (desde grupo de pagos) ────────
-    if data.startswith("admin_activar_rapido_") and user_id in ADMIN_IDS:
-        parts       = data.split("_")
-        uid_activar = int(parts[3]); dias_activar = int(parts[4])
-        es_tracker  = len(parts) > 5 and parts[5] == "T"
-        plan_interno = "PRO_TRACKER" if es_tracker else "PRO"
-        activar_usuario(uid_activar, dias_activar, plan=plan_interno)
-        plan_txt = "PRO+Tracker" if es_tracker else "PRO"
-        nombre_activar = f"ID {uid_activar}"
-        await query.edit_message_text(
-            f"✅ *Activado correctamente*\n\n👤 {nombre_activar} (ID: `{uid_activar}`)\n📅 {dias_activar} días — {plan_txt}",
-            parse_mode="Markdown")
-        try:
-            msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
-            await context.bot.send_message(chat_id=uid_activar,
-                text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
-                     f"Tienes *{dias_activar} días* de acceso.\n\nEscribe /start para acceder.",
-                parse_mode="Markdown")
-        except Exception as e:
-            logger.debug("Activation notify ignored: %s", e)
-        return
+    await query.answer()
 
     # ── Admin ──────────────────────────────────────────────
     if data.startswith("admin_"):
         if user_id in ADMIN_IDS: await handle_admin_callback(update, context)
-        return
-
-    # ── Gestión scrapers (admin) ────────────────────────────
-    if (data.startswith("scraper_toggle_") or data == "scraper_refresh") and user_id in ADMIN_IDS:
-        await handle_scraper_toggle(update, context)
-        return
-
-    # ── Gestión deportes (admin) ────────────────────────────
-    if (data.startswith("sport_toggle_") or data == "sport_refresh") and user_id in ADMIN_IDS:
-        await handle_sport_toggle(update, context)
         return
 
     # ── Sin suscripción ────────────────────────────────────
@@ -4968,11 +4141,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "plan_14":              await pagar_plan_stripe(update, context, "bot_14"); return
     if data == "plan_30":              await pagar_plan_stripe(update, context, "bot_30"); return
     if data == "plan_tracker_30":      await pagar_plan_stripe(update, context, "bot_tracker"); return
+    if data.startswith("admin_activar_rapido_") and user_id in ADMIN_IDS:
+        parts       = data.split("_")
+        uid_activar = int(parts[3]); dias_activar = int(parts[4])
+        es_tracker  = len(parts) > 5 and parts[5] == "T"
+        plan_interno = "PRO_TRACKER" if es_tracker else "PRO"
+        activar_usuario(uid_activar, dias_activar, plan=plan_interno)
+        plan_txt = "PRO+Tracker" if es_tracker else "PRO"
+        nombre_activar = f"ID {uid_activar}"
+        await query.edit_message_text(
+            f"✅ *Activado correctamente*\n\n👤 {nombre_activar} (ID: `{uid_activar}`)\n📅 {dias_activar} días — {plan_txt}",
+            parse_mode="Markdown")
+        try:
+            msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
+            await context.bot.send_message(chat_id=uid_activar,
+                text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
+                     f"Tienes *{dias_activar} días* de acceso.\n\nEscribe /start para acceder.",
+                parse_mode="Markdown")
+        except: pass
+        return
     if data == "soporte":             await mostrar_hub_soporte(update, context); return
     if data == "soporte_faq":         await mostrar_soporte(update, context, page=0); return
     if data.startswith("soporte_p"):
         try: page = int(data[len("soporte_p"):])
-        except (ValueError, IndexError): page = 0
+        except: page = 0
         await mostrar_soporte(update, context, page=page); return
     if data == "novedades":           await mostrar_novedades(update, context); return
     if data == "novedades_ultima":    await novedades_subpagina(update, context, NOVEDADES_ULTIMA); return
@@ -4998,32 +4190,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if   data == "menu_principal":  await menu_principal(update, context)
     elif data == "panel_surebets":  await panel_surebets(update, context)
     elif data == "panel_middles":   await panel_middles(update, context)
-    elif data == "ejemplo_surebet":
-        await query.answer()
-        try:
-            await query.message.reply_text(EJEMPLO_SUREBET_MSG, parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_surebets")]]))
-        except Exception as e:
-            logger.error(f"ejemplo_surebet send error: {e}")
-            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
-    elif data == "ejemplo_middle":
-        await query.answer()
-        try:
-            await query.message.reply_text(EJEMPLO_MIDDLE_MSG, parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_middles")]]))
-        except Exception as e:
-            logger.error(f"ejemplo_middle send error: {e}")
-            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
-
-    elif data == "ejemplo_valuebet":
-        await query.answer()
-        try:
-            await query.message.reply_text(EJEMPLO_VALUE_MSG, parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_valuebets")]]))
-        except Exception as e:
-            logger.error(f"ejemplo_valuebet send error: {e}")
-            await query.message.reply_text("⚠️ Error al cargar el ejemplo. Inténtalo de nuevo.")
-
     elif data == "menu_alertas":    await menu_alertas(update, context)
     elif data == "menu_config":     await menu_config(update, context)
     elif data == "cfg_deportes":    await menu_cfg_deportes(update, context)
@@ -5080,21 +4246,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("|")
         await handle_numerico(update, context, parts[1], parts[2])
     elif data == "escanear_ahora":
+        # Cooldown: un escaneo manual cada 2 minutos por usuario
+        SCAN_COOLDOWN_S = 120
+        last_manual = ultimo_scan_manual.get(user_id)
+        if last_manual:
+            elapsed = (datetime.now() - last_manual).total_seconds()
+            if elapsed < SCAN_COOLDOWN_S:
+                secs_left = int(SCAN_COOLDOWN_S - elapsed)
+                await query.answer(f"⏳ Espera {secs_left}s antes del siguiente escaneo.", show_alert=True)
+                return
         ultimo_scan_manual[user_id] = datetime.now()
+        creditos_aviso = f"\n\n💳 API: {api_credits_remaining} créditos restantes." if api_credits_remaining is not None and api_credits_remaining < 500 else ""
         await query.edit_message_text("🔍 Escaneando apuestas... espera un momento.")
         total_pre  = await escanear_y_alertar(context.application, live=False, user_ids=[user_id])
         total_live = await escanear_y_alertar(context.application, live=True,  user_ids=[user_id])
         total = total_pre + total_live
         ultimo_escaneo[user_id] = datetime.now()
         if total == 0:
+            sin_creditos = api_credits_remaining is not None and api_credits_remaining <= 0
+            motivo = ("⚠️ *Sin créditos de API.* El bot no puede obtener datos hasta la recarga mensual."
+                      if sin_creditos else
+                      "❌ No se han encontrado apuestas con tu configuración.\n\n"
+                      "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.")
             await query.edit_message_text(
-                "🔍 *Escaneo completado*\n\n"
-                "❌ No se han encontrado apuestas con tu configuración.\n\n"
-                "💡 Prueba a bajar el profit mínimo en ⚙️ Configuración.",
+                f"🔍 *Escaneo completado*\n\n{motivo}{creditos_aviso}",
                 parse_mode="Markdown")
         else:
             await query.edit_message_text(
-                f"✅ *{total} apuesta(s) encontradas y enviadas.*",
+                f"✅ *{total} apuesta(s) encontradas y enviadas.*{creditos_aviso}",
                 parse_mode="Markdown")
         await asyncio.sleep(3)
         await menu_principal(update, context)
@@ -5117,10 +4296,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await panel_middles(update, context)
     elif data in ("pausa_2h", "pausa_4h", "pausa_8h"):
         horas = {"pausa_2h": 2, "pausa_4h": 4, "pausa_8h": 8}[data]
-        _set_pausa(user_id, local_now() + timedelta(hours=horas))
+        _set_pausa(user_id, datetime.now() + timedelta(hours=horas))
+        await query.answer(f"⏸️ Alertas pausadas {horas}h", show_alert=False)
         await menu_alertas(update, context)
     elif data == "reanudar_alertas":
         _clear_pausa(user_id)
+        await query.answer("▶️ Alertas reanudadas", show_alert=False)
         await menu_alertas(update, context)
 
     # ── DualStats callbacks ────────────────────────────────
@@ -5129,13 +4310,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page = 0
         if data.startswith("DS_pendientes_p"):
             try: page = int(data[len("DS_pendientes_p"):])
-            except (ValueError, IndexError): page = 0
+            except: page = 0
         await mostrar_pendientes(update, context, page=page)
     elif data == "DS_resultados" or data.startswith("DS_resultados_p"):
         page = 0
         if data.startswith("DS_resultados_p"):
             try: page = int(data[len("DS_resultados_p"):])
-            except (ValueError, IndexError): page = 0
+            except: page = 0
         await mostrar_resultados(update, context, page=page)
     elif data == "DS_desvincular":     await handle_desvincular(update, context)
     elif data.startswith("DS_resumen_"):
@@ -5145,15 +4326,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_data = await llamar_api_dualstats(f"stats?telegram_id={user_id}&period={period}", {}, method="GET")
         if not api_data:
             await query.answer("❌ Error al obtener datos. Inténtalo de nuevo.", show_alert=True); return
-        await query.answer()
         texto, keyboard = _fmt_resumen(api_data, period)
         await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "DS_info_vincular":
         await query.edit_message_text(
-            "🔗 *Cómo vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "🔗 *Cómo vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
             "1️⃣ Ve a *dualstats-tracker.vercel.app*\n"
             "2️⃣ Inicia sesión con tu cuenta\n"
-            "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
+            "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
             "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
             "Una vez vinculado, las alertas mostrarán botones ✅/❌.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_dualstats")]]),
@@ -5162,22 +4342,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Alertas ✅/❌ ──────────────────────────────────────
     elif data.startswith("AH_"):
         parts = data.split("_", 2)
-        if len(parts) == 3 and int(parts[1]) == user_id:
-            await handle_alerta_hecha(update, context, user_id, parts[2])
+        if len(parts) == 3:
+            await handle_alerta_hecha(update, context, int(parts[1]), parts[2])
     elif data.startswith("ANH_"):
         parts = data.split("_", 2)
-        if len(parts) == 3 and int(parts[1]) == user_id:
-            await handle_alerta_nohecha(update, context, user_id, parts[2])
-
-    # ── Scanner alerts (SCAN_AH_ / SCAN_ANH_) ─────────────
-    elif data.startswith("SCAN_AH_"):
-        parts = data.split("_", 3)  # ["SCAN", "AH", uid, arbId]
-        if len(parts) == 4 and int(parts[2]) == user_id:
-            await handle_scanner_alerta_hecha(update, context, user_id, parts[3])
-    elif data.startswith("SCAN_ANH_"):
-        parts = data.split("_", 3)  # ["SCAN", "ANH", uid, arbId]
-        if len(parts) == 4 and int(parts[2]) == user_id:
-            await handle_scanner_alerta_nohecha(update, context, user_id, parts[3])
+        if len(parts) == 3:
+            await handle_alerta_nohecha(update, context, int(parts[1]), parts[2])
 
     # ── Completar pendiente ────────────────────────────────
     elif data.startswith("PC_"):
@@ -5189,8 +4359,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = data[3:]
         p   = get_pendiente(user_id, pid)
         if not p:
-            await query.edit_message_text("⚠️ Pendiente no encontrado. Puede que ya haya sido procesado.")
-            return
+            await query.answer("⚠️ No encontrado", show_alert=True); return
         await query.edit_message_text(
             f"🗑 *¿Eliminar este pendiente?*\n\n"
             f"• {p['evento']}\n\n"
@@ -5302,7 +4471,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) == 4:
             await handle_cashout_numerico(update, context, user_id, parts[1], int(parts[2]), parts[3])
     elif data == "NOOP":
-        pass  # blanket answer() ya gestionado arriba
+        await query.answer()
     elif data.startswith("CASH_CANCEL_"):
         context.user_data.pop("pending_cashout", None)
         await query.answer("Cashout cancelado", show_alert=False)
@@ -5315,8 +4484,6 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
     user_id = update.effective_user.id
-    if is_banned(user_id):
-        return
     text    = update.message.text.strip()
 
     # ── Flujo DualStats activo (tiene prioridad sobre admin) ──
@@ -5346,14 +4513,13 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ ID `{uid}` — *{plan_txt}* — activado por *{dias} días*. 💾 Guardado.",
                     parse_mode="Markdown")
                 try:
-                    msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
+                    msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
                     await context.bot.send_message(chat_id=uid,
                         text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                              f"Tienes *{dias} días* de acceso.\n\nEscribe /start para acceder.",
                         parse_mode="Markdown")
-                except Exception as e:
-                    logger.debug("Activation notify ignored: %s", e)
-            except (ValueError, IndexError):
+                except: pass
+            except:
                 await update.message.reply_text(
                     "❌ Formato:\n`activar ID DIAS` — PRO\n`activar ID DIAS T` — PRO+Tracker",
                     parse_mode="Markdown")
@@ -5370,7 +4536,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 uid = int(parts[1])
                 desactivar_usuario(uid)
                 await update.message.reply_text(f"✅ ID `{uid}` desactivado.", parse_mode="Markdown")
-            except (ValueError, IndexError):
+            except:
                 await update.message.reply_text("❌ Formato: `desactivar ID`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -5387,9 +4553,8 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=uid,
                         text=f"🎁 *¡Has recibido {cantidad} créditos!*\n\nTotal: *{get_creditos(uid)} créditos*.",
                         parse_mode="Markdown")
-                except Exception as e:
-                    logger.debug("Credits notify ignored: %s", e)
-            except (ValueError, IndexError):
+                except: pass
+            except:
                 await update.message.reply_text("❌ Formato: `creditos ID CANTIDAD`", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -5403,8 +4568,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text=f"📢 *Mensaje del administrador:*\n\n{text}", parse_mode="Markdown")
                     enviados += 1
                     await asyncio.sleep(0.1)
-                except Exception as e:
-                    logger.debug("Broadcast to %s ignored: %s", uid, e)
+                except: pass
         await update.message.reply_text(f"✅ Enviado a *{enviados}* usuarios.", parse_mode="Markdown")
         context.user_data["admin_waiting"] = None
 
@@ -5416,7 +4580,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dualstats_vinculados.add(uid)
             guardar_db()
             await update.message.reply_text(f"✅ Usuario `{uid}` marcado como vinculado a DualStats.", parse_mode="Markdown")
-        except (ValueError, IndexError):
+        except:
             await update.message.reply_text("❌ Formato: `vincular_ds ID`", parse_mode="Markdown")
 
     elif text.lower().startswith("desvincular_ds "):
@@ -5425,7 +4589,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dualstats_vinculados.discard(uid)
             guardar_db()
             await update.message.reply_text(f"✅ Usuario `{uid}` desvinculado de DualStats.", parse_mode="Markdown")
-        except (ValueError, IndexError):
+        except:
             await update.message.reply_text("❌ Formato: `desvincular_ds ID`", parse_mode="Markdown")
 
 # ============================================================
@@ -5434,7 +4598,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Solo admin. Envia alerta de prueba con formato real.
     Uso: /testalerta [middle] [deporte]
-    Deportes: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano
+    Deportes: futbol, baloncesto, tenis, golf, hockey, rugby, beisbol, americano, cricket
     Ejemplos:
       /testalerta               -> surebet fútbol
       /testalerta middle        -> middle baloncesto
@@ -5487,6 +4651,20 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {"bookmaker": "Betfair", "outcome": "Under", "odd": 2.00, "stake_pct": 50.0, "point": 23.5, "description": ""},
             ],
             "profit_sure": 2.94, "profit_base": 0.5, "profit_max": 6.3, "prob_mid": 22.0,
+        },
+        "golf": {
+            "home": "Rory McIlroy", "away": "Scottie Scheffler",
+            "sport_key": "golf", "liga": "PGA Tour",
+            "time": "2026-06-12T16:00:00Z",
+            "legs_sure": [
+                {"bookmaker": "Bet365",  "outcome": "McIlroy",  "odd": 2.20, "stake_pct": 47.73, "point": None, "description": ""},
+                {"bookmaker": "Betfair", "outcome": "Scheffler", "odd": 2.25, "stake_pct": 52.27, "point": None, "description": ""},
+            ],
+            "legs_mid": [
+                {"bookmaker": "Bwin",    "outcome": "Over",  "odd": 1.92, "stake_pct": 50.0, "point": 68.5, "description": ""},
+                {"bookmaker": "Betfair", "outcome": "Under", "odd": 2.05, "stake_pct": 50.0, "point": 70.5, "description": ""},
+            ],
+            "profit_sure": 2.17, "profit_base": 0.9, "profit_max": 5.8, "prob_mid": 19.0,
         },
         "icehockey_nhl": {
             "home": "Toronto Maple Leafs", "away": "Boston Bruins",
@@ -5544,6 +4722,20 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             "profit_sure": 2.20, "profit_base": 1.0, "profit_max": 9.0, "prob_mid": 32.0,
         },
+        "cricket": {
+            "home": "India", "away": "Australia",
+            "sport_key": "cricket", "liga": "Test Match",
+            "time": "2026-06-13T10:00:00Z",
+            "legs_sure": [
+                {"bookmaker": "Bet365",  "outcome": "India",     "odd": 2.15, "stake_pct": 48.0, "point": None, "description": ""},
+                {"bookmaker": "Betfair", "outcome": "Australia", "odd": 2.20, "stake_pct": 52.0, "point": None, "description": ""},
+            ],
+            "legs_mid": [
+                {"bookmaker": "Marathonbet","outcome": "Over",  "odd": 1.88, "stake_pct": 50.0, "point": 295.5, "description": ""},
+                {"bookmaker": "Betfair",    "outcome": "Under", "odd": 2.02, "stake_pct": 50.0, "point": 305.5, "description": ""},
+            ],
+            "profit_sure": 2.45, "profit_base": 0.7, "profit_max": 6.8, "prob_mid": 20.0,
+        },
     }
 
     # Alias de nombres para el arg del usuario
@@ -5551,10 +4743,12 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "futbol": "soccer", "fútbol": "soccer", "football": "soccer",
         "baloncesto": "basketball", "basket": "basketball", "nba": "basketball", "euroleague": "basketball",
         "tenis": "tennis", "tennis": "tennis",
+        "golf": "golf",
         "hockey": "icehockey_nhl", "nhl": "icehockey_nhl",
         "rugby": "rugbyleague",
         "beisbol": "baseball_mlb", "béisbol": "baseball_mlb", "mlb": "baseball_mlb",
         "americano": "americanfootball_nfl", "nfl": "americanfootball_nfl",
+        "cricket": "cricket",
     }
 
     try:
@@ -5572,14 +4766,13 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not sport_key:
                 await update.message.reply_text(
                     f"❓ Deporte '{sport_input}' no reconocido.\n\n"
-                    "Deportes disponibles: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano"
+                    "Deportes disponibles: futbol, baloncesto, tenis, golf, hockey, rugby, beisbol, americano, cricket"
                 )
                 return
         else:
             sport_key = "basketball" if es_middle else "soccer"
 
         datos = FAKE_EVENTS[sport_key]
-        _era_vinculado = user_id in dualstats_vinculados
         dualstats_vinculados.add(user_id)
         stake_sug = 100.0
         try:
@@ -5634,13 +4827,11 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent = await update.message.reply_text(mensaje, reply_markup=kb)
         alerta_cache[cache_key]["msg_id"] = sent.message_id
         _save_alerts_cache()
-        if not _era_vinculado:
-            dualstats_vinculados.discard(user_id)
         emoji, nombre = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
         tipo_label = "Middle" if es_middle else "Surebet"
         await update.message.reply_text(
             f"✅ Alerta de prueba enviada: {tipo_label} {emoji} {nombre}\n"
-            f"Los botones ✅/❌ están activos para que puedas probar el registro."
+            f"Cuenta marcada como vinculada para poder probar el registro."
         )
 
     except Exception as e:
@@ -5708,15 +4899,21 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sport_detail: list[str] = []
 
     for sport_key in active_sports:
-        events = await fetch_dualstats_odds(sport_key, live=False)
-        events += await fetch_dualstats_odds(sport_key, live=True)
+        if sport_key == "basketball":
+            events: list = []
+            for _bk in BASKETBALL_API_KEYS:
+                events.extend(await fetch_odds(_bk, live=False))
+                events.extend(await fetch_odds(_bk, live=True))
+        else:
+            events = await fetch_odds(sport_key, live=False)
+            events += await fetch_odds(sport_key, live=True)
 
         total_events += len(events)
         sport_surebets = 0
 
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
-            except (ValueError, KeyError): commence = None
+            except: commence = None
             apuestas = encontrar_apuestas(event, active_bks, False, sport_key=sport_key)
             surebets = [ap for ap in apuestas if ap["tipo"] == "surebet"]
             sport_surebets += len(surebets)
@@ -5725,7 +4922,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for ap in surebets:
                 if ap.get("draw_risk"):
                     blocked_draw += 1
-                elif ap["profit"] < cfg.get("min_profit_surebet", DEFAULT_USER_CONFIG["min_profit_surebet"]):
+                elif ap["profit"] < cfg.get("min_profit_surebet", 3.0):
                     blocked_profit += 1
                 elif commence and not ((commence - now).total_seconds() < 0 or (commence - now).total_seconds() / 86400 <= cfg["max_days"]):
                     blocked_days += 1
@@ -5739,9 +4936,9 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     detail_str = "\n".join(sport_detail) if sport_detail else "  (ningún deporte activo tiene surebets ahora)"
 
     texto = (
-        f"🔬 *Diagnóstico FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"*Tu configuración:*\n"
-        f"• Profit mín: {cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG["min_profit_surebet"])}%\n"
+        f"• Profit mín: {cfg.get('min_profit_surebet', 3.0)}%\n"
         f"• Filtro días: {cfg['max_days']} días\n"
         f"• Casas activas: {len(active_bks)}/{len(cfg['bookmakers'])}\n"
         f"• Deportes activos: {len(active_sports)}\n\n"
@@ -5750,7 +4947,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Surebets detectadas en bruto: {total_surebets_raw}\n\n"
         f"*Motivos por los que se filtran:*\n"
         f"• 🛡 Bloqueadas por riesgo de empate: {blocked_draw}\n"
-        f"• 📉 Profit insuficiente (<{cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG['min_profit_surebet'])}%): {blocked_profit}\n"
+        f"• 📉 Profit insuficiente (<{cfg.get('min_profit_surebet',3.0)}%): {blocked_profit}\n"
         f"• 📆 Fuera del filtro de días: {blocked_days}\n"
         f"• ✅ *Pasarían todos los filtros: {passed}*\n\n"
         f"*Surebets por deporte:*\n{detail_str}\n\n"
@@ -5758,11 +4955,11 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if passed == 0 and blocked_draw > 0 and blocked_profit == 0:
-        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets detectadas pero bloqueadas porque el empate no está cubierto (fútbol/americano/rugby sin 3ª pata). Prueba a buscar en otros deportes o esperar a que aparezcan más eventos."
+        texto += f"\n\n💡 *Sugerencia:* {blocked_draw} surebets detectadas pero bloqueadas porque el empate no está cubierto (fútbol/americano/baloncesto sin 3ª pata). Prueba a buscar en otros deportes o esperar a que aparezcan más eventos."
     elif passed == 0 and blocked_profit > 0:
         texto += f"\n\n💡 *Sugerencia:* Baja el profit mínimo. La mayoría de surebets reales están entre 0.5% y 2%."
     elif total_events == 0:
-        texto += "\n\n⚠️ *Sin datos disponibles.* Los scrapers pueden estar iniciándose o las casas seleccionadas no tienen eventos en este momento."
+        texto += "\n\n⚠️ *La API no devolvió datos.* Puede que la cuota de The Odds API esté agotada. Revisa en theoddsapi.com."
 
     await msg.edit_text(texto, parse_mode="Markdown")
 
@@ -6017,82 +5214,6 @@ async def cmd_tutorial(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown")
 
 # ============================================================
-# HISTORIAL DE ALERTAS
-# ============================================================
-SPORT_EMOJI_HIST = {
-    "FOOTBALL": "⚽", "TENNIS": "🎾", "BASKETBALL": "🏀",
-    "AMERICANFOOTBALL": "🏈", "ICEHOCKEY": "🏒", "BASEBALL": "⚾",
-    "RUGBYLEAGUE": "🏉", "VOLLEYBALL": "🏐", "HANDBALL": "🤾",
-}
-
-async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        _auto_delete(context, update.message.chat_id, update.message.message_id)
-    user_id = update.effective_user.id
-    if not tiene_suscripcion(user_id):
-        await update.message.reply_text(BLOQUEADO_MSG); return
-
-    import ssl as _ssl
-    _ssl_ctx = _ssl.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = _ssl.CERT_NONE
-    conn = None
-    try:
-        conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
-        rows = await conn.fetch(
-            """
-            SELECT a.type, a.sport, a.is_live, a.event_name, a.market, a.profit_pct, a.detected_at
-            FROM arb_notifications n
-            JOIN detected_arbs a ON a.id = n.arb_id
-            WHERE n.telegram_id = $1
-            ORDER BY a.detected_at DESC
-            LIMIT 10
-            """,
-            str(user_id)
-        )
-    except Exception as e:
-        logging.error(f"[historial] DB error: {e}")
-        await update.message.reply_text("⚠️ No se pudo cargar el historial. Inténtalo más tarde.")
-        return
-    finally:
-        if conn:
-            try: await conn.close()
-            except Exception: pass
-
-    if not rows:
-        await update.message.reply_text(
-            "📜 *Historial de alertas*\n━━━━━━━━━━━━━━━━━━\n\n"
-            "Aún no has recibido ninguna alerta del scanner.",
-            parse_mode="Markdown")
-        return
-
-    texto = "📜 *Últimas alertas recibidas*\n━━━━━━━━━━━━━━━━━━\n\n"
-    for r in rows:
-        emoji   = SPORT_EMOJI_HIST.get(r["sport"], "🏅")
-        tipo    = "🎯 Middle" if r["type"] == "MIDDLE" else "⚡ Surebet"
-        live    = " 🎥 LIVE" if r["is_live"] else ""
-        profit  = f"+{float(r['profit_pct']):.2f}%"
-        mercado = r["market"] or "h2h"
-        evento  = r["event_name"] or "?"
-        ts      = r["detected_at"]
-        hora    = ""
-        if ts:
-            try:
-                if ts.tzinfo:
-                    import datetime as _dt
-                    ts_mad = ts.astimezone(_TZ_MAD) if hasattr(_TZ_MAD, 'key') else ts + _dt.timedelta(hours=2)
-                else:
-                    ts_mad = ts + timedelta(hours=2)
-                hora = ts_mad.strftime("%d/%m %H:%M")
-            except Exception:
-                hora = str(ts)[:16]
-        texto += f"{emoji} {tipo}{live} — *{profit}*\n🏆 {evento}\n🎯 {mercado} · 🗓 {hora}\n\n"
-
-    texto += "_Solo se muestran las últimas 10 alertas._"
-    await update.message.reply_text(texto, parse_mode="Markdown")
-
-
-# ============================================================
 # MAIN
 # ============================================================
 async def main():
@@ -6116,19 +5237,11 @@ async def main():
     app.add_handler(CommandHandler("resetstats",    cmd_resetstats))
     app.add_handler(CommandHandler("resumen",       cmd_resumen))
     app.add_handler(CommandHandler("diagnostico",   cmd_diagnostico))
-    app.add_handler(CommandHandler("historial",     cmd_historial))
-
-    # Comandos de ban (admin)
-    app.add_handler(CommandHandler("ban",       cmd_ban))
-    app.add_handler(CommandHandler("unban",     cmd_unban))
-    app.add_handler(CommandHandler("baneados",  cmd_baneados))
 
     # Comandos scanner (admin)
     app.add_handler(CommandHandler("scanner_on",     cmd_scanner_on))
     app.add_handler(CommandHandler("scanner_off",    cmd_scanner_off))
     app.add_handler(CommandHandler("scanner_config", cmd_scanner_config))
-    app.add_handler(CommandHandler("casas",          cmd_casas))
-    app.add_handler(CommandHandler("deportes",       cmd_deportes))
 
     # Video tutoriales
     for _cmd_name in VIDEO_TUTORIALES:
@@ -6139,11 +5252,8 @@ async def main():
 
     # Tareas periódicas
     app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
-    app.job_queue.run_repeating(tarea_sync_desde_api,          interval=300,   first=60)  # 5min — activa pagos Stripe
-    # DESHABILITADO: el scanner Node.js (fidesbot-scanner) ya envía alertas directamente.
-    # Mantener ambos activos causaba alertas duplicadas para el mismo arb.
-    # app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
-    # app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
+    app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
+    app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
     app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
     app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
@@ -6153,7 +5263,7 @@ async def main():
     _tg_queue = asyncio.Queue(maxsize=500)
     asyncio.create_task(_telegram_sender_task(app.bot))
 
-    logger.info("🚀 FiidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
+    logger.info("🚀 FidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)

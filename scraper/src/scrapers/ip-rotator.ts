@@ -195,7 +195,7 @@ async function _triggerRotation(trigger: string): Promise<void> {
 
 async function _checkWireguard(): Promise<{ wgStatus: "up" | "down" | "degraded"; wgLatencyMs: number | null }> {
   try {
-    const { stdout } = await execAsync("wg show wg0", { timeout: 5_000 });
+    const { stdout } = await execAsync("sudo wg show wg0", { timeout: 5_000 });
     const hs = stdout.match(/latest handshake: (.+)/)?.[1]?.trim();
     if (!hs || hs === "(none)") return { wgStatus: "down", wgLatencyMs: null };
   } catch {
