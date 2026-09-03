@@ -146,7 +146,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   // Empirically, live codere vs WH tennis arbs run 6-9% (books lag behind each other on live updates).
   // Prematch WH vs winamax/codere can diverge 4-7% on minor-league baseball and ATP qualifiers.
   const PROFIT_CAP_LIVE = 9.0;
-  const PROFIT_CAP_PREMATCH = 7.0;
+  const PROFIT_CAP_PREMATCH = 8.0;
   const cap = market.isLive ? PROFIT_CAP_LIVE : PROFIT_CAP_PREMATCH;
   // Silent skip: profit >15% is almost certainly settled/suspended odds — too noisy to log
   if (profitPct > 15) return null;
