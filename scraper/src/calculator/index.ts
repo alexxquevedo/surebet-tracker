@@ -145,7 +145,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   // Safety cap: profits above these thresholds are almost certainly parsing errors or stale prices.
   // Empirically, live codere vs WH tennis arbs run 6-9% (books lag behind each other on live updates).
   // Prematch WH vs winamax/codere can diverge 4-7% on minor-league baseball and ATP qualifiers.
-  const PROFIT_CAP_LIVE = 9.0;
+  const PROFIT_CAP_LIVE = 12.0;
   const PROFIT_CAP_PREMATCH = 11.0;
   const cap = market.isLive ? PROFIT_CAP_LIVE : PROFIT_CAP_PREMATCH;
   // Silent skip: profit >15% is almost certainly settled/suspended odds — too noisy to log
