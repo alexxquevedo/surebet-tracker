@@ -637,6 +637,17 @@ async function runCleanup() {
   }
 }
 
+process.on("SIGTERM", async () => {
+  console.log("[scanner] SIGTERM received — shutting down...");
+  clearTimeout(liveTimer);
+  clearTimeout(prematchTimer);
+  clearTimeout(cleanupTimer);
+  const { browserManager } = await import("./scrapers/playwright-base");
+  await browserManager.shutdown();
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
 process.on("SIGINT", async () => {
   console.log("\n[scanner] Shutting down...");
   clearTimeout(liveTimer);

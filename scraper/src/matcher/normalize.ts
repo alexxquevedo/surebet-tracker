@@ -289,6 +289,65 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\brepublique\s+tcheque\b/gi, "czech"], // FR: République Tchèque -> czech
   [/\brepublique\s+czech\b/gi, "czech"],   // FR post-transform (tcheque->czech ran first)
   [/\brepublica\s+checa\b/gi, "czech"],    // ES: República Checa -> czech
+  // ── Major European countries — FR → EN ─────────────────────────────────
+  [/\ballemagne\b/gi, "germany"],           // FR: Allemagne -> germany
+  [/\baltlemagne\b/gi, "germany"],          // FR typo variant
+  [/\bbelgique\b/gi, "belgium"],            // FR: Belgique -> belgium
+  [/\bitalie\b/gi, "italy"],               // FR: Italie -> italy
+  [/\bsuisse\b/gi, "switzerland"],          // FR: Suisse -> switzerland
+  [/\bfinlande\b/gi, "finland"],            // FR: Finlande -> finland
+  [/\bnorvege\b/gi, "norway"],              // FR: Norvège -> norway (diacritics stripped)
+  [/\bdanemark\b/gi, "denmark"],            // FR: Danemark -> denmark
+  [/\bpologne\b/gi, "poland"],              // FR: Pologne -> poland
+  [/\bhongrie\b/gi, "hungary"],             // FR: Hongrie -> hungary
+  [/\bturquie\b/gi, "turkey"],              // FR: Turquie -> turkey
+  [/\bcroatie\b/gi, "croatia"],             // FR: Croatie -> croatia
+  [/\bslovenie\b/gi, "slovenia"],           // FR: Slovénie -> slovenia
+  [/\bslovaquie\b/gi, "slovakia"],          // FR: Slovaquie -> slovakia
+  [/\bgrece\b/gi, "greece"],               // FR: Grèce -> greece
+  [/\bautriche\b/gi, "austria"],            // FR: Autriche -> austria
+  [/\bucrania\b/gi, "ukraine"],             // ES: Ucrania -> ukraine
+  [/\bucraina\b/gi, "ukraine"],             // IT variant
+  [/\bislande\b/gi, "iceland"],             // FR: Islande -> iceland
+  [/\bislandia\b/gi, "iceland"],            // ES: Islandia -> iceland
+  [/\bchypre\b/gi, "cyprus"],              // FR: Chypre -> cyprus
+  [/\bchipre\b/gi, "cyprus"],              // ES: Chipre -> cyprus
+  [/\balbanie\b/gi, "albania"],             // FR: Albanie -> albania
+  [/\bserbie\b/gi, "serbia"],              // FR: Serbie -> serbia
+  [/\bmonteneg[or]{1,3}\b/gi, "montenegro"], // FR variant: Monténégro
+  [/\bgeorige\b/gi, "georgia"],             // FR: Géorgie -> georgia (typo guard)
+  [/\bgeorgie\b/gi, "georgia"],             // FR: Géorgie -> georgia
+  [/\bbielorussie\b/gi, "belarus"],         // FR: Biélorussie -> belarus
+  [/\bbielorusia\b/gi, "belarus"],          // ES variant
+  [/\bbielorrusia\b/gi, "belarus"],         // ES: Bielorrusia -> belarus
+  [/\blettonie\b/gi, "latvia"],             // FR: Lettonie -> latvia
+  [/\bletonia\b/gi, "latvia"],              // ES: Letonia -> latvia
+  [/\blituanie\b/gi, "lithuania"],          // FR: Lituanie -> lithuania
+  [/\blituania\b/gi, "lithuania"],          // ES: Lituania -> lithuania
+  [/\bestonie\b/gi, "estonia"],             // FR: Estonie -> estonia
+  [/\barmenie\b/gi, "armenia"],             // FR: Arménie -> armenia
+  [/\bazerba[iï]djan\b/gi, "azerbaijan"],   // FR: Azerbaïdjan -> azerbaijan
+  [/\bazerba[iy]an\b/gi, "azerbaijan"],     // ES: Azerbaiyán -> azerbaijan
+  [/\bkazajistan\b/gi, "kazakhstan"],       // ES: Kazajistán -> kazakhstan
+  [/\bkazakhstan\b/gi, "kazakhstan"],       // FR/EN variant
+  // ── Major European countries — ES → EN ──────────────────────────────────
+  [/\balemania\b/gi, "germany"],            // ES: Alemania -> germany
+  [/\bbélgica\b/gi, "belgium"],             // ES: Bélgica -> belgium (pre-strip — regex won't hit)
+  [/\bbélgica\b/gi, "belgium"],             // ES: Bélgica -> belgium (with diacritic)
+  [/\bbelgica\b/gi, "belgium"],             // ES: Belgica -> belgium (post-strip)
+  [/\bitalia\b/gi, "italy"],               // ES/IT: Italia -> italy
+  [/\bsuiza\b/gi, "switzerland"],           // ES: Suiza -> switzerland
+  [/\bfinlandia\b/gi, "finland"],           // ES: Finlandia -> finland
+  [/\bnoruega\b/gi, "norway"],              // ES: Noruega -> norway
+  [/\bdinamarca\b/gi, "denmark"],           // ES: Dinamarca -> denmark
+  [/\bpolonia\b/gi, "poland"],              // ES: Polonia -> poland
+  [/\bhungria\b/gi, "hungary"],             // ES: Hungría -> hungary (post-strip)
+  [/\bturquia\b/gi, "turkey"],              // ES: Turquía -> turkey (post-strip)
+  [/\bcroacia\b/gi, "croatia"],             // ES: Croacia -> croatia
+  [/\beslovenia\b/gi, "slovenia"],          // ES: Eslovenia -> slovenia
+  [/\beslovaquia\b/gi, "slovakia"],         // ES: Eslovaquia -> slovakia
+  [/\bgrecia\b/gi, "greece"],              // ES: Grecia -> greece
+  [/\bgeorgia\b/gi, "georgia"],             // ES: Georgia -> georgia (same as EN)
   [/\bgijon\b/gi, "gijon"],                 // normalize Gijón (already works via diacritics)
   [/\bsporting\s+de\s+gijon\b/gi, "gijon"],  // Sporting de Gijón -> gijon
   [/\bestoril\s+praia\b/gi, "estoril"],    // PT: Estoril-Praia -> estoril
