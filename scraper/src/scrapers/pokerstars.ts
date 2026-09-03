@@ -1,9 +1,9 @@
 /**
  * PokerStars Sports España — HTTP scraper (no browser).
  *
- * Approach: HTTP GET a /sports/ con socks5 proxy ES.
- * El SSR embeds __INITIAL_STATE__['isp-sports-widget-home-page'] directamente en el HTML.
- * Extraemos el JSON con regex — sin Playwright, sin Chrome.
+ * Fetches per-sport pages in parallel. Each sport page embeds the full
+ * isp-sports-widget-home-page SSR JSON filtered to that sport.
+ * Events are deduplicated by eventId+marketType across pages.
  */
 
 import * as https from "https";
@@ -23,9 +23,21 @@ const SPORT_MAP: Record<number, Sport> = {
   6423: "AMERICANFOOTBALL",
   468328: "HANDBALL",
   998917: "VOLLEYBALL",
+  2593174: "BASEBALL",
 };
 
-const HOME_URL = "https://www.pokerstars.es/sports/";
+const SPORT_PAGES = [
+  "https://www.pokerstars.es/sports/football/",
+  "https://www.pokerstars.es/sports/tennis/",
+  "https://www.pokerstars.es/sports/basketball/",
+  "https://www.pokerstars.es/sports/ice-hockey/",
+  "https://www.pokerstars.es/sports/handball/",
+  "https://www.pokerstars.es/sports/volleyball/",
+  "https://www.pokerstars.es/sports/american-football/",
+  "https://www.pokerstars.es/sports/rugby-league/",
+  "https://www.pokerstars.es/sports/baseball/",
+];
+
 const CACHE_TTL_MS = 110_000;
 
 interface PSRunner {
@@ -57,7 +69,7 @@ interface PSCompetition {
   competitionName: string;
 }
 
-interface PSHomeData {
+interface PSPageData {
   competitions: Record<string, PSCompetition>;
   events: Record<string, PSEvent>;
   markets: Record<string, PSMarket>;
@@ -65,7 +77,7 @@ interface PSHomeData {
 
 export class PokerStarsScraper extends BaseScraper {
   readonly name = "pokerstars";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "ICEHOCKEY", "RUGBYLEAGUE", "AMERICANFOOTBALL", "HANDBALL", "VOLLEYBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "ICEHOCKEY", "RUGBYLEAGUE", "AMERICANFOOTBALL", "HANDBALL", "VOLLEYBALL", "BASEBALL"];
 
   private cachedData: { ts: number; events: ScrapedEvent[] } | null = null;
   private _fetchInFlight: Promise<ScrapedEvent[]> | null = null;
@@ -80,30 +92,10 @@ export class PokerStarsScraper extends BaseScraper {
     try { return await this._fetchInFlight; } finally { this._fetchInFlight = null; }
   }
 
-  private async _doFetch(): Promise<ScrapedEvent[]> {
-    const now = Date.now();
-    if (this.cachedData && now - this.cachedData.ts < CACHE_TTL_MS) {
-      return this.cachedData.events;
-    }
-
-    const proxy = getProxyForScraper("pokerstars");
-    if (!proxy) {
-      this.log("Sin proxy ES — necesita ROUTER_PROXY_URL o POKERSTARS_PROXY_URL");
-      return [];
-    }
-
-    // Build proxy URL with credentials if present
-    let proxyUrl = proxy.server;
-    if (proxy.username) {
-      const u = new URL(proxy.server);
-      u.username = encodeURIComponent(proxy.username);
-      u.password = encodeURIComponent(proxy.password ?? "");
-      proxyUrl = u.toString();
-    }
-
+  private async fetchPage(url: string, proxyUrl: string, redirectsLeft = 3): Promise<string | null> {
     const agent = new SocksProxyAgent(proxyUrl);
-    const html = await new Promise<string>((resolve, reject) => {
-      const req = https.get(HOME_URL, {
+    return new Promise<string | null>((resolve) => {
+      const req = https.get(url, {
         agent,
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -111,32 +103,34 @@ export class PokerStarsScraper extends BaseScraper {
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "Accept-Encoding": "identity",
         },
-        timeout: 20_000,
+        timeout: 25_000,
       }, (res) => {
+        const status = res.statusCode ?? 0;
+        if ((status === 301 || status === 302 || status === 307 || status === 308) && res.headers.location && redirectsLeft > 0) {
+          res.resume();
+          const next = res.headers.location.startsWith("http") ? res.headers.location : new URL(res.headers.location, url).toString();
+          this.fetchPage(next, proxyUrl, redirectsLeft - 1).then(resolve);
+          return;
+        }
         const chunks: Buffer[] = [];
         res.on("data", (d: Buffer) => chunks.push(d));
         res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        res.on("error", reject);
+        res.on("error", () => resolve(null));
       });
-      req.on("error", reject);
-      req.on("timeout", () => { req.destroy(); reject(new Error("PokerStars HTTP timeout")); });
+      req.on("error", () => resolve(null));
+      req.on("timeout", () => { req.destroy(); resolve(null); });
     });
+  }
 
-    // Extract isp-sports-widget-home-page JSON from HTML
+  private extractWidget(html: string): PSPageData | null {
     const WIDGET_KEY = "'isp-sports-widget-home-page'";
     const idx = html.indexOf(WIDGET_KEY);
-    if (idx < 0) {
-      this.warn("isp-sports-widget-home-page no encontrado en el HTML");
-      return [];
-    }
-    // Pattern: Object.assign(window.__INITIAL_STATE__['isp-sports-widget-home-page'] || {}, {JSON})
+    if (idx < 0) return null;
+
     const assignIdx = html.indexOf("|| {}, {", idx);
-    if (assignIdx < 0) {
-      this.warn("Patrón Object.assign no encontrado tras el widget key");
-      return [];
-    }
+    if (assignIdx < 0) return null;
+
     const jsonStart = assignIdx + "|| {}, ".length;
-    // Walk braces to find closing }
     let depth = 0;
     let end = jsonStart;
     while (end < html.length) {
@@ -144,7 +138,6 @@ export class PokerStarsScraper extends BaseScraper {
       if (ch === "{") depth++;
       else if (ch === "}") { depth--; if (depth === 0) { end++; break; } }
       else if (ch === '"') {
-        // Skip string content
         end++;
         while (end < html.length && html[end] !== '"') {
           if (html[end] === "\\") end++;
@@ -154,25 +147,28 @@ export class PokerStarsScraper extends BaseScraper {
       end++;
     }
 
-    let homeData: PSHomeData;
     try {
-      // The HTML contains JavaScript object literals, not JSON — replace JS-only values
       const jsonStr = html.slice(jsonStart, end)
         .replace(/:\s*undefined\b/g, ":null")
         .replace(/:\s*NaN\b/g, ":null")
         .replace(/:\s*Infinity\b/g, ":null");
-      homeData = JSON.parse(jsonStr) as PSHomeData;
-    } catch (e) {
-      this.warn("JSON parse error: " + String(e).slice(0, 120));
-      return [];
+      return JSON.parse(jsonStr) as PSPageData;
+    } catch {
+      return null;
     }
+  }
 
+  private parsePageData(data: PSPageData, seen: Set<string>): ScrapedEvent[] {
     const events: ScrapedEvent[] = [];
-    const { competitions = {}, events: psEvents = {}, markets = {} } = homeData;
+    const { competitions = {}, events: psEvents = {}, markets = {} } = data;
 
-    for (const mkt of Object.values(markets)) {
+    for (const [mktId, mkt] of Object.entries(markets)) {
       if (mkt.marketStatus !== "OPEN") continue;
       if (mkt.marketType !== "WIN-DRAW-WIN" && mkt.marketType !== "MATCH_BETTING") continue;
+
+      const dedupeKey = `${mkt.eventId}:${mkt.marketType}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
 
       const psEvent = psEvents[String(mkt.eventId)];
       if (!psEvent) continue;
@@ -200,12 +196,11 @@ export class PokerStarsScraper extends BaseScraper {
       const matchName = participants.length >= 2
         ? participants[0] + " - " + participants[participants.length - 1]
         : psEvent.eventName;
-      const eventKey = buildEventKey(sport, matchName, startTime);
 
       events.push({
         bookmaker: "pokerstars",
         sport,
-        eventKey,
+        eventKey: buildEventKey(sport, matchName, startTime),
         eventName: psEvent.eventName,
         league,
         startTime,
@@ -214,11 +209,52 @@ export class PokerStarsScraper extends BaseScraper {
         outcomes,
       });
     }
-
-    const live = events.filter(e => e.isLive).length;
-    this.log(`${events.length} events (${live} live, ${events.length - live} prematch)`);
-    this.cachedData = { ts: Date.now(), events };
     return events;
+  }
+
+  private async _doFetch(): Promise<ScrapedEvent[]> {
+    const now = Date.now();
+    if (this.cachedData && now - this.cachedData.ts < CACHE_TTL_MS) {
+      return this.cachedData.events;
+    }
+
+    const proxy = getProxyForScraper("pokerstars");
+    if (!proxy) {
+      this.log("Sin proxy ES — necesita ROUTER_PROXY_URL o POKERSTARS_PROXY_URL");
+      return [];
+    }
+
+    let proxyUrl = proxy.server;
+    if (proxy.username) {
+      const u = new URL(proxy.server);
+      u.username = encodeURIComponent(proxy.username);
+      u.password = encodeURIComponent(proxy.password ?? "");
+      proxyUrl = u.toString();
+    }
+
+    // Fetch all sport pages in parallel — each gets its own agent instance
+    const htmlResults = await Promise.all(SPORT_PAGES.map(url => this.fetchPage(url, proxyUrl)));
+
+    const seen = new Set<string>();
+    const allEvents: ScrapedEvent[] = [];
+    let pagesOk = 0;
+
+    for (let i = 0; i < SPORT_PAGES.length; i++) {
+      const html = htmlResults[i];
+      if (!html) continue;
+
+      const data = this.extractWidget(html);
+      if (!data) continue;
+
+      pagesOk++;
+      const pageEvents = this.parsePageData(data, seen);
+      allEvents.push(...pageEvents);
+    }
+
+    const live = allEvents.filter(e => e.isLive).length;
+    this.log(`${allEvents.length} events (${live} live, ${allEvents.length - live} prematch) from ${pagesOk}/${SPORT_PAGES.length} pages`);
+    this.cachedData = { ts: Date.now(), events: allEvents };
+    return allEvents;
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
