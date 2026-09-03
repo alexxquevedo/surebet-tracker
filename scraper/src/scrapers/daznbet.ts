@@ -336,7 +336,7 @@ export class DaznBetScraper extends BaseScraper {
       // The SPA only subscribes to eventmap/socketConnection (handshake) within our capture window;
       // the actual eventmap/upcoming{CODE} subscription push — which contains all event IDs — arrives
       // later after a lazy component mounts. We subscribe directly to get it immediately.
-      const EVTMAP_CODES: Partial<Record<string, string>> = { FOOTBALL: "FBL", BASKETBALL: "BKB", TENNIS: "TNS", HANDBALL: "HBL", VOLLEYBALL: "VLB", ICEHOCKEY: "HKY", BASEBALL: "BSB", AMERICANFOOTBALL: "AFB", RUGBYLEAGUE: "RUG" };
+      const EVTMAP_CODES: Partial<Record<string, string>> = { FOOTBALL: "FBL", BASKETBALL: "BKB", TENNIS: "TNS", HANDBALL: "HBL", VOLLEYBALL: "VLB", ICEHOCKEY: "HKY", BASEBALL: "BSB", AMERICANFOOTBALL: "AFB", RUGBYLEAGUE: "RUU" };
       const evtmapSportCode = EVTMAP_CODES[sport] ?? "FBL";
       const evtmapServerId = String(Math.floor(Math.random() * 900 + 100));
       const evtmapSessId = Math.random().toString(36).substring(2, 10);

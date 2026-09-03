@@ -156,7 +156,12 @@ export class PokerStarsScraper extends BaseScraper {
 
     let homeData: PSHomeData;
     try {
-      homeData = JSON.parse(html.slice(jsonStart, end)) as PSHomeData;
+      // The HTML contains JavaScript object literals, not JSON — replace JS-only values
+      const jsonStr = html.slice(jsonStart, end)
+        .replace(/:\s*undefined\b/g, ":null")
+        .replace(/:\s*NaN\b/g, ":null")
+        .replace(/:\s*Infinity\b/g, ":null");
+      homeData = JSON.parse(jsonStr) as PSHomeData;
     } catch (e) {
       this.warn("JSON parse error: " + String(e).slice(0, 120));
       return [];
