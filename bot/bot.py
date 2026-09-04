@@ -343,7 +343,7 @@ Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los 
 Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
 SOPORTE_PAGINAS = [
-"""🆘 *Soporte — FiidesBot*  _(1/2)_
+"""🆘 *Soporte — FiidesBot*  _(1/3)_
 ━━━━━━━━━━━━━━━━━━
 
 📩 Cualquier duda, escríbenos al administrador. Te respondemos lo antes posible.
@@ -367,8 +367,8 @@ DualStats es la app web complementaria al bot. Registra todas tus apuestas y mue
 Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta activa en DualStats y el plan PRO+Tracker.
 
 ━━━━━━━━━━━━━━━━━━
-_Actualizado: 21/08/2026_""",
-"""🆘 *Soporte — FiidesBot*  _(2/2)_
+_Actualizado: 03/09/2026_""",
+"""🆘 *Soporte — FiidesBot*  _(2/3)_
 ━━━━━━━━━━━━━━━━━━
 
 📌 *Preguntas frecuentes (cont.):*
@@ -394,13 +394,32 @@ Permiten usar funciones premium puntualmente sin suscripción. Ganas créditos i
 ❓ *¿Qué hago si el bot no responde?*
 Envía /start para reiniciar la sesión. Si el problema persiste, escribe al administrador con una captura de pantalla y tu ID de Telegram.
 
+━━━━━━━━━━━━━━━━━━""",
+"""📚 *Glosario del arbitraje*  _(3/3)_
+━━━━━━━━━━━━━━━━━━
+
+🎯 *¿Qué es una surebet?*
+Una surebet (o apuesta segura) cubre todos los resultados posibles en distintas casas con beneficio garantizado. Ej: Casa A da 2.10 en local y Casa B da 2.10 en visitante — apuestas en ambas y ganas sea cual sea el resultado.
+
+📈 *¿Qué es una valuebet?*
+Una valuebet es una cuota por encima de su probabilidad real. No garantiza beneficio en cada apuesta, pero apostando sistemáticamente cuotas con valor positivo, el ROI a largo plazo es positivo. Más riesgo que surebets, pero más volumen disponible.
+
+🎯 *¿Qué es un middle?*
+Un middle es cuando hay un rango de marcadores que hace ganar en las dos casas a la vez (p.ej. handicap +2.5 en una y -1.5 en otra). Si el marcador cae en ese rango, ganas doble. Si no, solo pierdes la pequeña diferencia de cuotas.
+
+⚖️ *¿Son legales las surebets en España?*
+Completamente legales para el apostante. Es una estrategia matemática en casas con licencia española (DGOJ). No existe ninguna ley que prohíba aprovechar diferencias de cuotas entre operadoras.
+
+🛡️ *¿Las casas pueden cerrarme la cuenta?*
+Pueden limitarte o cerrarte, pero no denunciarte. Para minimizar el riesgo: redondea importes, varía casas y mercados, no apuestes siempre el máximo.
+
 ━━━━━━━━━━━━━━━━━━"""
 ]
 
 NOVEDADES_HUB = (
     "📰 *Novedades — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
     "📌 Mantente al día con todo lo nuevo que ofrece FiidesBot.\n\n"
-    "🕒 Última actualización: *24/08/2026*\n\n"
+    "🕒 Última actualización: *03/09/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
@@ -411,47 +430,58 @@ NOVEDADES_HUB = (
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕒 *Última actualización — 24/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "✅ *Activación automática* — tu suscripción se activa al instante "
-    "tras el pago con Stripe, sin esperar confirmación manual\n"
+    "🕐 *Última actualización — 03/09/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ *5 casas activas en tiempo real* — Codere, Winamax, William Hill, "
+    "DaznBet y PokerStars escaneadas con scraper directo\n"
+    "✅ *DaznBet y PokerStars operativas* — nuevas fuentes de cuotas "
+    "incorporadas esta semana\n"
+    "✅ *William Hill live* — cuotas en directo vía WebSocket "
+    "(hasta 47 eventos simultáneos)\n"
     "✅ *Integración FiidesBot × DualStats Tracker* — vincula tu cuenta "
-    "web y registra apuestas directamente desde las alertas del bot\n"
+    "web y registra apuestas desde las alertas del bot\n"
     "✅ *Sistema de créditos y freebets* — búsquedas gratuitas por invitar "
     "amigos o renovar suscripción\n"
-    "✅ *Alertas live mejoradas* — cooldown inteligente para evitar "
-    "spam de cuotas fluctuantes\n"
-    "✅ *Auto-registro aproximado* — las apuestas pendientes de confirmar "
-    "se registran solas a las 48h con aviso por Telegram\n"
+    "✅ *Auto-registro aproximado* — las apuestas pendientes se registran "
+    "solas a las 48h con aviso por Telegram\n"
     "✅ *Flujo de Apuestas Pendientes* — acepta o rechaza cada alerta "
     "antes de registrarla en DualStats\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
     "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 24/08/2026_\n\n"
-    "🔜 *Canal gratuito de Telegram* — alertas de muestra para que "
-    "compruebes cómo funciona FiidesBot antes de suscribirte. "
-    "Lanzamiento inminente.\n"
-    "🔜 Más casas de apuestas — añadimos Bet365, Bwin, William Hill, "
-    "Betsson y más para ampliar las combinaciones disponibles\n"
-    "🔜 Más cobertura live — scrapers adicionales para detectar más "
-    "surebets en tiempo real\n"
-    "🔜 Integración web completa — registra y gestiona todas tus "
-    "apuestas directamente desde las alertas del bot\n\n"
+    "_Actualizado: 03/09/2026_\n\n"
+    "🏀 *NBA temporada 2026-27* — la temporada arranca en octubre. "
+    "Estaremos listos con cobertura completa de baloncesto en todas "
+    "las casas activas\n\n"
+    "🔼 *Canal gratuito de Telegram* — alertas de muestra para "
+    "comprobar cómo funciona FiidesBot antes de suscribirte. Lanzamiento próximo\n"
+    "🔼 *Más casas de apuestas* — Bet365, Bwin y Betsson en desarrollo. "
+    "Requieren proxy residencial español (en configuración)\n"
+    "🔼 *Más mercados* — ampliamos más allá del 1X2: handicaps, "
+    "totales y cuotas asiáticas\n"
+    "🔼 *Integración web completa* — gestiona y analiza todas tus "
+    "apuestas desde DualStats Tracker\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_AVISOS = (
     "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 24/08/2026_\n\n"
-    "✅ *Codere y Winamax activas con scraper directo*\n"
-    "Detectamos odds en tiempo real de Codere y Winamax sin necesidad de proxy. "
-    "Otras casas españolas (Sportium, Bwin, William Hill, Betsson...) "
-    "requieren proxy residencial y se activarán próximamente.\n\n"
+    "_Actualizado: 03/09/2026_\n\n"
+    "✅ *5 casas activas en tiempo real*\n"
+    "Escaneamos cuotas en directo de: *Codere, Winamax, William Hill, "
+    "DaznBet y PokerStars*. Sin necesidad de proxy — scrapers "
+    "directos y estables.\n\n"
+    "⚠️ *Casas en pausa temporal*\n"
+    "Bwin y Betsson requieren proxy residencial español distinto "
+    "al actual. Estamos trabajando en la solución.\n\n"
+    "🏀 *Baloncesto — preparados para la NBA*\n"
+    "La temporada 2026-27 arranca en octubre. Nuestros scrapers ya "
+    "cubren baloncesto europeo (EuroLeague, ACB) y estarán listos "
+    "para la NBA desde el primer día.\n\n"
     "ℹ️ *Fuente de datos*\n"
-    "Las surebets se detectan vía scrapers directos (Winamax, Codere) "
-    "y The Odds API para mercados internacionales. "
-    "Cuantas más casas tengas activadas, más oportunidades verás.\n\n"
+    "Scrapers directos (5 casas activas) + The Odds API para "
+    "mercados internacionales adicionales. Cuantas más casas "
+    "tengas activadas, más combinaciones se detectan.\n\n"
     "_Esta sección se actualiza con comunicados importantes "
     "sobre el servicio o cambios de precios._\n"
     "━━━━━━━━━━━━━━━━━━"
@@ -3106,7 +3136,7 @@ def _get_scanner_cfg(user_id: int) -> dict:
     return cfg.setdefault("scanner", {
         "active": False, "minProfitPct": 1.5,
         "alertSurebets": True, "alertMiddles": True,
-        "alertLive": True, "alertPrematch": True,
+        "alertLive": True, "alertPrematch": True, "blockDrawRisk": False,
     })
 
 def _set_scanner_cfg(user_id: int, **kwargs):
