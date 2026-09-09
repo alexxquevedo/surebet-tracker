@@ -46,6 +46,8 @@ TELEGRAM_TOKEN   = _require_env("TELEGRAM_TOKEN")
 ADMIN_ID         = 1207554638
 ADMIN_IDS        = {1207554638, 2051653218}  # Todos los admins
 PAGOS_GROUP_ID   = -5254902973
+ODDS_API_KEY     = _require_env("ODDS_API_KEY")
+ODDS_API_BASE    = "https://api.the-odds-api.com/v4"
 DB_FILE          = "/content/drive/MyDrive/fidesbot/bot_db.json"
 ALERTS_CACHE_FILE = "bot_alerts_cache.json"
 BOT_USERNAME     = "perpleSurebetBot"
@@ -77,9 +79,9 @@ DEFAULT_USER_CONFIG = {
     "block_draw_risk_surebets": False,
     "sports": {
         "soccer": True, "basketball": True,
-        "tennis": True, "volleyball": True,
+        "tennis": True,
         "americanfootball_nfl": True, "icehockey_nhl": True,
-        "baseball_mlb": True, "rugbyleague": True,
+        "baseball_mlb": True,
     },
     "bookmakers": {},  # se sobreescribe abajo con {k: True for k in BOOKMAKERS}
     "stake": 100.0,
@@ -109,6 +111,8 @@ stats = {
     "proxima_actualizacion": None,
 }
 # API credits (The Odds API — actualizado en cada llamada)
+api_credits_remaining: int | None = None
+api_credits_used:      int | None = None
 live_empty_streak: int = 0   # nº de escaneos live consecutivos con 0 eventos
 
 # ── DualStats — nuevos estados ─────────────────────────────
@@ -129,11 +133,9 @@ SPORT_DISPLAY = {
     "soccer":               ("⚽", "Fútbol"),
     "basketball":           ("🏀", "Baloncesto"),
     "tennis":               ("🎾", "Tenis"),
-    "volleyball":           ("🏐", "Voleibol"),
     "americanfootball_nfl": ("🏈", "Fútbol Americano"),
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
     "baseball_mlb":         ("⚾", "Béisbol"),
-    "rugbyleague":          ("🏉", "Rugby"),
 }
 SPORT_STATUS = {
     "soccer":               "Winamax + Codere (scraper directo) + OddsAPI",
@@ -142,7 +144,6 @@ SPORT_STATUS = {
     "americanfootball_nfl": "OddsAPI — temporada oct-feb",
     "icehockey_nhl":        "OddsAPI — temporada oct-jun",
     "baseball_mlb":         "OddsAPI — temporada abr-oct",
-    "rugbyleague":          "OddsAPI — NRL/Super League",
 }
 
 LEAGUE_MAP = {
@@ -152,44 +153,8 @@ LEAGUE_MAP = {
     "americanfootball_nfl": "NFL",
     "icehockey_nhl":        "NHL",
     "baseball_mlb":         "MLB",
-    "rugbyleague":          "Rugby League",
 }
-
-# ── Tier 1 competition patterns (⭐ in notifications) ─────────────────────────
-# Matching is case-insensitive substring against the league/competition name.
-_TIER1: dict[str, list[str]] = {
-    "soccer": [
-        "champions league", "la liga", "bundesliga", "premier league",
-        "ligue 1", "serie a", "primeira liga", "eredivisie", "jupiler",
-        "europa league", "conference league", "copa libertadores",
-        "copa sudamericana", "world cup", "nations league", "league one",
-    ],
-    "basketball": [
-        "nba", "wnba", "euroleague", "euroliga", " acb", "superliga turca",
-        "lega basket", "basketball champions league", "fiba world cup", "olympics",
-    ],
-    "tennis": [
-        "wimbledon", "us open", "french open", "roland garros", "australian open",
-        "masters 1000", "atp 500", "wta 500", "atp 250", "wta 250",
-        "davis cup", "bjk cup", "billie jean", "finals",
-    ],
-    "baseball_mlb": [
-        "mlb", "npb", "kbo", "lmb", "lmp", "caribbean",
-        "world baseball classic", "world series",
-    ],
-    "americanfootball_nfl": ["nfl", "super bowl", "playoffs", "ncaa"],
-    "icehockey_nhl":        ["nhl", "khl", "shl", "liiga", "ahl", "world championship"],
-    "rugbyleague":          ["super league", "nrl", "state of origin", "world cup"],
-}
-
-
-def _es_tier1(sport_key: str, liga: str) -> bool:
-    """True when liga matches a Tier 1 competition pattern for the given sport."""
-    patterns = _TIER1.get(sport_key, [])
-    if not patterns or not liga:
-        return False
-    liga_lower = liga.lower()
-    return any(p in liga_lower for p in patterns)
+BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
 
 # ============================================================
 # FUENTE ÚNICA DE CASAS — añadir/quitar solo aquí
@@ -209,13 +174,10 @@ BOOKMAKERS: dict[str, dict] = {
     "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": "https://www.pokerstars.es",      "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": "https://www.888sport.es",        "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "casumo":      {"name": "Casumo",        "emoji": "🎪", "url": "https://www.casumo.es",           "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
     "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
     # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
     "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
-    "interwetten": {"name": "Interwetten",   "emoji": "🟡", "url": "https://www.interwetten.es",      "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
     "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
-    "unibet":      {"name": "Unibet",        "emoji": "🟢", "url": "https://www.unibet.es",           "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
     "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": True},
     "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
     "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
@@ -242,14 +204,12 @@ DEFAULT_USER_CONFIG["bookmakers"] = {k: v.get("default", True) for k, v in BOOKM
 DUALSTATS_ODDS_URL = f"{DUALSTATS_API_URL}/odds"
 
 CASAS_CLON = [
-    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "unibet", "pokerstars", "casumo", "marca", "kirolbet"},
+    {"kambi", "888sport", "leovegas", "betsson", "betsson_es", "pokerstars", "kirolbet"},
     {"codere", "sportium"},
     {"tonybet", "luckia", "casino-gran-madrid"},  # Altenar
 ]
 
 def son_casas_clon(bk1, bk2):
-    if bk1 == bk2:  # mismo bookmaker nunca es un surebet real
-        return True
     for grupo in CASAS_CLON:
         if bk1 in grupo and bk2 in grupo:
             return True
@@ -277,7 +237,7 @@ def _save_scanner_state(state: dict):
 
 BLOQUEADO_MSG = "⛔ Función solo disponible para usuarios suscritos.\n\nPulsa 💳 Suscribirse para activar tu cuenta."
 
-SUSCRIPCION = """💳 *Planes FiidesBot*
+SUSCRIPCION = """💳 *Planes FidesBot*
 ━━━━━━━━━━━━━━━━━━
 
 💎 *PRO* — Alertas ilimitadas
@@ -306,12 +266,12 @@ Tu acceso se activa *automáticamente* al completar el pago.
 
 👇 *Elige tu plan:*"""
 
-TERMINOS = """📋 *Términos y Condiciones — FiidesBot & DualStats Tracker*
+TERMINOS = """📋 *Términos y Condiciones — FidesBot & DualStats Tracker*
 
 _Última actualización: 21/08/2026_
 
 *1. Identificación del servicio*
-FiidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
+FidesBot es un bot de Telegram que proporciona información sobre oportunidades de apuestas (surebets, middlebets, valuebets) en tiempo real. DualStats Tracker es la aplicación web complementaria para el seguimiento y análisis de dichas apuestas. Ninguno de los dos servicios pertenece a ninguna casa de apuestas ni actúa en nombre de ellas.
 
 *2. Aceptación*
 El uso de cualquiera de los servicios implica la aceptación plena de estos Términos.
@@ -320,21 +280,21 @@ El uso de cualquiera de los servicios implica la aceptación plena de estos Tér
 Uso exclusivo para mayores de 18 años. El acceso por menores está estrictamente prohibido.
 
 *4. Naturaleza del servicio*
-FiidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
+FidesBot y DualStats son herramientas informativas. No garantizan beneficios ni resultados. Las cuotas y mercados pueden cambiar en cualquier momento. La decisión de apostar es responsabilidad exclusiva del usuario.
 
 ⚠️ *No apuestes más de lo que estés dispuesto a perder.*
 
 *5. Pagos y reembolsos*
-Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FiidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
+Los pagos se procesan a través de Stripe, plataforma certificada PCI DSS. FidesBot no almacena datos bancarios. Reembolso disponible en las primeras 24h si no ha habido uso intensivo. Si el servicio cesa definitivamente, se aplicará devolución proporcional al tiempo no disfrutado.
 
 *6. Datos y privacidad*
-FiidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
+FidesBot almacena únicamente el ID de Telegram y la configuración del usuario. DualStats Tracker almacena los datos de apuestas que el usuario introduce voluntariamente. Ningún dato se comparte con terceros ni con casas de apuestas. Los datos pueden eliminarse a petición contactando al administrador.
 
 *7. Prohibiciones*
 Están prohibidos: ceder el acceso a terceros, reenviar alertas de forma automática, compartir la suscripción y cualquier uso automatizado no autorizado. El incumplimiento conlleva bloqueo permanente sin reembolso.
 
 *8. Responsabilidad*
-FiidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
+FidesBot y DualStats no son asesores financieros. El usuario es el único responsable de sus decisiones de apuesta y sus consecuencias económicas. Los servicios no se responsabilizan de pérdidas, limitaciones impuestas por casas de apuestas ni de variaciones de cuotas tras el envío de una alerta.
 
 *9. Modificaciones*
 Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los cambios se comunicarán a través del bot.
@@ -343,7 +303,7 @@ Nos reservamos el derecho a modificar estos Términos en cualquier momento. Los 
 Contacta con el administrador directamente a través del bot para cualquier consulta o reclamación."""
 
 SOPORTE_PAGINAS = [
-"""🆘 *Soporte — FiidesBot*  _(1/3)_
+"""🆘 *Soporte — FidesBot*  _(1/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📩 Cualquier duda, escríbenos al administrador. Te respondemos lo antes posible.
@@ -355,7 +315,7 @@ SOPORTE_PAGINAS = [
 Pulsa 💳 Suscribirse en el menú, elige tu plan y completa el pago. El acceso se activa automáticamente al instante.
 
 ❓ *¿Qué es Stripe? ¿Es seguro pagar ahí?*
-Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FiidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
+Stripe es la pasarela de pago que usan Amazon, Google o Spotify. FidesBot no almacena datos bancarios — todo lo gestiona Stripe con cifrado PCI DSS. Puedes pagar con Visa, Mastercard o Amex.
 
 ❓ *¿La suscripción se renueva sola? ¿Cómo la cancelo?*
 No se renueva automáticamente: expira en la fecha que ves en tu menú. Para renovar, pulsa 🔄 Renovar en el menú principal y elige tu plan.
@@ -367,8 +327,8 @@ DualStats es la app web complementaria al bot. Registra todas tus apuestas y mue
 Pulsa 📈 DualStats en el menú principal y sigue los pasos. Necesitas cuenta activa en DualStats y el plan PRO+Tracker.
 
 ━━━━━━━━━━━━━━━━━━
-_Actualizado: 03/09/2026_""",
-"""🆘 *Soporte — FiidesBot*  _(2/3)_
+_Actualizado: 21/08/2026_""",
+"""🆘 *Soporte — FidesBot*  _(2/2)_
 ━━━━━━━━━━━━━━━━━━
 
 📌 *Preguntas frecuentes (cont.):*
@@ -394,94 +354,64 @@ Permiten usar funciones premium puntualmente sin suscripción. Ganas créditos i
 ❓ *¿Qué hago si el bot no responde?*
 Envía /start para reiniciar la sesión. Si el problema persiste, escribe al administrador con una captura de pantalla y tu ID de Telegram.
 
-━━━━━━━━━━━━━━━━━━""",
-"""📚 *Glosario del arbitraje*  _(3/3)_
-━━━━━━━━━━━━━━━━━━
-
-🎯 *¿Qué es una surebet?*
-Una surebet (o apuesta segura) cubre todos los resultados posibles en distintas casas con beneficio garantizado. Ej: Casa A da 2.10 en local y Casa B da 2.10 en visitante — apuestas en ambas y ganas sea cual sea el resultado.
-
-📈 *¿Qué es una valuebet?*
-Una valuebet es una cuota por encima de su probabilidad real. No garantiza beneficio en cada apuesta, pero apostando sistemáticamente cuotas con valor positivo, el ROI a largo plazo es positivo. Más riesgo que surebets, pero más volumen disponible.
-
-🎯 *¿Qué es un middle?*
-Un middle es cuando hay un rango de marcadores que hace ganar en las dos casas a la vez (p.ej. handicap +2.5 en una y -1.5 en otra). Si el marcador cae en ese rango, ganas doble. Si no, solo pierdes la pequeña diferencia de cuotas.
-
-⚖️ *¿Son legales las surebets en España?*
-Completamente legales para el apostante. Es una estrategia matemática en casas con licencia española (DGOJ). No existe ninguna ley que prohíba aprovechar diferencias de cuotas entre operadoras.
-
-🛡️ *¿Las casas pueden cerrarme la cuenta?*
-Pueden limitarte o cerrarte, pero no denunciarte. Para minimizar el riesgo: redondea importes, varía casas y mercados, no apuestes siempre el máximo.
-
 ━━━━━━━━━━━━━━━━━━"""
 ]
 
 NOVEDADES_HUB = (
-    "📰 *Novedades — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "📌 Mantente al día con todo lo nuevo que ofrece FiidesBot.\n\n"
-    "🕒 Última actualización: *03/09/2026*\n\n"
+    "📰 *Novedades — FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "📌 Mantente al día con todo lo nuevo que ofrece FidesBot.\n\n"
+    "🕒 Última actualización: *24/08/2026*\n\n"
     "✨ *¿Qué encontrarás aquí?*\n"
     " • Notas de la última versión.\n"
     " • Nuevas funcionalidades y mejoras.\n"
     " • Próximas funciones en desarrollo.\n"
     " • Mensajes importantes y avisos.\n\n"
-    "💎 Gracias por confiar en FiidesBot. Seguimos trabajando para "
+    "💎 Gracias por confiar en FidesBot. Seguimos trabajando para "
     "ayudarte con el arbitraje deportivo.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_ULTIMA = (
-    "🕐 *Última actualización — 03/09/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
-    "✅ *5 casas activas en tiempo real* — Codere, Winamax, William Hill, "
-    "DaznBet y PokerStars escaneadas con scraper directo\n"
-    "✅ *DaznBet y PokerStars operativas* — nuevas fuentes de cuotas "
-    "incorporadas esta semana\n"
-    "✅ *William Hill live* — cuotas en directo vía WebSocket "
-    "(hasta 47 eventos simultáneos)\n"
-    "✅ *Integración FiidesBot × DualStats Tracker* — vincula tu cuenta "
-    "web y registra apuestas desde las alertas del bot\n"
+    "🕒 *Última actualización — 24/08/2026*\n━━━━━━━━━━━━━━━━━━\n\n"
+    "✅ *Activación automática* — tu suscripción se activa al instante "
+    "tras el pago con Stripe, sin esperar confirmación manual\n"
+    "✅ *Integración FidesBot × DualStats Tracker* — vincula tu cuenta "
+    "web y registra apuestas directamente desde las alertas del bot\n"
     "✅ *Sistema de créditos y freebets* — búsquedas gratuitas por invitar "
     "amigos o renovar suscripción\n"
-    "✅ *Auto-registro aproximado* — las apuestas pendientes se registran "
-    "solas a las 48h con aviso por Telegram\n"
+    "✅ *Alertas live mejoradas* — cooldown inteligente para evitar "
+    "spam de cuotas fluctuantes\n"
+    "✅ *Auto-registro aproximado* — las apuestas pendientes de confirmar "
+    "se registran solas a las 48h con aviso por Telegram\n"
     "✅ *Flujo de Apuestas Pendientes* — acepta o rechaza cada alerta "
     "antes de registrarla en DualStats\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_PROXIMAS = (
     "🚀 *Próximas funciones*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 03/09/2026_\n\n"
-    "🏀 *NBA temporada 2026-27* — la temporada arranca en octubre. "
-    "Estaremos listos con cobertura completa de baloncesto en todas "
-    "las casas activas\n\n"
-    "🔼 *Canal gratuito de Telegram* — alertas de muestra para "
-    "comprobar cómo funciona FiidesBot antes de suscribirte. Lanzamiento próximo\n"
-    "🔼 *Más casas de apuestas* — Bet365, Bwin y Betsson en desarrollo. "
-    "Requieren proxy residencial español (en configuración)\n"
-    "🔼 *Más mercados* — ampliamos más allá del 1X2: handicaps, "
-    "totales y cuotas asiáticas\n"
-    "🔼 *Integración web completa* — gestiona y analiza todas tus "
-    "apuestas desde DualStats Tracker\n\n"
+    "_Actualizado: 24/08/2026_\n\n"
+    "🔜 *Canal gratuito de Telegram* — alertas de muestra para que "
+    "compruebes cómo funciona FidesBot antes de suscribirte. "
+    "Lanzamiento inminente.\n"
+    "🔜 Más casas de apuestas — añadimos Bet365, Bwin, William Hill, "
+    "Betsson y más para ampliar las combinaciones disponibles\n"
+    "🔜 Más cobertura live — scrapers adicionales para detectar más "
+    "surebets en tiempo real\n"
+    "🔜 Integración web completa — registra y gestiona todas tus "
+    "apuestas directamente desde las alertas del bot\n\n"
     "💡 ¿Tienes ideas? Escríbenos desde 🆘 Soporte.\n"
     "━━━━━━━━━━━━━━━━━━"
 )
 NOVEDADES_AVISOS = (
     "📢 *Avisos importantes*\n━━━━━━━━━━━━━━━━━━\n"
-    "_Actualizado: 03/09/2026_\n\n"
-    "✅ *5 casas activas en tiempo real*\n"
-    "Escaneamos cuotas en directo de: *Codere, Winamax, William Hill, "
-    "DaznBet y PokerStars*. Sin necesidad de proxy — scrapers "
-    "directos y estables.\n\n"
-    "⚠️ *Casas en pausa temporal*\n"
-    "Bwin y Betsson requieren proxy residencial español distinto "
-    "al actual. Estamos trabajando en la solución.\n\n"
-    "🏀 *Baloncesto — preparados para la NBA*\n"
-    "La temporada 2026-27 arranca en octubre. Nuestros scrapers ya "
-    "cubren baloncesto europeo (EuroLeague, ACB) y estarán listos "
-    "para la NBA desde el primer día.\n\n"
+    "_Actualizado: 24/08/2026_\n\n"
+    "✅ *Codere y Winamax activas con scraper directo*\n"
+    "Detectamos odds en tiempo real de Codere y Winamax sin necesidad de proxy. "
+    "Otras casas españolas (Sportium, Bwin, William Hill, Betsson...) "
+    "requieren proxy residencial y se activarán próximamente.\n\n"
     "ℹ️ *Fuente de datos*\n"
-    "Scrapers directos (5 casas activas) + The Odds API para "
-    "mercados internacionales adicionales. Cuantas más casas "
-    "tengas activadas, más combinaciones se detectan.\n\n"
+    "Las surebets se detectan vía scrapers directos (Winamax, Codere) "
+    "y The Odds API para mercados internacionales. "
+    "Cuantas más casas tengas activadas, más oportunidades verás.\n\n"
     "_Esta sección se actualiza con comunicados importantes "
     "sobre el servicio o cambios de precios._\n"
     "━━━━━━━━━━━━━━━━━━"
@@ -568,7 +498,7 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
         cfg.get("bookmakers", {}).pop("marathonbet", None)   # eliminada del mercado español
         # Migrar casas nuevas que se añadieron con default=False por error — activarlas para usuarios existentes
-        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
+        for _bk_new in ("betway", "betano", "tonybet", "casino-gran-madrid", "kirolbet"):
             if cfg.get("bookmakers", {}).get(_bk_new) is False:
                 cfg["bookmakers"][_bk_new] = True
         # Migrar min_profit_surebet de 3.0 (default antiguo) a 1.5 (más útil en la práctica)
@@ -678,7 +608,7 @@ async def cargar_db():
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
                         cfg.get("bookmakers", {}).pop("marathonbet", None)
-                        for _bk_new in ("betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet"):
+                        for _bk_new in ("betway", "betano", "tonybet", "casino-gran-madrid", "kirolbet"):
                             if cfg.get("bookmakers", {}).get(_bk_new) is False:
                                 cfg["bookmakers"][_bk_new] = True
                         if cfg.get("min_profit_surebet") == 3.0:
@@ -815,7 +745,7 @@ async def cmd_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=target,
-            text="🚫 Tu acceso a FiidesBot ha sido restringido por el administrador.\n"
+            text="🚫 Tu acceso a FidesBot ha sido restringido por el administrador.\n"
                  "Si crees que es un error, contacta con soporte.")
     except Exception:
         pass
@@ -837,7 +767,7 @@ async def cmd_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=target,
-            text="✅ Tu acceso a FiidesBot ha sido restaurado. Escribe /start para continuar.")
+            text="✅ Tu acceso a FidesBot ha sido restaurado. Escribe /start para continuar.")
     except Exception:
         pass
 
@@ -900,7 +830,6 @@ def ha_pagado_antes(user_id):
     return user_id in subscriptions
 
 def dias_restantes(user_id):
-    if user_id in ADMIN_IDS: return 9999
     cache = subscription_api_cache.get(user_id)
     if cache and cache.get("subscribed") and cache.get("daysLeft") is not None:
         return cache["daysLeft"]
@@ -1016,15 +945,6 @@ async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
                     existing["expires"] = expires
                     existing["is_trial"] = False
                     existing.get("config", {}).pop("_is_trial", None)
-                    try:
-                        nl = "\n"
-                        exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
-                        name = existing.get("name") or str(uid)
-                        msg_r = f"🔄 *Renovación*{nl}{name} (`{uid}`){nl}⏰ Nueva exp: {exp_s}"
-                        await context.bot.send_message(chat_id=ADMIN_ID, text=msg_r, parse_mode="Markdown")
-                        await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_r, parse_mode="Markdown")
-                    except Exception:
-                        pass
             else:
                 # New subscription — add to in-memory dict (Stripe payment just processed)
                 cfg = sub.get("config") or deepcopy(DEFAULT_USER_CONFIG)
@@ -1044,15 +964,6 @@ async def tarea_sync_desde_api(context: ContextTypes.DEFAULT_TYPE):
                 }
                 creditos[uid] = sub.get("credits") or creditos.get(uid, 0)
                 logger.info(f"[sync] Suscripción nueva cargada desde API: {uid}")
-                try:
-                    nl = "\n"
-                    exp_s = expires.strftime('%d/%m/%Y') if expires else "?"
-                    name = sub.get("telegramName") or str(uid)
-                    msg_n = f"💳 *Nuevo pago*{nl}{name} (`{uid}`){nl}⏰ Expira: {exp_s}"
-                    await context.bot.send_message(chat_id=ADMIN_ID, text=msg_n, parse_mode="Markdown")
-                    await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_n, parse_mode="Markdown")
-                except Exception:
-                    pass
 
         for u in api_data.get("linkedUsers", []):
             uid = int(u["telegramId"])
@@ -1077,7 +988,7 @@ async def tarea_verificar_suscripciones(context: ContextTypes.DEFAULT_TYPE):
                     _discard_aviso(uid, "7d"); _discard_aviso(uid, "1d")
                     _add_aviso(uid, "expired")
                     await context.bot.send_message(chat_id=uid,
-                        text="😢 *Tu suscripción a FiidesBot ha caducado.*\n\n"
+                        text="😢 *Tu suscripción a FidesBot ha caducado.*\n\n"
                              "Ya no recibirás alertas hasta que renueves.\n\n"
                              "👉 Escribe /start y pulsa 💳 *Suscribirse* para continuar.",
                         parse_mode="Markdown")
@@ -1192,11 +1103,9 @@ def encontrar_apuestas(event, active_bookmakers, buscar_middles=False, sport_key
             b2 = max(e2, key=lambda x: x["price"])
             if not son_casas_clon(b1["bookmaker_key"], b2["bookmaker_key"]):
                 result = calcular_surebet(b1["price"], b2["price"])
-                if result and result["profit"] > 15.0:
-                    result = None  # cap duro: >15% son casi siempre errores de parsing o cuotas stale
                 if result:
                     # Fútbol, americano y rugby pueden terminar en empate
-                    SPORTS_WITH_DRAW = {"soccer", "americanfootball", "rugbyleague"}
+                    SPORTS_WITH_DRAW = {"soccer", "americanfootball"}
                     has_draw_risk = any(sport_key.startswith(s) for s in SPORTS_WITH_DRAW)
                     apuestas.append({"tipo":"surebet","profit":result["profit"],
                         "draw_risk": has_draw_risk, "legs":[
@@ -1278,92 +1187,96 @@ def calcular_stakes(total, legs):
 # ============================================================
 # FETCH Y ESCANEO
 # ============================================================
+async def fetch_odds(sport_key, live=False):
+    global api_credits_remaining, api_credits_used
+    url = (f"{ODDS_API_BASE}/sports/{sport_key}/odds"
+           f"?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals"
+           f"&oddsFormat=decimal&inPlay={'true' if live else 'false'}")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                # Capture credit headers from The Odds API
+                remaining = resp.headers.get("x-requests-remaining")
+                used      = resp.headers.get("x-requests-used")
+                if remaining is not None:
+                    api_credits_remaining = int(remaining)
+                if used is not None:
+                    api_credits_used = int(used)
 
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status in (401, 422, 429):
+                    body = await resp.text()
+                    logger.error(f"[API] {sport_key} HTTP {resp.status} — cuota agotada o clave inválida: {body[:200]}")
+                    if api_credits_remaining == 0:
+                        logger.error("[API] ⚠️  0 créditos restantes — desactivando escaneo hasta recarga mensual.")
+                else:
+                    logger.warning(f"[API] {sport_key} HTTP {resp.status}")
+                return []
+    except Exception as e:
+        logger.error(f"Error {sport_key}: {e}"); return []
 
-# ── Odds API sport_key → VPS SportType (for DualStats event filtering) ─────────
+# ── OddsAPI league-specific key → user-facing sport key (for cross-source merge) ──
+_ODDSAPI_SPORT_KEY_NORM = {
+    "basketball_nba":            "basketball",
+    "basketball_euroleague":     "basketball",
+}
+
+def _norm_sport_key(sk: str) -> str:
+    return _ODDSAPI_SPORT_KEY_NORM.get(sk, sk)
+
+# ── Odds API sport_key → VPS SportType (for filtering DualStats events) ────────
 _VPS_SPORT_MAP = {
     "soccer":               "FOOTBALL",
     "basketball":           "BASKETBALL",
     "tennis":               "TENNIS",
     "baseball_mlb":         "BASEBALL",
-    "americanfootball_nfl": "AMERICANFOOTBALL",
     "icehockey_nhl":        "ICEHOCKEY",
-    "volleyball":           "VOLLEYBALL",
-    "rugbyleague":          "RUGBYLEAGUE",
-}
-
-_VPS_BOOKMAKER_TITLES = {
-    "winamax":  "Winamax",
-    "codere":   "Codere",
-    "daznbet":  "DaznBet",
-    "betfair":  "Betfair",
-    "bet365":   "bet365",
-    "betsson":  "Betsson",
-    "williamhill": "William Hill",
+    "americanfootball_nfl": "AMERICANFOOTBALL",
 }
 
 def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
-    """Convert a VPS scraper event (from DualStats /api/bot/odds) to Odds API format."""
-    try:
-        event_name: str = ev.get("eventName", "")
-        # Parse home/away from "Team A v Team B" or "Team A - Team B" or "Team A vs Team B"
-        import re as _re
-        sep_match = _re.split(r" v | vs | - | — ", event_name, maxsplit=1)
-        if len(sep_match) == 2:
-            home_team = sep_match[0].strip()
-            away_team = sep_match[1].strip()
-        else:
-            # Can't split: use eventName as both (degenerate)
-            home_team = event_name
-            away_team = event_name
-
-        bookmakers_out = []
-        for bo in ev.get("bookmakerOdds", []):
-            bk_key   = bo.get("bookmaker", "")
-            bk_title = _VPS_BOOKMAKER_TITLES.get(bk_key, bk_key.title())
-            mkt_key  = bo.get("market", "h2h")
-            raw_outcomes = bo.get("outcomes") or []
-
-            if mkt_key == "h2h":
-                # [{name, odds}, ...]
-                outcomes_out = [
-                    {"name": o.get("name", ""), "price": float(o.get("odds", 0))}
-                    for o in raw_outcomes
-                    if o.get("odds", 0) > 1.0
-                ]
-            elif mkt_key == "totals":
-                # [{line, over, under}, ...]
-                outcomes_out = []
-                for o in raw_outcomes:
-                    line = o.get("line")
-                    if o.get("over", 0) > 1.0:
-                        outcomes_out.append({"name": "Over",  "price": float(o["over"]),  "point": line})
-                    if o.get("under", 0) > 1.0:
-                        outcomes_out.append({"name": "Under", "price": float(o["under"]), "point": line})
-            else:
-                continue  # skip unknown markets
-
-            if outcomes_out:
-                bookmakers_out.append({
-                    "key":    bk_key,
-                    "title":  bk_title,
-                    "markets": [{"key": mkt_key, "outcomes": outcomes_out}],
-                })
-
-        if not bookmakers_out:
-            return None
-
-        return {
-            "id":             ev.get("eventKey", ""),
-            "sport_key":      sport_key,
-            "sport_title":    sport_key.replace("_", " ").title(),
-            "home_team":      home_team,
-            "away_team":      away_team,
-            "commence_time":  ev.get("startTime") or "",
-            "bookmakers":     bookmakers_out,
-        }
-    except Exception:
+    """Convert one DualStats /api/bot/odds event to The Odds API event format."""
+    bk_map: dict[str, dict] = {}  # bookmaker_key → {key, title, markets:[...]}
+    for item in ev.get("bookmakerOdds", []):
+        bk  = item["bookmaker"]
+        mkt = item["market"]
+        raw = item.get("outcomes", [])
+        outcomes_api: list[dict] = []
+        if mkt == "h2h":
+            for o in (raw if isinstance(raw, list) else []):
+                outcomes_api.append({"name": o.get("name", ""), "price": float(o.get("odds", 0))})
+        elif mkt == "totals":
+            for o in (raw if isinstance(raw, list) else []):
+                line = o.get("line")
+                if o.get("over"):
+                    outcomes_api.append({"name": "Over",  "price": float(o["over"]),  "point": line})
+                if o.get("under"):
+                    outcomes_api.append({"name": "Under", "price": float(o["under"]), "point": line})
+        if not outcomes_api:
+            continue
+        if bk not in bk_map:
+            bk_map[bk] = {"key": bk, "title": BOOKMAKER_NAMES.get(bk, bk.title()), "markets": []}
+        bk_map[bk]["markets"].append({"key": mkt, "outcomes": outcomes_api})
+    if not bk_map:
         return None
+    parts = ev.get("eventName", "").split(" vs ", 1)
+    if len(parts) == 2:
+        home, away = parts[0].strip(), parts[1].strip()
+    else:
+        parts2 = ev.get("eventName", "").split(" - ", 1)
+        home = parts2[0].strip() if parts2 else ev.get("eventName", "")
+        away = parts2[1].strip() if len(parts2) > 1 else ""
+    return {
+        "id":            ev.get("eventKey", ""),
+        "sport_key":     sport_key,
+        "sport_title":   ev.get("league") or LEAGUE_MAP.get(sport_key, sport_key),
+        "commence_time": ev.get("startTime") or "2099-01-01T00:00:00Z",
+        "home_team":     home,
+        "away_team":     away,
+        "_source":       "dualstats",      # internal tag — not sent to Telegram
+        "bookmakers":    list(bk_map.values()),
+    }
 
 async def fetch_dualstats_odds(sport_key: str, live: bool = False) -> list:
     """Fetch VPS scraper odds from DualStats /api/bot/odds endpoint."""
@@ -1753,7 +1666,6 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     profit = ap["profit"]
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
-    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
@@ -1769,7 +1681,7 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     draw_warn  = "\n⚠️ *ATENCIÓN: el empate NO está cubierto — si el partido empata se pierden AMBAS apuestas*" if ap.get("draw_risk") else ""
     timestamp  = local_now().strftime("%H:%M:%S")
     return (f"{cabecera}{sospechoso}{draw_warn}\n\n"
-            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n"
+            f"{emoji} {nombre_deporte} — {liga}\n"
             f"🗓️ {fecha_str}{' 🎥 LIVE' if live else ''}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
@@ -1777,7 +1689,6 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
 def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     emoji, nombre_deporte = SPORT_DISPLAY.get(sport_key, ("🏅", sport_key))
     liga = event.get("sport_title", LEAGUE_MAP.get(sport_key, ""))
-    tier1_star = "⭐ " if _es_tier1(sport_key, liga) else ""
     try:
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
@@ -1793,7 +1704,7 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
     return (f"📢 Alerta Middlebets!{' 🎥 LIVE' if live else ''}\n"
             f"📈 Máx. si middle: +{ap['profit_max']:.2f}% | {peor_txt}\n"
             f"🍀 Probabilidad middle: {ap['prob_middle']:.2f}%\n\n"
-            f"{tier1_star}{emoji} {nombre_deporte}{(' — ' + liga) if liga else ''}\n🗓️ {fecha_str}\n"
+            f"{emoji} {nombre_deporte} — {liga}\n🗓️ {fecha_str}\n"
             f"🏆 {event['home_team']} – {event['away_team']}\n{lineas}"
             f"⏰ Generada a las {timestamp} — actúa rápido")
 
@@ -1813,12 +1724,22 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     total_surebets = 0; total_middles = 0
     now = datetime.utcnow()
     for sport_key in all_sports:
-        # Fetch only from VPS scrapers (Winamax + Codere via DualStats API)
+        # Concurrent fetch: The Odds API (international) + DualStats (VPS, ES casas)
+        if sport_key == "basketball":
+            odds_tasks = [fetch_odds(_bk, live=live) for _bk in BASKETBALL_API_KEYS]
+        else:
+            odds_tasks = [fetch_odds(sport_key, live=live)]
+        odds_tasks.append(fetch_dualstats_odds(sport_key, live=live))
+        results_list = await asyncio.gather(*odds_tasks, return_exceptions=True)
+
+        # Collect events from both sources, then merge cross-source by Jaro-Winkler team-name matching
         events: list[dict] = []
-        try:
-            events = await fetch_dualstats_odds(sport_key, live=live)
-        except Exception as e:
-            logger.error(f"fetch error {sport_key}: {e}")
+        for result in results_list:
+            if isinstance(result, Exception):
+                logger.error(f"fetch error {sport_key}: {result}")
+                continue
+            events.extend(result)
+        events = _merge_cross_source_events(events, live)
         for event in events:
             try: commence = datetime.fromisoformat(event["commence_time"].replace("Z",""))
             except (ValueError, KeyError): commence = None
@@ -1958,10 +1879,16 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     return total_surebets + total_middles
 
 async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[prematch] Sin créditos API — escaneo omitido.")
+        return
     await escanear_y_alertar(context.application, live=False)
 
 async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     global live_empty_streak
+    if api_credits_remaining is not None and api_credits_remaining <= 0:
+        logger.warning("[live] Sin créditos API — escaneo omitido.")
+        return
     # Prune stale live deduplication entries (live games never last >3h)
     cutoff = datetime.now() - timedelta(hours=3)
     stale = [k for k, v in live_sent_surebets.items() if v["ts"] < cutoff]
@@ -1974,7 +1901,10 @@ async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
         live_empty_streak += 1
     else:
         live_empty_streak = 0
-
+    # Log créditos tras cada ciclo live
+    if api_credits_remaining is not None:
+        logger.info(f"[API] Créditos restantes: {api_credits_remaining} | Usados: {api_credits_used}"
+                    + (" ⚠️ BAJOS" if api_credits_remaining < 500 else ""))
 
 # ============================================================
 # MENÚ NO SUSCRITO
@@ -1986,7 +1916,7 @@ async def menu_no_suscrito(update):
         [InlineKeyboardButton("📊 Valuebets 🔒", callback_data="bloqueado"),
          InlineKeyboardButton("🎁 Freebets", callback_data="panel_freebets")],
         [InlineKeyboardButton("🔔 Alertas 🔒", callback_data="bloqueado"),
-         InlineKeyboardButton("⚙️ Configuración",     callback_data="menu_config")],
+         InlineKeyboardButton("⚙️ Configuración 🔒", callback_data="bloqueado")],
         [InlineKeyboardButton("🔍 Escanear 🔒", callback_data="bloqueado"),
          InlineKeyboardButton("🧮 Stake 🔒", callback_data="bloqueado")],
         [InlineKeyboardButton("💰 Créditos", callback_data="mis_creditos"),
@@ -1996,7 +1926,7 @@ async def menu_no_suscrito(update):
         [InlineKeyboardButton("💳 Suscribirse", callback_data="suscribirse")],
     ]
     texto = (
-        "🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        "🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         "🎫 Suscripción: *NO* ❌\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "• 💎 Surebets 🔒\n• 🎯 Middlebets 🔒\n• 📊 Valuebets 🔒\n• ⚡ LIVE 🔒\n"
@@ -2032,7 +1962,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_banned(user_id):
         await update.message.reply_text(
-            "🚫 Tu acceso a FiidesBot está restringido.\n"
+            "🚫 Tu acceso a FidesBot está restringido.\n"
             "Si crees que es un error, contacta con soporte.")
         return
 
@@ -2078,18 +2008,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         guardar_db()
         try:
-            nl = "\n"
-            msg_prueba = (
-                f"🆕 *Nuevo usuario en prueba*{nl}"
-                f"{user.full_name} (`{user_id}`){nl}"
-                f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"
-            )
-            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_prueba, parse_mode="Markdown")
-            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_prueba, parse_mode="Markdown")
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(f"🆕 *Nuevo usuario en prueba*\n"
+                      f"{user.full_name} (`{user_id}`)\n"
+                      f"⏰ Expira: {trial_exp.strftime('%d/%m/%Y %H:%M')}"),
+                parse_mode="Markdown")
         except Exception:
             pass
         await update.message.reply_text(
-            f"🎁 *¡Bienvenido a FiidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"🎁 *¡Bienvenido a FidesBot!*\n━━━━━━━━━━━━━━━━━━\n\n"
             f"Tienes *3 días de prueba gratuita* para descubrir cómo funcionan las alertas "
             f"de surebets y middlebets en tiempo real.\n\n"
             f"⏰ Tu prueba expira el *{trial_exp.strftime('%d/%m/%Y a las %H:%M')}*\n\n"
@@ -2133,8 +2061,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     casas_activas = sum(1 for v in BOOKMAKERS.values() if "✅" in v.get("status", ""))
     casas_str   = f" • {casas_activas}/{len(BOOKMAKERS)} casas con scraper activo (detalle en /casas)"
+    creditos_linea = (f"💳 Créditos API: *{api_credits_remaining}* restantes (usados: {api_credits_used})\n"
+                      if api_credits_remaining is not None else "💳 Créditos API: *sin datos aún*\n")
+    creditos_alerta = " ⚠️ *BAJOS — recarga o pausa en breve*" if (api_credits_remaining is not None and api_credits_remaining < 500) else ""
     await update.message.reply_text(
-        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"📡 *General:*\n • ✅ Servicio operativo\n"
         f" • ⏱️ Próx. actualización: {proxima}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -2147,7 +2078,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆕 {ahora.strftime('%d/%m/%Y %H:%M')}\n"
         f"⏱️ Pre-partido: cada {BOT_CONFIG['scan_prematch_interval']//60} min | "
         f"Live: cada {BOT_CONFIG['scan_live_interval']//60} min\n"
-        f"",
+        f"{creditos_linea}{creditos_alerta}",
         parse_mode="Markdown")
 
 # ============================================================
@@ -2210,7 +2141,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mins = int((pausa_alertas[user_id] - datetime.now()).total_seconds() / 60)
         pausa_str = f"\n⏸️ *Alertas pausadas* — {mins} min restantes"
     texto = (
-        f"🤖 *FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👤 *{nombre}* — {icono_sub} *{dias_str_completo}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"• 💎 Surebets {surebets_icon}\n• 🎯 Middlebets {middles_icon}\n"
@@ -2440,7 +2371,13 @@ async def freebet_casa_seleccionada(update, context, casa_key):
     halladas = []
     for sport_key in sports_on:
         try:
-            events = await fetch_dualstats_odds(sport_key, live=False)
+            if sport_key == "basketball":
+                api_keys = BASKETBALL_API_KEYS
+            else:
+                api_keys = [sport_key]
+            events = []
+            for ak in api_keys:
+                events.extend(await fetch_odds(ak, live=False))
         except Exception:
             continue
         for event in events:
@@ -2522,7 +2459,7 @@ async def mis_referidos(update, context):
         f"• Sin límite de referidos.\n━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📤 Compartir invitación",
-                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FiidesBot%20y%20gana%20créditos%20gratis!")],
+                url=f"https://t.me/share/url?url={link}&text=Únete%20a%20FidesBot%20y%20gana%20créditos%20gratis!")],
             [InlineKeyboardButton("🔙 Volver", callback_data=volver)],
         ]), parse_mode="Markdown")
 
@@ -2975,7 +2912,7 @@ async def soporte_estado_bot(update, context):
     ultima  = stats["ultima_actualizacion"].strftime("%H:%M")  if stats["ultima_actualizacion"]  else "—"
     proxima = stats["proxima_actualizacion"].strftime("%H:%M") if stats["proxima_actualizacion"] else "—"
     await update.callback_query.edit_message_text(
-        f"🤖 *Estado de FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 *Estado de FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"✅ Servicio operativo\n"
         f"⏱️ Último escaneo: *{ultima}*\n"
         f"⏭️ Próximo escaneo: *{proxima}*\n"
@@ -3045,7 +2982,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sc_me = _get_scanner_cfg(update.effective_user.id)
     scanner_line = f"🔎 Scanner: {'✅ ON' if sc_me.get('active') else '❌ OFF'} | Profit ≥{sc_me.get('minProfitPct', 1.5)}%"
     await update.message.reply_text(
-        f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+        f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
         f"👥 Suscriptores activos: *{total}*\n"
         f"💎 Surebets: *{stats['surebets_encontradas']}*\n"
         f"🎯 Middles: *{stats['middlebets_encontradas']}*\n"
@@ -3115,7 +3052,7 @@ async def handle_admin_callback(update, context):
         sc = _get_scanner_cfg(uid_query)
         scanner_line = f"🔎 Scanner: {'✅ ON' if sc.get('active') else '❌ OFF'} | Profit ≥{sc.get('minProfitPct', 1.5)}%"
         await query.edit_message_text(
-            f"👑 *Panel Admin — FiidesBot*\n━━━━━━━━━━━━━━━━━━\n"
+            f"👑 *Panel Admin — FidesBot*\n━━━━━━━━━━━━━━━━━━\n"
             f"👥 *{total}* suscriptores\n{scanner_line}\n━━━━━━━━━━━━━━━━━━",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Activar usuario",   callback_data="admin_activar"),
@@ -3136,7 +3073,7 @@ def _get_scanner_cfg(user_id: int) -> dict:
     return cfg.setdefault("scanner", {
         "active": False, "minProfitPct": 1.5,
         "alertSurebets": True, "alertMiddles": True,
-        "alertLive": True, "alertPrematch": True, "blockDrawRisk": False,
+        "alertLive": True, "alertPrematch": True,
     })
 
 def _set_scanner_cfg(user_id: int, **kwargs):
@@ -3342,10 +3279,12 @@ async def handle_sport_toggle(update, context):
 # ── Helpers de pendientes ─────────────────────────────────
 
 def tiene_tracker(user_id: int) -> bool:
-    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web."""
+    """True si el usuario tiene plan PRO_TRACKER o ENTERPRISE en DualStats web.
+    Si el plan no está guardado aún (usuario vinculado antes de v23), devuelve True
+    para no bloquear a usuarios existentes — la API hará la comprobación final."""
     plan = dualstats_plan.get(user_id)
     if plan is None:
-        return False  # plan desconocido → no mostrar botones de Tracker sin plan confirmado
+        return True   # plan desconocido → dejar pasar, la API web lo validará
     return plan in ("PRO_TRACKER", "ENTERPRISE")
 
 def _uid_pendientes(user_id):
@@ -3451,19 +3390,12 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         guardar_db()
         # Refrescar caché de suscripción desde la API
         await refrescar_suscripcion(user_id)
-        try:
-            nl = "\n"
-            msg_v = f"🔗 *Vinculación DualStats*{nl}{user.full_name} (`{user_id}`){nl}Plan web: {plan_web or 'FREE'}"
-            await context.bot.send_message(chat_id=ADMIN_ID, text=msg_v, parse_mode="Markdown")
-            await context.bot.send_message(chat_id=PAGOS_GROUP_ID, text=msg_v, parse_mode="Markdown")
-        except Exception:
-            pass
         try: await msg.delete()
         except Exception as e: logger.debug("Delete msg ignored: %s", e)
         plan_badge = " (PRO+Tracker ✨)" if plan_web in ("PRO_TRACKER", "ENTERPRISE") else ""
         await update.message.reply_text(
             f"✅ *¡Cuenta vinculada con éxito!{plan_badge}*\n\n"
-            "Tu cuenta de FiidesBot y DualStats Tracker están conectadas.\n\n"
+            "Tu cuenta de FidesBot y DualStats Tracker están conectadas.\n\n"
             "A partir de ahora, cuando pulses *✅ Hecha* en una alerta, "
             "podrás registrar la apuesta directamente desde aquí.",
             parse_mode="Markdown",
@@ -3490,7 +3422,7 @@ async def cmd_procesar_token_vinculacion(update, context, user_id, user, token):
         except Exception as e: logger.debug("Delete msg ignored: %s", e)
         await update.message.reply_text(
             "❌ *El enlace de vinculación no es válido o ha expirado.*\n\n"
-            "Ve a DualStats Tracker → Configuración → Conectar FiidesBot "
+            "Ve a DualStats Tracker → Configuración → Conectar FidesBot "
             "y genera un nuevo enlace.",
             parse_mode="Markdown")
     # Abrir menú si ya es suscriptor
@@ -3502,11 +3434,11 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         _auto_delete(context, update.message.chat_id, update.message.message_id)
     await update.message.reply_text(
-        "🔗 *Vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+        "🔗 *Vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
         "Para vincular tu cuenta:\n\n"
         "1️⃣ Pulsa el botón de abajo para abrir DualStats\n"
         "2️⃣ Inicia sesión con tu cuenta\n"
-        "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
+        "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
         "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
         "Una vez vinculado, las alertas mostrarán botones ✅/❌ "
         "para registrar tus apuestas automáticamente.",
@@ -4820,7 +4752,7 @@ async def handle_desvincular(update, context):
     guardar_db()
     await query.edit_message_text(
         "🔓 *Cuenta desvinculada*\n\n"
-        "Tu cuenta de FiidesBot ya no está conectada a DualStats Tracker.\n"
+        "Tu cuenta de FidesBot ya no está conectada a DualStats Tracker.\n"
         "Puedes volver a vincularla pulsando 📈 DualStats en el menú principal.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("📈 Volver a DualStats", callback_data="panel_dualstats"),
@@ -4936,8 +4868,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _PUBLIC_PREFIXES = ("admin_", "scraper_", "sport_", "menu_no_suscrito", "suscribirse",
                         "stripe_", "plan_", "soporte", "novedades", "tyc",
                         "panel_freebets", "panel_valuebets", "mis_referidos",
-                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh", "sport_refresh",
-                        "menu_config", "cfg_deportes", "cfg_casas", "cfg_profit", "cfg_prob", "cfg_days")
+                        "mis_creditos", "freebet_casa_", "bloqueado", "scraper_refresh", "sport_refresh")
     if not any(data == p or data.startswith(p) for p in _PUBLIC_PREFIXES):
         if not tiene_suscripcion(user_id):
             await query.answer(BLOQUEADO_MSG, show_alert=True); return
@@ -4961,7 +4892,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ *Activado correctamente*\n\n👤 {nombre_activar} (ID: `{uid_activar}`)\n📅 {dias_activar} días — {plan_txt}",
             parse_mode="Markdown")
         try:
-            msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
+            msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
             await context.bot.send_message(chat_id=uid_activar,
                 text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                      f"Tienes *{dias_activar} días* de acceso.\n\nEscribe /start para acceder.",
@@ -5180,10 +5111,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "DS_info_vincular":
         await query.edit_message_text(
-            "🔗 *Cómo vincular FiidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "🔗 *Cómo vincular FidesBot con DualStats Tracker*\n━━━━━━━━━━━━━━━━━━\n\n"
             "1️⃣ Ve a *dualstats-tracker.vercel.app*\n"
             "2️⃣ Inicia sesión con tu cuenta\n"
-            "3️⃣ Abre *Configuración → Conectar FiidesBot*\n"
+            "3️⃣ Abre *Configuración → Conectar FidesBot*\n"
             "4️⃣ Pulsa el botón y acepta en Telegram\n\n"
             "Una vez vinculado, las alertas mostrarán botones ✅/❌.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Volver", callback_data="panel_dualstats")]]),
@@ -5376,7 +5307,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ ID `{uid}` — *{plan_txt}* — activado por *{dias} días*. 💾 Guardado.",
                     parse_mode="Markdown")
                 try:
-                    msg_plan = "🔗 *FiidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FiidesBot PRO*\n✅ Alertas ilimitadas activadas."
+                    msg_plan = "🔗 *FidesBot PRO+Tracker*\n✅ Alertas ilimitadas + DualStats Tracker incluido." if es_tracker else "💎 *FidesBot PRO*\n✅ Alertas ilimitadas activadas."
                     await context.bot.send_message(chat_id=uid,
                         text=f"🎉 ¡Tu suscripción ha sido activada!\n\n{msg_plan}\n\n"
                              f"Tienes *{dias} días* de acceso.\n\nEscribe /start para acceder.",
@@ -5464,7 +5395,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Solo admin. Envia alerta de prueba con formato real.
     Uso: /testalerta [middle] [deporte]
-    Deportes: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano
+    Deportes: futbol, baloncesto, tenis, hockey, beisbol, americano
     Ejemplos:
       /testalerta               -> surebet fútbol
       /testalerta middle        -> middle baloncesto
@@ -5532,20 +5463,6 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             "profit_sure": 2.05, "profit_base": 0.7, "profit_max": 7.0, "prob_mid": 26.0,
         },
-        "rugbyleague": {
-            "home": "Wigan Warriors", "away": "St Helens",
-            "sport_key": "rugbyleague", "liga": "Super League",
-            "time": "2026-06-11T18:00:00Z",
-            "legs_sure": [
-                {"bookmaker": "Bet365",  "outcome": "Wigan",     "odd": 2.00, "stake_pct": 51.0, "point": None, "description": ""},
-                {"bookmaker": "Betfair", "outcome": "St Helens", "odd": 2.05, "stake_pct": 49.0, "point": None, "description": ""},
-            ],
-            "legs_mid": [
-                {"bookmaker": "Bwin",    "outcome": "Over",  "odd": 1.93, "stake_pct": 50.0, "point": 44.5, "description": ""},
-                {"bookmaker": "Betfair", "outcome": "Under", "odd": 2.06, "stake_pct": 50.0, "point": 47.5, "description": ""},
-            ],
-            "profit_sure": 1.50, "profit_base": 0.6, "profit_max": 6.5, "prob_mid": 24.0,
-        },
         "baseball_mlb": {
             "home": "New York Yankees", "away": "Los Angeles Dodgers",
             "sport_key": "baseball_mlb", "liga": "MLB",
@@ -5582,7 +5499,6 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "baloncesto": "basketball", "basket": "basketball", "nba": "basketball", "euroleague": "basketball",
         "tenis": "tennis", "tennis": "tennis",
         "hockey": "icehockey_nhl", "nhl": "icehockey_nhl",
-        "rugby": "rugbyleague",
         "beisbol": "baseball_mlb", "béisbol": "baseball_mlb", "mlb": "baseball_mlb",
         "americano": "americanfootball_nfl", "nfl": "americanfootball_nfl",
     }
@@ -5602,7 +5518,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not sport_key:
                 await update.message.reply_text(
                     f"❓ Deporte '{sport_input}' no reconocido.\n\n"
-                    "Deportes disponibles: futbol, baloncesto, tenis, hockey, rugby, beisbol, americano"
+                    "Deportes disponibles: futbol, baloncesto, tenis, hockey, beisbol, americano"
                 )
                 return
         else:
@@ -5738,8 +5654,14 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sport_detail: list[str] = []
 
     for sport_key in active_sports:
-        events = await fetch_dualstats_odds(sport_key, live=False)
-        events += await fetch_dualstats_odds(sport_key, live=True)
+        if sport_key == "basketball":
+            events: list = []
+            for _bk in BASKETBALL_API_KEYS:
+                events.extend(await fetch_odds(_bk, live=False))
+                events.extend(await fetch_odds(_bk, live=True))
+        else:
+            events = await fetch_odds(sport_key, live=False)
+            events += await fetch_odds(sport_key, live=True)
 
         total_events += len(events)
         sport_surebets = 0
@@ -5769,7 +5691,7 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     detail_str = "\n".join(sport_detail) if sport_detail else "  (ningún deporte activo tiene surebets ahora)"
 
     texto = (
-        f"🔬 *Diagnóstico FiidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔬 *Diagnóstico FidesBot*\n━━━━━━━━━━━━━━━━━━\n\n"
         f"*Tu configuración:*\n"
         f"• Profit mín: {cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG["min_profit_surebet"])}%\n"
         f"• Filtro días: {cfg['max_days']} días\n"
@@ -6052,7 +5974,6 @@ async def cmd_tutorial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 SPORT_EMOJI_HIST = {
     "FOOTBALL": "⚽", "TENNIS": "🎾", "BASKETBALL": "🏀",
     "AMERICANFOOTBALL": "🏈", "ICEHOCKEY": "🏒", "BASEBALL": "⚾",
-    "RUGBYLEAGUE": "🏉", "VOLLEYBALL": "🏐", "HANDBALL": "🤾",
 }
 
 async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -6170,10 +6091,8 @@ async def main():
     # Tareas periódicas
     app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
     app.job_queue.run_repeating(tarea_sync_desde_api,          interval=300,   first=60)  # 5min — activa pagos Stripe
-    # DESHABILITADO: el scanner Node.js (fidesbot-scanner) ya envía alertas directamente.
-    # Mantener ambos activos causaba alertas duplicadas para el mismo arb.
-    # app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
-    # app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
+    app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
+    app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
     app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
     app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
@@ -6183,7 +6102,7 @@ async def main():
     _tg_queue = asyncio.Queue(maxsize=500)
     asyncio.create_task(_telegram_sender_task(app.bot))
 
-    logger.info("🚀 FiidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
+    logger.info("🚀 FidesBot v24 iniciado — live 2min / prematch 5min / dual-source odds / TG rate-limiter.")
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
