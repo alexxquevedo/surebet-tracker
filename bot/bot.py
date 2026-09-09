@@ -181,6 +181,9 @@ BOOKMAKERS: dict[str, dict] = {
     "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": True},
     "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
     "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
+    "marathonbet":     {"name": "Marathonbet",        "emoji": "🏃", "url": "https://www.marathonbet.es",            "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
+    "jokerbet":        {"name": "JokerBet",           "emoji": "🃏", "url": "https://www.jokerbet.es",              "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
+    "paston":          {"name": "Pastón",             "emoji": "🎰", "url": "https://www.paston.es",                "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -1716,7 +1719,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         if not tiene_suscripcion(uid): continue
         cfg = get_config(uid)
         for sport, active in cfg["sports"].items():
-            if active: all_sports.add(sport)
+            if active and sport in SPORT_DISPLAY: all_sports.add(sport)
     # Filtrar deportes pausados globalmente por el admin
     _scanner_state = _load_scanner_state()
     all_sports -= set(_scanner_state.get("disabled_sports", []))
@@ -1756,7 +1759,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                 if commence and not live:
                     secs = (commence - now).total_seconds()
                     if secs < 0 or secs / 86400 > cfg["max_days"]: continue
-                active_bks    = [k for k, v in cfg["bookmakers"].items() if v]
+                active_bks    = [k for k, v in cfg["bookmakers"].items() if v and k in BOOKMAKERS]
                 buscar_middles = cfg.get("middlebets_on", False)
                 apuestas = encontrar_apuestas(event, active_bks, buscar_middles, sport_key=sport_key)
                 for ap in apuestas:
@@ -2152,8 +2155,8 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎯 Profit Middle: *{cfg.get('min_profit_middle',2.0)}%* | Prob: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit Value: *{cfg.get('min_profit_value',5.0)}%*\n"
         f"🧮 Stake: *{stake}€* | 📆 Pre-partido: Máx. *{cfg['max_days']} días*\n"
-        f"🏅 Deportes: *{sum(cfg['sports'].values())}/{len(cfg['sports'])}* | "
-        f"🏦 Casas: *{sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])}*\n"
+        f"🏅 Deportes: *{sum(v for k,v in cfg['sports'].items() if k in SPORT_DISPLAY)}/{len(SPORT_DISPLAY)}* | "
+        f"🏦 Casas: *{sum(v for k,v in cfg['bookmakers'].items() if k in BOOKMAKERS)}/{len(BOOKMAKERS)}*\n"
         f"━━━━━━━━━━━━━━━━━━{aviso}"
     )
     if update.callback_query:
@@ -2365,8 +2368,8 @@ async def freebet_casa_seleccionada(update, context, casa_key):
         parse_mode="Markdown")
 
     cfg        = get_config(user_id)
-    active_bks = [k for k, v in cfg["bookmakers"].items() if v]
-    sports_on  = [k for k, v in cfg["sports"].items() if v][:MAX_SPORTS_FREEBET]
+    active_bks = [k for k, v in cfg["bookmakers"].items() if v and k in BOOKMAKERS]
+    sports_on  = [k for k, v in cfg["sports"].items() if v and k in SPORT_DISPLAY][:MAX_SPORTS_FREEBET]
 
     halladas = []
     for sport_key in sports_on:
@@ -2548,8 +2551,8 @@ async def menu_config(update, context):
         f"🍀 Prob. mín. Middle: *{cfg.get('min_prob_middle',5.0)}%*\n"
         f"📊 Profit mín. Value: *{cfg.get('min_profit_value',5.0)}%*\n"
         f"📆 Filtro Pre-partido: *{cfg['max_days']} días*\n"
-        f"🏅 Deportes: *{sum(cfg['sports'].values())}/{len(cfg['sports'])}*\n"
-        f"🏦 Casas: *{sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])}*\n"
+        f"🏅 Deportes: *{sum(v for k,v in cfg['sports'].items() if k in SPORT_DISPLAY)}/{len(SPORT_DISPLAY)}*\n"
+        f"🏦 Casas: *{sum(v for k,v in cfg['bookmakers'].items() if k in BOOKMAKERS)}/{len(BOOKMAKERS)}*\n"
         "━━━━━━━━━━━━━━━━━━",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(f"💎 Profit Surebet: {cfg.get('min_profit_surebet',3.0)}%", callback_data="cfg_profit_surebet")],
@@ -2557,8 +2560,8 @@ async def menu_config(update, context):
             [InlineKeyboardButton(f"🍀 Prob. Middle mín: {cfg.get('min_prob_middle',5.0)}%", callback_data="cfg_prob_middle")],
             [InlineKeyboardButton(f"📊 Profit Value: {cfg.get('min_profit_value',5.0)}%",    callback_data="cfg_profit_value")],
             [InlineKeyboardButton(f"📆 Filtro Pre-partido: {cfg['max_days']} días",           callback_data="cfg_days")],
-            [InlineKeyboardButton(f"🏅 Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])})", callback_data="cfg_deportes")],
-            [InlineKeyboardButton(f"🏦 Casas de apuestas ({sum(cfg['bookmakers'].values())}/{len(cfg['bookmakers'])})", callback_data="cfg_casas")],
+            [InlineKeyboardButton(f"🏅 Deportes ({sum(v for k,v in cfg['sports'].items() if k in SPORT_DISPLAY)}/{len(SPORT_DISPLAY)})", callback_data="cfg_deportes")],
+            [InlineKeyboardButton(f"🏦 Casas de apuestas ({sum(v for k,v in cfg['bookmakers'].items() if k in BOOKMAKERS)}/{len(BOOKMAKERS)})", callback_data="cfg_casas")],
             [InlineKeyboardButton("🔙 Volver al panel",   callback_data="menu_principal")],
         ]), parse_mode="Markdown")
 
@@ -2571,14 +2574,14 @@ async def menu_cfg_deportes(update, context):
                      InlineKeyboardButton("❌ Ninguno", callback_data="deportes_ninguno")])
     keyboard.append([InlineKeyboardButton("💾 Guardar y volver", callback_data="menu_config")])
     await update.callback_query.edit_message_text(
-        f"🏅 *Deportes ({sum(cfg['sports'].values())}/{len(cfg['sports'])} activos)*\n"
+        f"🏅 *Deportes ({sum(v for k,v in cfg['sports'].items() if k in SPORT_DISPLAY)}/{len(SPORT_DISPLAY)} activos)*\n"
         f"Elige los deportes para los que quieres recibir alertas de surebets y middlebets.\n"
         f"_Toca cualquier deporte para activarlo o desactivarlo._",
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def menu_cfg_casas(update, context):
     cfg = get_config(update.effective_user.id)
-    activas = sum(cfg["bookmakers"].values())
+    activas = sum(v for k, v in cfg["bookmakers"].items() if k in BOOKMAKERS)
     casas_sel = [n for k, n in BOOKMAKER_NAMES.items() if cfg["bookmakers"].get(k)] or ["Ninguna"]
     casas_lista = [f"• {n}" for n in casas_sel]
     texto = (
@@ -5640,8 +5643,8 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("🔍 Analizando... puede tardar 15-30 segundos.")
 
     now = datetime.utcnow()
-    active_sports = [s for s, v in cfg["sports"].items() if v]
-    active_bks = [k for k, v in cfg["bookmakers"].items() if v]
+    active_sports = [s for s, v in cfg["sports"].items() if v and s in SPORT_DISPLAY]
+    active_bks = [k for k, v in cfg["bookmakers"].items() if v and k in BOOKMAKERS]
 
     total_events = 0
     total_surebets_raw = 0
@@ -5695,8 +5698,8 @@ async def cmd_diagnostico(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Tu configuración:*\n"
         f"• Profit mín: {cfg.get('min_profit_surebet', DEFAULT_USER_CONFIG["min_profit_surebet"])}%\n"
         f"• Filtro días: {cfg['max_days']} días\n"
-        f"• Casas activas: {len(active_bks)}/{len(cfg['bookmakers'])}\n"
-        f"• Deportes activos: {len(active_sports)}\n\n"
+        f"• Casas activas: {len(active_bks)}/{len(BOOKMAKERS)}\n"
+        f"• Deportes activos: {len(active_sports)}/{len(SPORT_DISPLAY)}\n\n"
         f"*Resultado del escaneo:*\n"
         f"• Eventos obtenidos de la API: {total_events}\n"
         f"• Surebets detectadas en bruto: {total_surebets_raw}\n\n"
