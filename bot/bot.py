@@ -218,6 +218,34 @@ def son_casas_clon(bk1, bk2):
             return True
     return False
 
+# ── Contador diario de alertas — persistente entre reinicios ──
+ALERTAS_HOY_FILE = "/home/ubuntu/surebet-tracker/bot/alertas-hoy.json"
+
+def _load_alertas_hoy():
+    """Carga alertas_hoy desde disco al arrancar el bot."""
+    global alertas_hoy
+    try:
+        with open(ALERTAS_HOY_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        hoy = datetime.now().date()
+        # Sólo conserva las entradas de hoy; las de días anteriores se descartan
+        alertas_hoy = {
+            int(uid): v for uid, v in raw.items()
+            if v.get("date") == str(hoy)
+        }
+    except Exception:
+        alertas_hoy = {}
+
+def _save_alertas_hoy():
+    """Persiste alertas_hoy a disco (claves int → str para JSON)."""
+    try:
+        payload = {str(uid): {"date": str(v["date"]), "count": v["count"]}
+                   for uid, v in alertas_hoy.items()}
+        with open(ALERTAS_HOY_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+    except Exception:
+        pass
+
 # ── Gestión de scrapers (toggle ON/OFF por admin) ─────────
 # Shared con el scanner Node.js — ambos leen/escriben este JSON.
 SCANNER_STATE_FILE = "/home/ubuntu/scanner-state.json"
@@ -1865,11 +1893,12 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                         else:
                             await tg_send(app.bot, uid, mensaje, _profit=ap["profit"])
                         last_surebet[uid] = ap
-                        # ── Contador diario ─────────────────────
+                        # ── Contador diario (persistente) ───────
                         hoy = datetime.now().date()
                         if uid not in alertas_hoy or alertas_hoy[uid]["date"] != hoy:
                             alertas_hoy[uid] = {"date": hoy, "count": 0}
                         alertas_hoy[uid]["count"] += 1
+                        _save_alertas_hoy()
                     except Exception as e:
                         logger.error(f"Error enviando alerta a {uid}: {e}")
     if not user_ids:
@@ -6051,6 +6080,7 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 async def main():
     await cargar_db()
+    _load_alertas_hoy()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Comandos existentes
