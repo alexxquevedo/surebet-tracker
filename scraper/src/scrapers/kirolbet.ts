@@ -143,6 +143,14 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
   return results;
 }
 
+function extractCompetitionIds(html: string): number[] {
+  const ids = new Set<number>();
+  const re = /\/esp\/Sport\/Competicion\/(\d+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) ids.add(Number(m[1]));
+  return [...ids];
+}
+
 export class KirolbetScraper extends BaseScraper {
   readonly name    = "kirolbet";
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "AMERICANFOOTBALL"];
@@ -158,18 +166,41 @@ export class KirolbetScraper extends BaseScraper {
     }
 
     try {
-      const url = `${BASE_URL}/esp/Sport/Deporte/${sportId}`;
-      this.log(`Kirolbet ${sport}: fetching…`);
-      const html   = await fetchHtml(url, proxy);
-      const events = parseHtml(html, sport);
+      // Step 1: fetch sport page to discover competition IDs
+      const sportUrl = `${BASE_URL}/esp/Sport/Deporte/${sportId}`;
+      this.log(`Kirolbet ${sport}: discovering competitions…`);
+      const sportHtml = await fetchHtml(sportUrl, proxy);
+      const compIds   = extractCompetitionIds(sportHtml);
 
-      if (events.length > 0) {
-        const bySport: Record<string, number> = {};
-        for (const e of events) bySport[e.sport] = (bySport[e.sport] ?? 0) + 1;
-        this.log(`Kirolbet ${sport}: ${events.length} eventos`);
-      } else {
-        this.warn(`Kirolbet ${sport}: 0 eventos`);
+      if (compIds.length === 0) {
+        // Fall back to sport page itself (no competition links found)
+        const events = parseHtml(sportHtml, sport);
+        if (events.length > 0) this.log(`Kirolbet ${sport}: ${events.length} eventos (fallback)`);
+        else this.warn(`Kirolbet ${sport}: 0 eventos`);
+        return events;
       }
+
+      // Step 2: fetch each competition page in parallel
+      const htmls = await Promise.all(
+        compIds.map(cid =>
+          fetchHtml(`${BASE_URL}/esp/Sport/Competicion/${cid}`, proxy).catch(() => ""),
+        ),
+      );
+
+      // Step 3: parse + deduplicate by eventKey
+      const seen   = new Set<string>();
+      const events: ScrapedEvent[] = [];
+      for (const html of htmls) {
+        for (const ev of parseHtml(html, sport)) {
+          if (!seen.has(ev.eventKey)) {
+            seen.add(ev.eventKey);
+            events.push(ev);
+          }
+        }
+      }
+
+      if (events.length > 0) this.log(`Kirolbet ${sport}: ${events.length} eventos (${compIds.length} ligas)`);
+      else this.warn(`Kirolbet ${sport}: 0 eventos`);
       return events;
     } catch (err) {
       this.warn(`Kirolbet ${sport} failed`, err);
