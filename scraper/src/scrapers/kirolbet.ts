@@ -71,7 +71,8 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
   const results: ScrapedEvent[] = [];
 
   // Match event opening div tags: <div ... sport-type="Eve" ...>
-  const eventTagRe = /<div\b([^>]*\bsport-type="Eve"\b[^>]*)>/gi;
+  // Note: no \b after "Eve" — quotes are non-word chars so \b would never match.
+  const eventTagRe = /<div\b([^>]*sport-type="Eve"[^>]*)>/gi;
   let evM: RegExpExecArray | null;
 
   while ((evM = eventTagRe.exec(html)) !== null) {
@@ -93,18 +94,24 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
     const eventKey  = buildEventKey(sport, eventName, undefined);
 
     // Find the 1X2 market for this event.
-    // Market ULs have data-ideve="EVENTID_MARKETID".
+    // Market ULs have data-ideve="EVENTID_MARKETID". Attributes may appear in any order.
     // Exclude hidden markets (houdini_apuesta class).
-    // Match: ul[sport-type="Mkt"][des="1X2"] (no houdini_apuesta) for this event.
-    const escapedId = ideve.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const mktRe = new RegExp(
-      `<ul\\b((?!houdini_apuesta)[^>])*\\bdata-ideve="${escapedId}_\\d+"[^>]*\\bdes="1X2"[^>]*>([\\s\\S]*?)<\\/ul>`,
-      "i",
-    );
-    const mktM = mktRe.exec(html);
-    if (!mktM) continue;
-
-    const mktHtml = mktM[2];
+    const mktPattern = /<ul\b([^>]*)>([\s\S]*?)<\/ul>/gi;
+    let mktM: RegExpExecArray | null;
+    let mktHtml: string | null = null;
+    mktPattern.lastIndex = 0;
+    while ((mktM = mktPattern.exec(html)) !== null) {
+      const attrs = mktM[1];
+      if (
+        attrs.includes(`data-ideve="${ideve}_`) &&
+        attrs.includes('des="1X2"') &&
+        !attrs.includes("houdini_apuesta")
+      ) {
+        mktHtml = mktM[2];
+        break;
+      }
+    }
+    if (!mktHtml) continue;
 
     // Extract each selection: title attribute (name) + span.coef (odds)
     const selRe = /\btitle="([^"]+)"[\s\S]*?<span\b[^>]*class="coef"[^>]*>([^<]+)<\/span>/gi;
