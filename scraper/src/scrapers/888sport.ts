@@ -57,7 +57,7 @@ export class Sport888Scraper extends BaseScraper {
         resolve(result);
       };
 
-      // Hard 35s timeout — spectate fires getInplayEvents/all ~10-18s after page load
+      // Hard 42s timeout — spectate fires getInplayEvents/all ~22-25s after domcontentloaded
       const hardTimeout = setTimeout(() => {
         if (captured) {
           const results = parseSpectateResponse(captured);
@@ -67,7 +67,7 @@ export class Sport888Scraper extends BaseScraper {
           this.warn("888sport Playwright hard timeout — sin respuesta getInplayEvents/all");
           void closeAndResolve([]);
         }
-      }, 35_000);
+      }, 42_000);
 
       (async () => {
         try {
@@ -93,12 +93,12 @@ export class Sport888Scraper extends BaseScraper {
           });
 
           await page.goto(LIVE_URL, { waitUntil: "domcontentloaded", timeout: 12_000 }).catch(() => {});
-          // Wait for lazy spectate API calls — fires 10-18s after domcontentloaded
-          await page.waitForTimeout(20_000);
+          // Wait for lazy spectate API calls — fires ~22-25s after domcontentloaded
+          await page.waitForTimeout(30_000);
 
           // If still no data after waiting, close with whatever we have
           const results = captured ? parseSpectateResponse(captured) : [];
-          if (!captured) this.warn("888sport: getInplayEvents/all no recibido en 20s");
+          if (!captured) this.warn("888sport: getInplayEvents/all no recibido en 30s");
           await closeAndResolve(results);
         } catch (err) {
           this.warn("888sport Playwright error", err);
