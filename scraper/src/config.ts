@@ -56,6 +56,7 @@ export const config = {
     marathonbet:  process.env.MARATHONBET_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
     jokerbet:     process.env.JOKERBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
     paston:       process.env.PASTON_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
+    kirolbet:     process.env.KIROLBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
   },
   scanner: {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),

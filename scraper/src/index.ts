@@ -36,6 +36,7 @@ import { PokerStarsScraper } from "./scrapers/pokerstars";
 import { Bet365Scraper } from "./scrapers/bet365";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
+import { KirolbetScraper } from "./scrapers/kirolbet";
 import { RetabetScraper } from "./scrapers/retabet";
 import { JokerBetScraper } from "./scrapers/jokerbet";
 import { PastonScraper } from "./scrapers/paston";
@@ -63,8 +64,8 @@ const scrapers: BaseScraper[] = [
   new KambiScraper("888sport",   "888sport"),
   // Kambi ES — Unibet España usa "unibet_spain" como clientId (verificado vía CDN)
   new KambiScraper("unibet",     "unibet_spain"),
-  // Kambi ES — smaller bookmakers (client IDs pendientes de verificar con proxy)
-  new KambiScraper("kirolbet",   "kirolbet"),
+  // Kirolbet — Kirolsoft platform (apuestas.kirolbet.es), SSR HTML scraper
+  new KirolbetScraper(),
   // Altenar B2B — casas espanolas (requiere ALTENAR_PROXY_URL)
   new AltenarScraper("luckia",           "Luckia"),
   new AltenarScraper("casino-gran-madrid","CasinoGranMadrid"),
@@ -454,9 +455,10 @@ async function pollCycle(isLive: boolean): Promise<void> {
   // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
   // Kambi CDN (eu-offering.kambicdn.org) blocks our IP at TCP level — skip until new proxy
   // Altenar also blocked. Retabet blocked by Akamai.
-  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "unibet", "kirolbet"]);
+  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "unibet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
-  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
+  // kirolbet: own platform (Kirolsoft), scrapeLive() returns [] — skip live to avoid wasted cycle
+  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", "kirolbet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
   const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "bet365", "sportium", "marathonbet"]); // never produce prematch events, block the cycle for full timeout
   const scrapeResults = await Promise.allSettled(
