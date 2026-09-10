@@ -461,12 +461,9 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     // ── Secondary markets (ALL sports) ──────────────────────────────────────
     // Corners, cards, handicap, O/U goals, player props — any bet that's not the main H2H
     //
-    // IMPORTANT: For LIVE games, the Winamax WS delivers secondary-market odds once
-    // at subscription time (triggered by scroll) — these are the PRE-MATCH values, not
-    // the current live prices. Relying on them produces wildly incorrect alerts
-    // (e.g. Under 4.5 @4.10 in a live game already at 1-1 where the real price is @1.05).
-    // Skip secondary markets for live games; live O/U/corners come from Codere instead.
-    if (isLive) continue;
+    // NOTE: Match route subscriptions (42["m",{"route":"match:ID"}]) push CURRENT live prices
+    // before parseWinamaxWsState is called, so wsState.bets already has up-to-date odds
+    // for both live and prematch games by this point.
 
     const matchId = String(match.matchId ?? match.id ?? "");
     const secondaryBetIds = new Set<string>([

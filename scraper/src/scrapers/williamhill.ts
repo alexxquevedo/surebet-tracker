@@ -1,29 +1,26 @@
 /**
- * William Hill España — HTTP + pure WebSocket scraper (no browser).
+ * William Hill España — HTML + OpenBet SiteServer REST scraper (no browser/WebSocket).
  *
  * Flow:
- *   1. Fetch sport page HTML → extract full PDS topic paths
- *      (embedded as PDS/OB_EV{eid}/OB_MA{mid}/OB_OU{oid} strings)
- *   2. Connect pure WS to wss://whpush.williamhill.es via SOCKS5 proxy
- *   3. Subscribe to each outcome topic with Diffusion v6 binary frames
- *   4. Parse descriptor + data frame pairs for name, H/D/A position, fractional odds
- *   5. Group outcomes by event ID → ScrapedEvent[]
+ *   1. Fetch sport/live page HTML → extract OB_EV{id} event IDs + sport mapping
+ *   2. Batch-call OpenBet SiteServer REST API for all markets per event
+ *      GET /siteserver/api/openbet/v1/event/json?obId={id}&includeChildMarkets=Y&marketStatus=A&outcomeStatus=A&lang=es-ES
+ *   3. Parse JSON for: H2H, double_chance, handicap, asian_handicap, goals O/U,
+ *      h1_goals, btts, corners, yellow_cards, cards
  */
 
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const WebSocket = require("ws");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { SocksProxyAgent } = require("socks-proxy-agent");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const axios = require("axios").default ?? require("axios");
 
-const BASE_URL = "https://sports.williamhill.es/betting/es-es";
-const WH_PUSH_URL =
-  "wss://whpush.williamhill.es/v6/pds/diffusion?ty=WB&v=18&ca=10&r=0&sp=%7B%22src%22%3A%22push-component%22%7D";
+const BASE_URL   = "https://sports.williamhill.es/betting/es-es";
+const SS_API     = "https://sports.williamhill.es/siteserver/api/openbet/v1/event/json";
+const BATCH_SIZE = 20; // events per SiteServer request
 
 const SPORT_PATHS: Partial<Record<Sport, string>> = {
   FOOTBALL:        "f%C3%BAtbol",
@@ -35,70 +32,75 @@ const SPORT_PATHS: Partial<Record<Sport, string>> = {
 };
 const LIVE_PATH = "en-directo/all";
 
-// WilliamHill sport ID → our Sport enum
 const WH_SPORT_MAP: Record<string, Sport> = {
   OB_SP9:  "FOOTBALL",
   OB_SP24: "TENNIS",
-  OB_SP27: "BASKETBALL",   // OB_SP23 = Snooker (not Basketball), OB_SP27 = Baloncesto
+  OB_SP27: "BASKETBALL",
   OB_SP1:  "AMERICANFOOTBALL",
   OB_SP26: "ICEHOCKEY",
   OB_SP2:  "BASEBALL",
 };
 
+// OpenBet market type code → internal key
+const MKT_TYPE_MAP: Record<string, string> = {
+  MR:    "h2h",
+  DC:    "double_chance",
+  AH:    "asian_handicap",
+  MH:    "handicap",
+  WH:    "handicap",
+  TG:    "goals",
+  HHTG:  "h1_goals",
+  H2TG:  "h2_goals",
+  BTS:   "btts",
+  CRN:   "corners",
+  ACRN:  "corners",
+  BK:    "cards",
+  YC:    "yellow_cards",
+  RC:    "red_cards",
+};
+
+// Fallback: detect by market name when marketType is absent/unknown
+const NAME_TO_KEY: Array<[RegExp, string]> = [
+  [/resultado\s*final|match\s*result|ganador\s*del\s*partido/i, "h2h"],
+  [/doble\s*oportunidad|double\s*chance/i, "double_chance"],
+  [/h[aá]ndicap\s+asi[aá]tico|asian\s+handicap/i, "asian_handicap"],
+  [/h[aá]ndicap/i, "handicap"],
+  [/ambos\s+equipos\s+marcan|both\s+teams\s+to\s+score|btts/i, "btts"],
+  [/primera\s+mitad.*goles|goles.*primera\s+mitad|half.?time.*goal|1ª\s+parte.*total/i, "h1_goals"],
+  [/tarjeta\s+amarilla|yellow\s+card/i, "yellow_cards"],
+  [/tarjeta\s+roja|red\s+card/i, "red_cards"],
+  [/tarjeta|card|booking/i, "cards"],
+  [/c[oó]rner/i, "corners"],
+  [/total\s+goles|goles\s+total|m[aá]s\/menos\s+goles|total\s+goals|over\/under\s+goals/i, "goals"],
+  [/total\s+puntos|puntos\s+total|total\s+points/i, "goals"],
+  [/total\s+juegos|total\s+games/i, "games"],
+  [/total\s+sets/i, "sets"],
+  [/aces|saques\s+directos/i, "aces"],
+  [/dobles\s+faltas|double\s+faults/i, "double_faults"],
+];
+
+function classifyMarket(marketType: string | undefined, marketName: string): string | null {
+  if (marketType) {
+    const key = MKT_TYPE_MAP[marketType.toUpperCase()];
+    if (key) return key;
+  }
+  for (const [re, key] of NAME_TO_KEY) {
+    if (re.test(marketName)) return key;
+  }
+  return null;
+}
+
 function getProxy(): string {
   return process.env.ROUTER_PROXY_URL || "";
 }
 
-// Build Diffusion v6 SUBSCRIBE frame: 00 03 {seq:u8} {len:u8} ">" + topicPath
-function buildSubscribeFrame(seq: number, topicPath: string): Buffer {
-  const pathWithPrefix = ">" + topicPath;
-  const pathBuf = Buffer.from(pathWithPrefix, "utf8");
-  const frame = Buffer.alloc(4 + pathBuf.length);
-  frame.writeUInt8(0x00, 0);
-  frame.writeUInt8(0x03, 1);
-  frame.writeUInt8(seq & 0xff, 2);
-  frame.writeUInt8(pathBuf.length, 3);
-  pathBuf.copy(frame, 4);
-  return frame;
-}
-
-type OutcomeInfo = { name: string; pos: "H" | "D" | "A"; odds: number };
-
-// Parse data frame (starts with \x04) for a Diffusion outcome topic
-function parseDataFrame(buf: Buffer): OutcomeInfo | null {
-  if (buf.length < 10 || buf[0] !== 0x04) return null;
-  const txt = buf.toString("binary");
-
-  // Team name: between | delimiters
-  const nameMatch = txt.match(/\|([^|]{2,60})\|/);
-  if (!nameMatch) return null;
-  const name = nameMatch[1].trim();
-
-  // H/D/A position — appears after team name as \x02-delimited single char
-  const namePos = txt.indexOf(nameMatch[0]);
-  const afterName = txt.slice(namePos + nameMatch[0].length);
-  const posMatch = afterName.match(/\x02(H|D|A)\x02/);
-  if (!posMatch) return null;
-  const pos = posMatch[1] as "H" | "D" | "A";
-
-  // First fractional odds in price string: "n/d|n/d|n/d" — take first segment
-  const oddsMatch = txt.match(/(\d{1,5})\/(\d{1,5})\|/);
-  if (!oddsMatch) return null;
-  const n = parseInt(oddsMatch[1], 10);
-  const d = parseInt(oddsMatch[2], 10);
-  if (!d) return null;
-  const odds = parseFloat((n / d + 1).toFixed(4));
-  if (odds < 1.01 || odds > 501) return null;
-
-  return { name, pos, odds };
-}
+// ── HTML extraction ────────────────────────────────────────────────────────────
 
 type PageData = {
-  topics: string[];                       // full PDS/OB_EV.../OB_MA.../OB_OU... paths
-  topicSport: Map<string, Sport>;         // topic → sport (for live page mixed sports)
+  eventIds: string[];
+  eventSport: Map<string, Sport>;
 };
 
-// Fetch HTML and extract PDS topic paths (and sport per event for live page)
 async function extractPageData(sportUrl: string, proxy: string, defaultSport?: Sport, isLive = false): Promise<PageData> {
   const agent = new SocksProxyAgent(proxy);
   const resp = await axios.get(sportUrl, {
@@ -113,191 +115,220 @@ async function extractPageData(sportUrl: string, proxy: string, defaultSport?: S
   });
   const html: string = resp.data;
 
-  // Extract topics from the relevant modelBox section only:
-  // preMatch pages should only use preMatch events, live pages only inPlay events.
-  // This prevents prematch scrapers from picking up inPlay topics (which the WS
-  // doesn't serve prematch prices for) and vice-versa.
   const boxKey = isLive ? "inPlay" : "preMatch";
   const boxStart = html.indexOf(`modelBox['${boxKey}']`);
-  const searchHtml = boxStart >= 0 ? html.slice(boxStart, boxStart + 500_000) : html;
+  const searchHtml = boxStart >= 0 ? html.slice(boxStart, boxStart + 600_000) : html;
 
-  // All unique full topic paths
+  // Extract all unique OB_EV IDs from topic paths
   const topics = [...new Set<string>(searchHtml.match(/PDS\/OB_EV\d+\/OB_MA\d+\/OB_OU\d+/g) || [])];
+  const allEventIds = [...new Set(topics.map(t => t.match(/OB_EV(\d+)/)?.[1] ?? "").filter(Boolean))];
 
-  // Build event → sport map from embedded JSON: "OB_EV12345":{"topic":...,"sportId":"OB_SP9"}
-  const evSportMap = new Map<string, Sport>();
-  // Looser pattern: capture sportId anywhere within 400 chars after OB_EV id (handles varying JSON field order)
+  // Build event → sport map
+  const eventSport = new Map<string, Sport>();
   const evSportPat = /"OB_EV(\d+)":\{[^}]{0,400}?"sportId":"(\w+)"/g;
   let m: RegExpExecArray | null;
   while ((m = evSportPat.exec(html)) !== null) {
-    const eid = m[1];
     const sport = WH_SPORT_MAP[m[2]];
-    if (sport) evSportMap.set(eid, sport); // skip events with unknown sportId (cricket, snooker, pool, etc.)
+    if (sport) eventSport.set(m[1], sport);
   }
 
-  // Map topic → sport
-  const topicSport = new Map<string, Sport>();
-  for (const topic of topics) {
-    const evMatch = topic.match(/OB_EV(\d+)/);
-    if (!evMatch) continue;
-    const sport = evSportMap.get(evMatch[1]) ?? defaultSport;
-    if (sport) topicSport.set(topic, sport); // exclude topics with unknown sport
+  if (eventSport.size === 0 && allEventIds.length > 0 && defaultSport) {
+    for (const id of allEventIds) eventSport.set(id, defaultSport);
   }
 
-  // If evSportMap is empty but topics were found, WH HTML format may have changed — fall back to FOOTBALL
-  // (better than returning 0 events for all live events)
-  if (evSportMap.size === 0 && topics.length > 0) {
-    console.warn(`[williamhill] evSportMap empty despite ${topics.length} topics — HTML format may have changed; defaulting to FOOTBALL`);
-    for (const topic of topics) {
-      topicSport.set(topic, (defaultSport ?? "FOOTBALL") as Sport);
-    }
-  }
+  // Only keep event IDs with a known sport
+  const eventIds = allEventIds.filter(id => eventSport.has(id));
 
-  return { topics, topicSport };
+  return { eventIds, eventSport };
 }
 
-// Connect WS and collect outcome data for given topics
-async function fetchOutcomesViaWs(
-  topics: string[],
-  proxy: string,
-  timeoutMs = 22_000,
-): Promise<Map<string, OutcomeInfo>> {
-  if (topics.length === 0) return new Map();
+// ── OpenBet SiteServer REST ────────────────────────────────────────────────────
 
-  const agent = new SocksProxyAgent(proxy);
-  const ws = new WebSocket(WH_PUSH_URL, {
-    agent,
-    headers: {
-      Origin: "https://sports.williamhill.es",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    },
-    handshakeTimeout: 15_000,
-  });
-
-  const results = new Map<string, OutcomeInfo>();
-  // Track last 2 descriptors in case data arrives after a second descriptor
-  const pendingTopics: string[] = [];
-
-  return new Promise<Map<string, OutcomeInfo>>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      try { ws.close(); } catch (_) {}
-      resolve(results);
-    };
-
-    const timer = setTimeout(finish, timeoutMs);
-
-    ws.on("error", finish);
-    ws.on("close", () => {
-      clearTimeout(timer);
-      finish();
-    });
-
-    ws.on("open", () => {
-      // Send subscribe frames in batches of 60 with small gaps to avoid overwhelming the WS
-      const BATCH = 60;
-      const send = (start: number) => {
-        const end = Math.min(start + BATCH, topics.length);
-        let seq = (start % 254) + 1;
-        for (let i = start; i < end; i++) {
-          try { ws.send(buildSubscribeFrame(seq & 0xff, topics[i])); } catch (_) {}
-          seq++;
-        }
-        if (end < topics.length) setTimeout(() => send(end), 150);
-      };
-      setTimeout(() => send(0), 400);
-    });
-
-    ws.on("message", (data: any) => {
-      const buf: Buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as any);
-      if (buf.length < 2) return;
-
-      const t0 = buf[0];
-      const t1 = buf[1];
-
-      // Descriptor frame (0x00 0x57): contains topic path as ASCII text
-      if (t0 === 0x00 && t1 === 0x57) {
-        const ascii = buf.toString("ascii");
-        const m = ascii.match(/PDS\/OB_EV\d+\/OB_MA\d+\/OB_OU\d+/);
-        if (m) {
-          pendingTopics.push(m[0]);
-          if (pendingTopics.length > 3) pendingTopics.shift(); // keep last 3
-        }
-        return;
-      }
-
-      // Data frame (0x04): outcome data — associate with most recent pending descriptor
-      if (t0 === 0x04 || (t0 === 0x05 && buf.length > 15)) {
-        const outcome = parseDataFrame(buf);
-        if (outcome && pendingTopics.length > 0) {
-          const topic = pendingTopics.pop()!;
-          results.set(topic, outcome);
-          // Finish early if we've received all expected outcomes
-          if (results.size >= topics.length) {
-            clearTimeout(timer);
-            finish();
-          }
-        }
-        return;
-      }
-    });
-  });
+function decimalFromPrice(price: any): number | null {
+  if (!price) return null;
+  // priceDecimal is a string or number
+  const dec = parseFloat(String(price.priceDecimal ?? ""));
+  if (dec >= 1.01 && dec < 1001) return dec;
+  // Fall back to fractional
+  const n = parseFloat(String(price.priceNum ?? ""));
+  const d = parseFloat(String(price.priceDen ?? ""));
+  if (!isNaN(n) && d > 0) {
+    const calc = parseFloat((n / d + 1).toFixed(4));
+    if (calc >= 1.01 && calc < 1001) return calc;
+  }
+  return null;
 }
 
-// Build ScrapedEvent[] from topic→outcome map and topic→sport map
-function buildEvents(
-  topicOutcomes: Map<string, OutcomeInfo>,
-  topicSport: Map<string, Sport>,
-  bookmaker: string,
-  isLive: boolean,
+function bestPrice(prices: any[]): number | null {
+  if (!Array.isArray(prices)) return null;
+  // Prefer LP (live price) over SP (starting price)
+  const lp = prices.find((p: any) => p.priceType === "LP");
+  const result = decimalFromPrice(lp ?? prices[0]);
+  return result;
+}
+
+function parseSSEvent(
+  ssEvent: any,
+  eventSport: Map<string, Sport>,
   defaultSport: Sport | undefined,
+  isLive: boolean,
 ): ScrapedEvent[] {
-  type EvGroup = {
-    sport: Sport;
-    H?: OutcomeInfo;
-    D?: OutcomeInfo;
-    A?: OutcomeInfo;
-  };
-  const byEvent = new Map<string, EvGroup>();
+  const evId = String(ssEvent.id ?? "").replace(/^OB_EV/, "").replace(/\D/g, "");
+  const sport: Sport | undefined = eventSport.get(evId) ?? defaultSport;
+  if (!sport) return [];
 
-  for (const [topic, outcome] of topicOutcomes) {
-    const evMatch = topic.match(/OB_EV(\d+)/);
-    if (!evMatch) continue;
-    const eid = evMatch[1];
-    if (!byEvent.has(eid)) {
-      const evSport = topicSport.get(topic) ?? defaultSport ?? "FOOTBALL" as Sport; // live unknown events default to FOOTBALL
-      byEvent.set(eid, { sport: evSport });
-    }
-    byEvent.get(eid)![outcome.pos] = outcome;
-  }
+  const evName: string = ssEvent.name ?? "";
+  const startTime = ssEvent.startTime ? new Date(ssEvent.startTime) : undefined;
+  const eventKey = buildEventKey(sport, evName, startTime);
+  const evIsLive = isLive || Boolean(ssEvent.isStarted);
+  const markets: any[] = (ssEvent.children ?? []).map((c: any) => c.market).filter(Boolean);
 
   const events: ScrapedEvent[] = [];
-  for (const [, ev] of byEvent) {
-    if (!ev.H || !ev.A) continue;
-    // Skip events where team names look like internal WH IDs (e.g. "A10trueA15014757491000", "C30")
-    const isGarbageName = (n: string) => n.length < 3 || /\d{7,}/.test(n) || /true[A-Z]\d/.test(n);
-    if (isGarbageName(ev.H.name) || isGarbageName(ev.A.name)) continue;
-    const eventName = `${ev.H.name} - ${ev.A.name}`;
-    const eventKey = buildEventKey(ev.sport, eventName, undefined);
-    const outcomes: H2HOutcome[] = [
-      { name: "1", odds: ev.H.odds },
-      ...(ev.D ? [{ name: "X", odds: ev.D.odds }] : []),
-      { name: "2", odds: ev.A.odds },
-    ];
-    events.push({
-      bookmaker,
-      sport: ev.sport,
-      eventKey,
-      eventName,
-      isLive,
-      market: "h2h",
-      outcomes,
-    });
+
+  for (const mkt of markets) {
+    const mktName: string = mkt.name ?? "";
+    const mktType: string = mkt.marketType ?? mkt.nfo?.type ?? "";
+    const marketKey = classifyMarket(mktType, mktName);
+    if (!marketKey) continue;
+
+    const outcomes: any[] = (mkt.children ?? []).map((c: any) => c.outcome).filter(Boolean);
+    if (outcomes.length < 2) continue;
+
+    // Skip suspended / non-active markets
+    if (mkt.status && mkt.status !== "A" && mkt.status !== "Active") continue;
+
+    if (marketKey === "h2h" || marketKey === "double_chance" || marketKey === "btts") {
+      const h2hOutcomes: H2HOutcome[] = outcomes.map((o: any) => {
+        const prices: any[] = o.prices ?? [];
+        const odds = bestPrice(prices);
+        if (!odds) return null;
+        return { name: String(o.name ?? ""), odds };
+      }).filter((o): o is H2HOutcome => o !== null);
+      if (h2hOutcomes.length < 2) continue;
+      events.push({ bookmaker: "williamhill", sport, eventKey, eventName: evName, isLive: evIsLive, startTime, market: marketKey, outcomes: h2hOutcomes });
+
+    } else if (marketKey === "handicap") {
+      // European handicap: outcomes named e.g. "Barcelona (+1)", "Empate", "Real Madrid (-1)"
+      const lines = new Map<string, H2HOutcome[]>();
+      for (const o of outcomes) {
+        const odds = bestPrice(o.prices ?? []);
+        if (!odds) continue;
+        const oName: string = o.name ?? "";
+        const lineMatch = oName.match(/([+-]?\d+\.?\d*)\)?$/);
+        const lineKey = lineMatch ? lineMatch[1] : "0";
+        if (!lines.has(lineKey)) lines.set(lineKey, []);
+        lines.get(lineKey)!.push({ name: oName, odds });
+      }
+      for (const [, h2hOutcomes] of lines) {
+        if (h2hOutcomes.length < 2) continue;
+        events.push({ bookmaker: "williamhill", sport, eventKey, eventName: evName, isLive: evIsLive, startTime, market: "handicap", outcomes: h2hOutcomes });
+      }
+
+    } else if (marketKey === "asian_handicap") {
+      // AH outcomes: "Barcelona -0.5", "Real Madrid +0.5" — group by absolute line
+      const lines = new Map<string, TotalsLine>();
+      for (const o of outcomes) {
+        const odds = bestPrice(o.prices ?? []);
+        if (!odds) continue;
+        const oName: string = o.name ?? "";
+        const lineMatch = oName.match(/([+-]?\d+\.?\d*)\s*$/);
+        const rawLine = lineMatch ? parseFloat(lineMatch[1]) : parseFloat(String(o.handicapValueDec ?? o.handHcapValueDec ?? "0"));
+        const absLine = Math.abs(rawLine);
+        const key = String(absLine);
+        if (!lines.has(key)) lines.set(key, { line: absLine, over: 0, under: 0 });
+        const tl = lines.get(key)!;
+        if (rawLine <= 0) tl.over = odds; else tl.under = odds;
+      }
+      for (const tl of lines.values()) {
+        if (!tl.over || !tl.under) continue;
+        events.push({ bookmaker: "williamhill", sport, eventKey, eventName: evName, isLive: evIsLive, startTime, market: "asian_handicap", outcomes: [tl] });
+      }
+
+    } else {
+      // O/U markets: goals, h1_goals, h2_goals, corners, cards, etc.
+      // Outcomes: "Más de X.X" / "Menos de X.X" or "Over X.X" / "Under X.X"
+      const lines = new Map<string, TotalsLine>();
+      for (const o of outcomes) {
+        const odds = bestPrice(o.prices ?? []);
+        if (!odds) continue;
+        const oName: string = (o.name ?? "").toLowerCase();
+        // Extract line value from outcome name
+        const numMatch = oName.match(/(\d+\.?\d*)/);
+        if (!numMatch) continue;
+        const line = parseFloat(numMatch[1]);
+        const key = String(line);
+        if (!lines.has(key)) lines.set(key, { line, over: 0, under: 0 });
+        const tl = lines.get(key)!;
+        if (/m[aá]s\s*de|over|over\s*de/i.test(o.name)) tl.over = odds;
+        else if (/menos\s*de|under/i.test(o.name))        tl.under = odds;
+        else if (o.outcomeMeaningMajorCode === "H")        tl.over = odds;
+        else if (o.outcomeMeaningMajorCode === "A")        tl.under = odds;
+      }
+      for (const tl of lines.values()) {
+        if (!tl.over || !tl.under) continue;
+        events.push({ bookmaker: "williamhill", sport, eventKey, eventName: evName, isLive: evIsLive, startTime, market: marketKey, outcomes: [tl] });
+      }
+    }
   }
+
   return events;
 }
+
+async function fetchMarketsViaRest(
+  eventIds: string[],
+  eventSport: Map<string, Sport>,
+  defaultSport: Sport | undefined,
+  proxy: string,
+  isLive: boolean,
+): Promise<ScrapedEvent[]> {
+  if (eventIds.length === 0) return [];
+
+  const agent = new SocksProxyAgent(proxy);
+  const allEvents: ScrapedEvent[] = [];
+
+  for (let i = 0; i < eventIds.length; i += BATCH_SIZE) {
+    const batch = eventIds.slice(i, i + BATCH_SIZE);
+    const params = new URLSearchParams();
+    for (const id of batch) params.append("obId", id);
+    params.set("includeChildMarkets", "Y");
+    params.set("marketStatus", "A");
+    params.set("outcomeStatus", "A");
+    params.set("lang", "es-ES");
+
+    try {
+      const resp = await axios.get(`${SS_API}?${params.toString()}`, {
+        httpAgent: agent,
+        httpsAgent: agent,
+        timeout: 15_000,
+        headers: {
+          Accept: "application/json",
+          "Accept-Language": "es-ES,es;q=0.9",
+          Referer: "https://sports.williamhill.es/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      const ssResp = resp.data?.SSResponse ?? resp.data;
+      const children: any[] = ssResp?.children ?? [];
+      for (const child of children) {
+        const ev = child.event;
+        if (!ev) continue;
+        const parsed = parseSSEvent(ev, eventSport, defaultSport, isLive);
+        allEvents.push(...parsed);
+      }
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status !== 404) {
+        const msg = status ? `HTTP ${status}` : String(err?.message ?? err).slice(0, 80);
+        console.warn(`[williamhill] SiteServer batch ${i}–${i + batch.length}: ${msg}`);
+      }
+    }
+  }
+
+  return allEvents;
+}
+
+// ── Scraper class ──────────────────────────────────────────────────────────────
 
 export class WilliamHillScraper extends BaseScraper {
   readonly name = "williamhill";
@@ -316,45 +347,36 @@ export class WilliamHillScraper extends BaseScraper {
 
     try {
       this.log(`WH ${defaultSport ?? "LIVE"} (${isLive ? "live" : "prematch"}): fetching HTML...`);
-      const { topics, topicSport } = await extractPageData(pageUrl, proxy, defaultSport, isLive);
+      const { eventIds, eventSport } = await extractPageData(pageUrl, proxy, defaultSport, isLive);
 
-      if (topics.length === 0) {
-        this.warn(`WH ${defaultSport ?? "LIVE"}: 0 outcome topics found in HTML`);
+      if (eventIds.length === 0) {
+        this.warn(`WH ${defaultSport ?? "LIVE"}: no event IDs found in HTML`);
         return [];
       }
 
-      // Filter out outright/championship markets: any OB_EV with >3 outcome topics is a
-      // multi-team outright — WS never serves prices for those. Keep only match-level topics.
-      const evTopicCount = new Map<string, number>();
-      for (const t of topics) {
-        const ev = t.match(/OB_EV(\d+)/)?.[1] ?? "";
-        evTopicCount.set(ev, (evTopicCount.get(ev) ?? 0) + 1);
-      }
-      const matchTopics = topics.filter((t) => {
-        const ev = t.match(/OB_EV(\d+)/)?.[1] ?? "";
-        return (evTopicCount.get(ev) ?? 0) <= 3;
+      this.log(`WH ${defaultSport ?? "LIVE"}: ${eventIds.length} events — calling SiteServer REST...`);
+      const events = await fetchMarketsViaRest(eventIds, eventSport, defaultSport, proxy, isLive);
+
+      // Deduplicate by eventKey + market + line
+      const seen = new Set<string>();
+      const deduped = events.filter(ev => {
+        const line = Array.isArray(ev.outcomes) && ev.outcomes.length > 0 && "line" in ev.outcomes[0]
+          ? String((ev.outcomes[0] as TotalsLine).line)
+          : "";
+        const k = `${ev.eventKey}|${ev.market}|${line}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
       });
-      if (matchTopics.length < topics.length) {
-        const dropped = topics.length - matchTopics.length;
-        this.log(`WH ${defaultSport ?? "LIVE"}: filtered ${dropped} outright topics (${matchTopics.length} match topics remain)`);
-      }
-      if (matchTopics.length === 0) {
-        this.log(`WH ${defaultSport ?? "LIVE"}: only outright markets — skipping WS`);
-        return [];
-      }
 
-      this.log(`WH ${defaultSport ?? "LIVE"}: ${matchTopics.length} outcome topics — connecting WS...`);
-
-      const outcomeMap = await fetchOutcomesViaWs(matchTopics, proxy, isLive ? 25_000 : 20_000);
-      this.log(`WH ${defaultSport ?? "LIVE"}: ${outcomeMap.size}/${matchTopics.length} outcomes received`);
-
-      const events = buildEvents(outcomeMap, topicSport, "williamhill", isLive, defaultSport);
-      if (events.length > 0) {
-        this.log(`WH ${defaultSport ?? "LIVE"}: ${events.length} events`);
+      if (deduped.length > 0) {
+        const mktCounts = deduped.reduce((acc, e) => { acc[e.market] = (acc[e.market] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+        this.log(`WH ${defaultSport ?? "LIVE"}: ${deduped.length} events (${Object.entries(mktCounts).map(([k, v]) => `${k}:${v}`).join(", ")})`);
       } else {
-        this.warn(`WH ${defaultSport ?? "LIVE"}: 0 events from ${outcomeMap.size} outcomes`);
+        this.warn(`WH ${defaultSport ?? "LIVE"}: 0 events from ${eventIds.length} event IDs`);
       }
-      return events;
+
+      return deduped;
     } catch (err) {
       this.warn(`WH ${defaultSport ?? "LIVE"} failed`, err);
       return [];
@@ -362,11 +384,10 @@ export class WilliamHillScraper extends BaseScraper {
   }
 
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    return this.scrapePage(`${BASE_URL}/${LIVE_PATH}`, undefined, true); // mixed-sport page — sport detected per-event from embedded sportId
+    return this.scrapePage(`${BASE_URL}/${LIVE_PATH}`, undefined, true);
   }
 
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    // Run all sport pages in parallel — sequential was taking 5+ minutes with 9 sports
     const results = await Promise.all(
       this.sports
         .filter(sport => SPORT_PATHS[sport])

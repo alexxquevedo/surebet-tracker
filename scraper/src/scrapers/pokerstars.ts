@@ -12,7 +12,7 @@ const { SocksProxyAgent } = require("socks-proxy-agent") as { SocksProxyAgent: n
 import { BaseScraper } from "./base";
 import { getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
 const SPORT_MAP: Record<number, Sport> = {
   1: "FOOTBALL",
@@ -152,56 +152,152 @@ export class PokerStarsScraper extends BaseScraper {
     }
   }
 
+  // Classify a PSMarket's marketType into our internal market key.
+  // O/U lines are embedded in the marketType string: OVER_UNDER_25 → line=2.5
+  private classifyPSMarket(marketType: string): { key: string; line?: number } | null {
+    if (marketType === "WIN-DRAW-WIN" || marketType === "MATCH_BETTING" ||
+        marketType === "WINNER" || marketType === "MONEYLINE") {
+      return { key: "h2h" };
+    }
+    if (/^BOTH_TEAMS_TO_SCORE|^BTTS/i.test(marketType)) return { key: "btts" };
+    if (/^DOUBLE_CHANCE/i.test(marketType)) return { key: "double_chance" };
+    if (/^ASIAN_HANDICAP/i.test(marketType)) return { key: "asian_handicap" };
+    if (/^MATCH_HANDICAP|^HANDICAP/i.test(marketType)) return { key: "handicap" };
+    if (/^HALF_TIME_RESULT|^HALF_TIME_WIN/i.test(marketType)) return { key: "h1_h2h" };
+
+    // O/U markets — line encoded in type name: OVER_UNDER_25 → 2.5, OVER_UNDER_45 → 4.5
+    const ouMatch = marketType.match(/^OVER_UNDER_(\d+)$/i)
+                 ?? marketType.match(/^TOTAL_GOALS_(\d+)$/i)
+                 ?? marketType.match(/^GOALS_OVER_UNDER_(\d+)$/i);
+    if (ouMatch) {
+      const raw = parseInt(ouMatch[1], 10);
+      const line = raw > 20 ? raw / 10 : raw; // "25" → 2.5, "3" → 3
+      if (/corner/i.test(marketType)) return { key: "corners", line };
+      if (/card|booking/i.test(marketType)) return { key: "cards", line };
+      if (/half|first/i.test(marketType)) return { key: "h1_goals", line };
+      return { key: "goals", line };
+    }
+
+    // Tennis/basketball point/game totals
+    if (/^TOTAL_POINTS|^POINTS_OVER_UNDER/i.test(marketType)) {
+      const numMatch = marketType.match(/(\d+)$/);
+      const line = numMatch ? parseInt(numMatch[1], 10) / (parseInt(numMatch[1], 10) > 20 ? 10 : 1) : 0;
+      return { key: "goals", line: line || undefined };
+    }
+    if (/^TOTAL_GAMES|^GAMES_OVER_UNDER/i.test(marketType)) {
+      const numMatch = marketType.match(/(\d+)$/);
+      const line = numMatch ? parseInt(numMatch[1], 10) / 10 : 0;
+      return { key: "games", line: line || undefined };
+    }
+    if (/^TOTAL_SETS/i.test(marketType)) {
+      const numMatch = marketType.match(/(\d+)$/);
+      const line = numMatch ? parseInt(numMatch[1], 10) / 10 : 2.5;
+      return { key: "sets", line };
+    }
+
+    return null;
+  }
+
   private parsePageData(data: PSPageData, seen: Set<string>): ScrapedEvent[] {
     const events: ScrapedEvent[] = [];
     const { competitions = {}, events: psEvents = {}, markets = {} } = data;
 
-    for (const [mktId, mkt] of Object.entries(markets)) {
+    for (const [, mkt] of Object.entries(markets)) {
       if (mkt.marketStatus !== "OPEN") continue;
-      if (mkt.marketType !== "WIN-DRAW-WIN" && mkt.marketType !== "MATCH_BETTING") continue;
 
+      const classified = this.classifyPSMarket(mkt.marketType);
+      if (!classified) continue;
+
+      const { key: marketKey, line: ouLine } = classified;
       const dedupeKey = `${mkt.eventId}:${mkt.marketType}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
       const psEvent = psEvents[String(mkt.eventId)];
       if (!psEvent) continue;
-
       const sport: Sport | undefined = SPORT_MAP[psEvent.eventTypeId];
       if (!sport) continue;
 
       const comp = competitions[String(psEvent.competitionId)];
       const league = comp?.competitionName ?? "";
+      const startTime = psEvent.eventStartTime ? new Date(psEvent.eventStartTime) : undefined;
+      const isLive = psEvent.isInPlay;
 
-      const outcomes: H2HOutcome[] = [...mkt.runners]
+      const activeRunners = [...mkt.runners]
         .filter(r => r.runnerStatus === "ACTIVE")
-        .sort((a, b) => a.sortPriority - b.sortPriority)
-        .map(r => {
+        .sort((a, b) => a.sortPriority - b.sortPriority);
+
+      if (marketKey === "h2h" || marketKey === "double_chance" || marketKey === "btts" || marketKey === "h1_h2h") {
+        const h2hOutcomes: H2HOutcome[] = activeRunners.map(r => {
           const odds = r.winRunnerOdds?.decimalDisplayOdds?.decimalOdds;
           if (!odds || odds < 1.01) return null;
           return { name: r.runnerName, odds };
-        })
-        .filter((o): o is H2HOutcome => o !== null);
+        }).filter((o): o is H2HOutcome => o !== null);
+        if (h2hOutcomes.length < 2) continue;
 
-      if (outcomes.length < 2) continue;
+        const participants = h2hOutcomes.map(o => o.name).filter(n => !/^(draw|empate|x|nul|null|tie)$/i.test(n));
+        const matchName = participants.length >= 2
+          ? participants[0] + " - " + participants[participants.length - 1]
+          : psEvent.eventName;
 
-      const startTime = psEvent.eventStartTime ? new Date(psEvent.eventStartTime) : undefined;
-      const participants = outcomes.map(o => o.name).filter(n => !/^(draw|empate|x|nul|null|unentschieden)$/i.test(n));
-      const matchName = participants.length >= 2
-        ? participants[0] + " - " + participants[participants.length - 1]
-        : psEvent.eventName;
+        events.push({
+          bookmaker: "pokerstars",
+          sport,
+          eventKey: buildEventKey(sport, matchName, startTime),
+          eventName: psEvent.eventName,
+          league,
+          startTime,
+          isLive,
+          market: marketKey === "h1_h2h" ? "h2h" : marketKey,
+          outcomes: h2hOutcomes,
+        });
 
-      events.push({
-        bookmaker: "pokerstars",
-        sport,
-        eventKey: buildEventKey(sport, matchName, startTime),
-        eventName: psEvent.eventName,
-        league,
-        startTime,
-        isLive: psEvent.isInPlay,
-        market: "h2h",
-        outcomes,
-      });
+      } else if (marketKey === "handicap") {
+        // Handicap outcomes: "Team A (+1)", "Draw", "Team B (-1)"
+        const h2hOutcomes: H2HOutcome[] = activeRunners.map(r => {
+          const odds = r.winRunnerOdds?.decimalDisplayOdds?.decimalOdds;
+          if (!odds || odds < 1.01) return null;
+          return { name: r.runnerName, odds };
+        }).filter((o): o is H2HOutcome => o !== null);
+        if (h2hOutcomes.length < 2) continue;
+        const matchName = psEvent.eventName;
+        events.push({
+          bookmaker: "pokerstars", sport,
+          eventKey: buildEventKey(sport, matchName, startTime),
+          eventName: psEvent.eventName, league, startTime, isLive,
+          market: "handicap", outcomes: h2hOutcomes,
+        });
+
+      } else {
+        // O/U market (goals, corners, cards, sets, games, etc.)
+        if (activeRunners.length < 2) continue;
+        let over = 0, under = 0, line = ouLine ?? 0;
+
+        for (const r of activeRunners) {
+          const odds = r.winRunnerOdds?.decimalDisplayOdds?.decimalOdds;
+          if (!odds || odds < 1.01) continue;
+          const rName = r.runnerName.toLowerCase();
+          // Extract line from runner name if not already known: "Over 2.5" / "Under 2.5"
+          if (!line) {
+            const numMatch = rName.match(/(\d+\.?\d*)/);
+            if (numMatch) line = parseFloat(numMatch[1]);
+          }
+          if (/^over|^m[aá]s/i.test(r.runnerName))       over = odds;
+          else if (/^under|^menos/i.test(r.runnerName))   under = odds;
+          else if (r.sortPriority === 1)                    over = odds;
+          else                                               under = odds;
+        }
+
+        if (!over || !under || !line) continue;
+        const tl: TotalsLine = { line, over, under };
+        const matchName = psEvent.eventName;
+        events.push({
+          bookmaker: "pokerstars", sport,
+          eventKey: buildEventKey(sport, matchName, startTime),
+          eventName: psEvent.eventName, league, startTime, isLive,
+          market: marketKey, outcomes: [tl],
+        });
+      }
     }
     return events;
   }

@@ -33,13 +33,16 @@ const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
 // Secondary market gametypes per sport (semicolon-separated IDs for NavigationService)
 // Verified 2026-08-23 via sweep: 54=corners O/U, 59=corners par/impar, 62=cards O/U,
 // 77=red card, 133/134=team corners O/U, 4=handicap, 18=goals O/U, 31=BTTS, 12/24/27=half goals
+// The API ignores unknown IDs, so passing the full set to all sports is safe —
+// each sport only returns the markets that exist for it.
+const ALL_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813";
 const SPORT_GAMETYPES: Partial<Record<Sport, string>> = {
-  FOOTBALL:         "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813",
-  TENNIS:           "4;18",
-  BASKETBALL:       "4;18",
-  ICEHOCKEY:        "4;18",
-  BASEBALL:         "4;18",
-  AMERICANFOOTBALL: "4;18",
+  FOOTBALL:         ALL_SECONDARY_GAMETYPES,
+  TENNIS:           ALL_SECONDARY_GAMETYPES,
+  BASKETBALL:       ALL_SECONDARY_GAMETYPES,
+  ICEHOCKEY:        ALL_SECONDARY_GAMETYPES,
+  BASEBALL:         ALL_SECONDARY_GAMETYPES,
+  AMERICANFOOTBALL: ALL_SECONDARY_GAMETYPES,
 };
 
 // Live secondary gametypes (same IDs work on live endpoint)
