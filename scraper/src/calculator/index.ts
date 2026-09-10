@@ -229,6 +229,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     selection: s.name,
     odds: s.odds,
     stake: stakes[i],
+    scrapedAt: market.byBookScrapedAt.get(s.bookmaker),
   }));
 
   return {
@@ -332,8 +333,8 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
       const middleProbability = approxMiddleProbability(overSide.line, underSide.line);
 
       const legs: ArbLeg[] = [
-        { bookmaker: overSide.bookmaker,  selection: `Over ${overSide.line}`,  odds: overOdds,  stake: parseFloat((s1 * 100).toFixed(2)) },
-        { bookmaker: underSide.bookmaker, selection: `Under ${underSide.line}`, odds: underOdds, stake: parseFloat((s2 * 100).toFixed(2)) },
+        { bookmaker: overSide.bookmaker,  selection: `Over ${overSide.line}`,  odds: overOdds,  stake: parseFloat((s1 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(overSide.bookmaker) },
+        { bookmaker: underSide.bookmaker, selection: `Under ${underSide.line}`, odds: underOdds, stake: parseFloat((s2 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(underSide.bookmaker) },
       ];
 
       middles.push({
@@ -410,8 +411,8 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
       market: "player_props",
       profitPct,
       legs: [
-        { bookmaker: over.book,  selection: `${player} +${line} ${stat}`, odds: over.odds,  stake: stakes[0] },
-        { bookmaker: under.book, selection: `${player} -${line} ${stat}`, odds: under.odds, stake: stakes[1] },
+        { bookmaker: over.book,  selection: `${player} +${line} ${stat}`, odds: over.odds,  stake: stakes[0], scrapedAt: market.byBookScrapedAt.get(over.book) },
+        { bookmaker: under.book, selection: `${player} -${line} ${stat}`, odds: under.odds, stake: stakes[1], scrapedAt: market.byBookScrapedAt.get(under.book) },
       ],
     });
   }
@@ -461,8 +462,8 @@ export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[
       market: `${market.market} O/U ${line}`,
       profitPct,
       legs: [
-        { bookmaker: over.book,  selection: `Over ${line}`,  odds: over.odds,  stake: stakes[0] },
-        { bookmaker: under.book, selection: `Under ${line}`, odds: under.odds, stake: stakes[1] },
+        { bookmaker: over.book,  selection: `Over ${line}`,  odds: over.odds,  stake: stakes[0], scrapedAt: market.byBookScrapedAt.get(over.book) },
+        { bookmaker: under.book, selection: `Under ${line}`, odds: under.odds, stake: stakes[1], scrapedAt: market.byBookScrapedAt.get(under.book) },
       ],
     });
   }

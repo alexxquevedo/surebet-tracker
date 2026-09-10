@@ -61,8 +61,12 @@ export const config = {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),
     livePollMs: parseInt(process.env.LIVE_POLL_INTERVAL ?? "30") * 1000,
     prematchPollMs: parseInt(process.env.PREMATCH_POLL_INTERVAL ?? "300") * 1000,
-    // How long (ms) scanned odds are considered fresh before re-scraping overwrites
-    oddsExpiryMs: 10 * 60 * 1000, // 10 minutes
+    // Maximum age of odds used in live arb detection (3× the 30s poll cycle)
+    liveOddsExpiryMs: 90 * 1000,
+    // Maximum age of odds used in prematch arb detection (just past the 5-min poll)
+    prematchOddsExpiryMs: 6 * 60 * 1000,
+    // How long odds are kept in DB before cleanup (must be >= prematchOddsExpiryMs)
+    oddsRetentionMs: 10 * 60 * 1000,
     // How far back to clean up old detected arbs
     arbRetentionMs: 24 * 60 * 60 * 1000, // 24 hours
   },

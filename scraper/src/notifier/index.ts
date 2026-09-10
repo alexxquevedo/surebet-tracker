@@ -189,6 +189,15 @@ function formatStake(stakePercent: number, bankrollEur?: number): string {
   return pct;
 }
 
+/** Returns "hace Xs" age tag for a leg's odds, or empty string if unknown */
+function oddsAgeTag(scrapedAt?: number): string {
+  if (!scrapedAt) return "";
+  const sec = Math.round((Date.now() - scrapedAt) / 1000);
+  if (sec <= 0) return "";
+  const icon = sec <= 30 ? "✅" : sec <= 60 ? "⌛" : "⚠️";
+  return ` <i>${icon}${sec}s</i>`;
+}
+
 function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
   const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
   const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
@@ -206,7 +215,7 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
       const sel = /^(Over|Under)\s+[\d.]+$/i.test(l.selection)
         ? translateMiddleSelection(l.selection, baseMarket)
         : resolvePositionalSelection(translateSelection(l.selection), arb.eventName);
-      return `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${sel} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`;
+      return `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${sel} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)}${oddsAgeTag(l.scrapedAt)} 💰 ${formatStake(l.stake, bankrollEur)}`;
     })
     .join("\n");
 
@@ -237,7 +246,7 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
     .map((l) =>
-      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateMiddleSelection(l.selection, arb.market)} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`,
+      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateMiddleSelection(l.selection, arb.market)} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)}${oddsAgeTag(l.scrapedAt)} 💰 ${formatStake(l.stake, bankrollEur)}`,
     )
     .join("\n");
 
@@ -298,7 +307,7 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
         const sel = /^(Over|Under)\s+[\d.]+$/i.test(leg.selection)
           ? translateMiddleSelection(leg.selection, baseMarket)
           : resolvePositionalSelection(translateSelection(leg.selection), arb.eventName);
-        return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
+        return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)}${oddsAgeTag(leg.scrapedAt)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
       })
       .join("\n");
 

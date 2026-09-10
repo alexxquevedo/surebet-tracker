@@ -269,10 +269,17 @@ async function saveDetectedArb(
 
 /**
  * Read fresh ScannedOdds from DB, group by (eventKey, market) across all bookmakers.
- * Only includes events scraped in the last 10 minutes.
+ * Uses a tight per-mode freshness window so arbs are never computed from stale odds:
+ *   live    → last 90 s  (3× the 30s poll cycle)
+ *   prematch → last 6 min (just past the 5-min poll cycle)
+ * Each bookmaker's entry is independently checked against the window so a single
+ * slow/stale scraper cannot contaminate a group with its old odds.
  */
 async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> {
-  const since = new Date(Date.now() - config.scanner.oddsExpiryMs);
+  const expiryMs = liveOnly
+    ? config.scanner.liveOddsExpiryMs
+    : config.scanner.prematchOddsExpiryMs;
+  const since = new Date(Date.now() - expiryMs);
 
   const rows = await prisma.scannedOdds.findMany({
     where: {
@@ -289,6 +296,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
       startTime: true,
       market: true,
       outcomes: true,
+      scrapedAt: true,
     },
   });
 
@@ -313,6 +321,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
         startTime: row.startTime ?? undefined,
         market: row.market,
         byBook: new Map(),
+        byBookScrapedAt: new Map(),
       });
     } else {
       const existing = groupMap.get(key)!;
@@ -329,7 +338,9 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
         existing.league = row.league;
       }
     }
-    groupMap.get(key)!.byBook.set(row.bookmaker, row.outcomes as unknown as MarketOutcomes);
+    const group = groupMap.get(key)!;
+    group.byBook.set(row.bookmaker, row.outcomes as unknown as MarketOutcomes);
+    group.byBookScrapedAt.set(row.bookmaker, row.scrapedAt.getTime());
   }
 
   // Only markets with at least 2 bookmakers have arb potential
@@ -339,7 +350,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
 async function cleanup(): Promise<void> {
-  const cutoff = new Date(Date.now() - config.scanner.oddsExpiryMs);
+  const cutoff = new Date(Date.now() - config.scanner.oddsRetentionMs);
   const arbCutoff = new Date(Date.now() - config.scanner.arbRetentionMs);
 
   const [odds, arbs] = await prisma.$transaction([

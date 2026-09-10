@@ -62,6 +62,7 @@ export interface ArbLeg {
   odds: number;
   stake: number;  // % of total stake to put here for equal-profit distribution
   url?: string;
+  scrapedAt?: number; // Unix ms — when these odds were scraped; used for freshness display
 }
 
 export interface DetectedSurebet {
@@ -112,4 +113,6 @@ export interface GroupedMarket {
   startTime?: Date;
   market: string;  // "h2h" | "handicap" | "totals" | "player_props" | "corners" | "goals" | ...
   byBook: Map<string, MarketOutcomes>;
+  /** Unix ms per bookmaker — when those odds were scraped; populated by loadGroupedMarkets */
+  byBookScrapedAt: Map<string, number>;
 }
