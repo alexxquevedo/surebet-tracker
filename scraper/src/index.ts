@@ -457,8 +457,7 @@ async function pollCycle(isLive: boolean): Promise<void> {
   // Altenar also blocked. Retabet blocked by Akamai.
   const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "unibet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
-  // kirolbet: own platform (Kirolsoft), scrapeLive() returns [] — skip live to avoid wasted cycle
-  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", "kirolbet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
+  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
   const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "bet365", "sportium", "marathonbet"]); // never produce prematch events, block the cycle for full timeout
   const scrapeResults = await Promise.allSettled(
