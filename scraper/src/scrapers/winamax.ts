@@ -759,10 +759,31 @@ export class WinamaxScraper extends BaseScraper {
         this.log(`${isLive ? "Live" : "Prematch"}: WS conectó pero sin partidos (estado legítimo)`);
       }
 
-      // Secondary market subscription omitted for live cycle — adds ~11s per cycle with
-      // no meaningful benefit since live H2H prices are the primary live arb signal.
-      // Secondary markets (corners, goals O/U, handicap) are fetched in scrapePrematchSport.
+      // Subscribe to all live matches at once to load match/bet/odds data from WS.
+      // Without subscription the live page WS only sends metadata — no match-level data.
+      // Send all match IDs in one burst (no inter-batch pause) then wait 2s.
       const wsRoot = resolveWsStateRoot(wsState);
+      if (waitResult === "ws_data") {
+        const matchIds = Object.values(wsRoot.matches ?? {})
+          .filter((m: any) => m && typeof m === "object")
+          .map((m: any) => String(m.matchId ?? m.id ?? ""))
+          .filter(Boolean);
+
+        if (matchIds.length > 0) {
+          const betsBefore = Object.keys(wsRoot.bets ?? {}).length;
+          this.log(`WS live subscription: ${matchIds.length} matches`);
+          await page.evaluate((ids: string[]) => {
+            const ws = (window as any).__winamaxWS as WebSocket | undefined;
+            if (!ws || ws.readyState !== 1) return;
+            for (const id of ids) {
+              ws.send(`42["m",{"route":"match:${id}"}]`);
+            }
+          }, matchIds).catch(() => {});
+          await new Promise<void>((r) => setTimeout(r, 2000));
+          const betsAfter = Object.keys(resolveWsStateRoot(wsState).bets ?? {}).length;
+          this.log(`WS live subscription done: bets ${betsBefore} → ${betsAfter}`);
+        }
+      }
 
       const wsStateKeys = Object.keys(wsState);
       const wsUrls = wsMessages.length > 0
