@@ -128,7 +128,9 @@ function translateSelection(selection: string): string {
 function resolvePositionalSelection(selection: string, eventName: string): string {
   if (selection === "X") return "Empate";
   if (selection === "1" || selection === "2") {
-    const parts = eventName.split(" - ");
+    // Try " - " first (some scrapers), then " v " (most scrapers use this separator)
+    const sep = eventName.includes(" - ") ? " - " : " v ";
+    const parts = eventName.split(sep);
     if (parts.length >= 2) {
       return selection === "1" ? parts[0].trim() : parts[parts.length - 1].trim();
     }
@@ -209,7 +211,6 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
     `💵 <b>Beneficio: +${arb.profitPct.toFixed(2)}%</b>`,
     `📢 <b>Alerta Surebets!${liveTag}</b>`,
     "",
-    `💎 Profit: +${arb.profitPct.toFixed(2)}%`,
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
     `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`,
