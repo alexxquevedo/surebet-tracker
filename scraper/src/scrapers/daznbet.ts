@@ -246,7 +246,7 @@ function classifyDaznMarket(mktName: string, mcKey: string): string | null {
   if (/tarjeta|card|booking/i.test(n)) return "cards";
   if (/total.*goles?|goles?.*total|m[aá]s.*menos.*goles?|over.*under.*goal|total.*buts?/i.test(n) ||
       /^TOTR/.test(mcKey)) return "goals";
-  if (/total.*puntos?|puntos?.*total|total.*points?/i.test(n) || /^PNTS|^PTOT|^TOTPTS/.test(mcKey)) return "goals";
+  if (/total.*puntos?|puntos?.*total|total.*points?/i.test(n) || /^PNTS|^PTOT|^TOTPTS/.test(mcKey)) return "match_points";
   if (/total.*juegos?|juegos?.*total|total.*games?/i.test(n) || /^GMES/.test(mcKey)) return "games";
   if (/total.*sets?|sets?.*total/i.test(n) || /^SETS/.test(mcKey)) return "sets";
   if (/\baces?\b|saques?\s+directos?/i.test(n)) return "aces";

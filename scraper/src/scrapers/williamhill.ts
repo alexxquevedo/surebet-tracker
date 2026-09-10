@@ -72,7 +72,7 @@ const NAME_TO_KEY: Array<[RegExp, string]> = [
   [/tarjeta|card|booking/i, "cards"],
   [/c[oó]rner/i, "corners"],
   [/total\s+goles|goles\s+total|m[aá]s\/menos\s+goles|total\s+goals|over\/under\s+goals/i, "goals"],
-  [/total\s+puntos|puntos\s+total|total\s+points/i, "goals"],
+  [/total\s+puntos|puntos\s+total|total\s+points/i, "match_points"],
   [/total\s+juegos|total\s+games/i, "games"],
   [/total\s+sets/i, "sets"],
   [/aces|saques\s+directos/i, "aces"],
