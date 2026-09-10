@@ -759,42 +759,10 @@ export class WinamaxScraper extends BaseScraper {
         this.log(`${isLive ? "Live" : "Prematch"}: WS conectó pero sin partidos (estado legítimo)`);
       }
 
-      // Subscribe to each match individually to load secondary markets (corners, goals, handicap)
-      // Each "route":"match:MATCHID" emit causes the server to push all bets for that match.
+      // Secondary market subscription omitted for live cycle — adds ~11s per cycle with
+      // no meaningful benefit since live H2H prices are the primary live arb signal.
+      // Secondary markets (corners, goals O/U, handicap) are fetched in scrapePrematchSport.
       const wsRoot = resolveWsStateRoot(wsState);
-      if (waitResult === "ws_data") {
-        const matchIds = Object.values(wsRoot.matches ?? {})
-          .filter((m: any) => m && typeof m === "object")
-          .map((m: any) => String(m.matchId ?? m.id ?? ""))
-          .filter(Boolean);
-
-        if (matchIds.length > 0) {
-          const betsBefore = Object.keys(wsRoot.bets ?? {}).length;
-          const nullBefore = Object.values(wsRoot.bets ?? {}).filter((b: any) => b === null).length;
-          this.log(`WS match subscription: subscribing to ${matchIds.length} matches for secondary markets`);
-
-          // Emit match route subscriptions in batches via the captured WS
-          const BATCH = 10;
-          for (let i = 0; i < matchIds.length; i += BATCH) {
-            const batch = matchIds.slice(i, i + BATCH);
-            await page.evaluate((ids: string[]) => {
-              const ws = (window as any).__winamaxWS as WebSocket | undefined;
-              if (!ws || ws.readyState !== 1) return;
-              for (const id of ids) {
-                ws.send(`42["m",{"route":"match:${id}"}]`);
-              }
-            }, batch).catch(() => {});
-            await new Promise<void>((r) => setTimeout(r, 1500));
-          }
-
-          // Wait for server to push all the secondary market data
-          await new Promise<void>((r) => setTimeout(r, 3000));
-          const wsRoot2 = resolveWsStateRoot(wsState);
-          const betsAfter = Object.keys(wsRoot2.bets ?? {}).length;
-          const nullAfter = Object.values(wsRoot2.bets ?? {}).filter((b: any) => b === null).length;
-          this.log(`WS match subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
-        }
-      }
 
       const wsStateKeys = Object.keys(wsState);
       const wsUrls = wsMessages.length > 0
