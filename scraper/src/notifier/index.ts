@@ -430,9 +430,6 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
   return true;
 }
 
-// Arb alerts older than this at notification time are discarded — odds may have moved
-const ARB_ALERT_TTL_MS = 25_000;
-
 /**
  * Main notify function — called after each arb detection cycle.
  * Sends alerts to matching subscribers and records them in ArbNotification.
@@ -443,16 +440,8 @@ export async function notifyArbs(
 ): Promise<void> {
   if (!newArbs.length) return;
 
-  // TTL: skip alerts whose odds are likely already stale
-  const fresh = newArbs.filter(({ detectedAt }) => Date.now() - detectedAt < ARB_ALERT_TTL_MS);
-  if (fresh.length < newArbs.length) {
-    console.warn(`[notifier] Dropped ${newArbs.length - fresh.length} stale arb(s) (>25s old)`);
-  }
-  if (!fresh.length) return;
-
-  // Smart queue: process higher-profit opportunities first so they reach subscribers
-  // before lower-profit ones when the Telegram API queue is under load
-  const prioritized = [...fresh].sort((a, b) => b.arb.profitPct - a.arb.profitPct);
+  // Smart queue: send highest-profit opportunities first
+  const prioritized = [...newArbs].sort((a, b) => b.arb.profitPct - a.arb.profitPct);
 
   const subscribers = await getActiveSubscribers();
   if (!subscribers.length) return;
