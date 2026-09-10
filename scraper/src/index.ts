@@ -458,8 +458,9 @@ async function pollCycle(isLive: boolean): Promise<void> {
   const SCRAPER_TIMEOUT_MS = isLive ? 60 * 1000 : 10 * 60 * 1000; // 60s live, 10min prematch
   // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
   // Kambi CDN (eu-offering.kambicdn.org) blocks our IP at TCP level — skip until new proxy
+  // 888sport migrated from Kambi to Spectate — now has its own Playwright scraper, not blocked
   // Altenar also blocked. Retabet blocked by Akamai.
-  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "unibet"]);
+  const KAMBI_BLOCKED = new Set(["leovegas", "unibet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
   const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
