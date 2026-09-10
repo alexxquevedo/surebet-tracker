@@ -1,14 +1,19 @@
 /**
  * Kirolbet España — Kirolsoft platform SSR scraper.
  *
- * Flow:
+ * Flow (prematch):
  *   1. Fetch /esp/Sport/Deporte/{sportId} for each sport (today's events)
  *   2. Parse div[sport-type="Eve"] — event containers with des/sct/dt attrs
  *   3. Find ul[sport-type="Mkt"] with des="1X2" (visible, not houdini_apuesta)
  *   4. Extract outcome names (1/X/2) and coef odds from span.coef
  *
+ * Flow (live):
+ *   1. Fetch /esp/Live — all sports on one page, SSR odds for current live events
+ *   2. Split by <li class="filtroCategoria filtroCat-{catId}"> sections
+ *   3. Map catId → Sport via CAT_TO_SPORT (same numeric IDs as SPORT_IDS)
+ *   4. Skip unsupported sports (eSports catIds 592/593, table tennis 423, snooker 451, etc.)
+ *
  * Platform: Kirolsoft (own platform, apuestas.kirolbet.es)
- * Note: Live data uses WebSocket push — scrapeLive() returns [].
  */
 
 import { execFile } from "child_process";
@@ -28,6 +33,17 @@ const SPORT_IDS: Partial<Record<Sport, number>> = {
   BASEBALL:         429,
   ICEHOCKEY:        418,
   AMERICANFOOTBALL: 430,
+};
+
+// Reverse of SPORT_IDS — used to detect sport from filtroCat-{id} on the live page.
+// Unsupported catIds (592=E-FÚTBOL, 593=E-BASKET, 423=TENIS MESA, 451=SNOOKER, etc.) are absent → skipped.
+const CAT_TO_SPORT: Record<string, Sport> = {
+  "40":  "FOOTBALL",
+  "285": "TENNIS",
+  "50":  "BASKETBALL",
+  "429": "BASEBALL",
+  "418": "ICEHOCKEY",
+  "430": "AMERICANFOOTBALL",
 };
 
 function getProxy(): string {
@@ -68,7 +84,7 @@ function getAttr(tag: string, attr: string): string {
   return m ? decodeHtmlEntities(m[1]) : "";
 }
 
-function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
+function parseHtml(html: string, sport: Sport, isLive = false): ScrapedEvent[] {
   const results: ScrapedEvent[] = [];
 
   // Match event opening div tags: <div ... sport-type="Eve" ...>
@@ -134,7 +150,7 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
       eventKey,
       eventName,
       league: sct || undefined,
-      isLive: false,
+      isLive,
       market: "h2h",
       outcomes,
     });
@@ -208,9 +224,51 @@ export class KirolbetScraper extends BaseScraper {
     }
   }
 
-  // Live data uses WebSocket push (GetPushToken) — not implemented
   async scrapeLive(): Promise<ScrapedEvent[]> {
-    return [];
+    const proxy = getProxy();
+    if (!proxy) return [];
+
+    try {
+      const html = await fetchHtml(`${BASE_URL}/esp/Live`, proxy);
+
+      // Collect all filtroCategoria section boundaries.
+      // Each <li class="filtroCategoria filtroCat-{catId}"> contains one event's
+      // infoEve div + event div (with market ULs nested inside it).
+      // catId maps to Sport via CAT_TO_SPORT; eSports/snooker/table tennis ids are absent → skipped.
+      interface Section { catId: string; tagStart: number; contentStart: number }
+      const sectionRe = /<li\s+class="filtroCategoria\s+filtroCat-(\d+)">/gi;
+      const sections: Section[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = sectionRe.exec(html)) !== null) {
+        sections.push({ catId: m[1], tagStart: m.index, contentStart: m.index + m[0].length });
+      }
+
+      const seen   = new Set<string>();
+      const events: ScrapedEvent[] = [];
+
+      for (let i = 0; i < sections.length; i++) {
+        const { catId, contentStart } = sections[i];
+        const sport = CAT_TO_SPORT[catId];
+        if (!sport) continue;
+        // Slice from after this section's opening tag to before the next section's opening tag
+        const contentEnd = i + 1 < sections.length ? sections[i + 1].tagStart : html.length;
+        const sectionHtml = html.slice(contentStart, contentEnd);
+
+        for (const ev of parseHtml(sectionHtml, sport, true)) {
+          if (!seen.has(ev.eventKey)) {
+            seen.add(ev.eventKey);
+            events.push(ev);
+          }
+        }
+      }
+
+      if (events.length > 0) this.log(`Kirolbet live: ${events.length} eventos`);
+      else this.warn("Kirolbet live: 0 eventos");
+      return events;
+    } catch (err) {
+      this.warn("Kirolbet live failed", err);
+      return [];
+    }
   }
 
   // Sequential to avoid flooding Akamai WAF with ~120 concurrent curl connections
