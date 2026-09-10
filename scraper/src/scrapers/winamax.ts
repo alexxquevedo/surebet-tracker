@@ -154,7 +154,7 @@ function parseMatches(matches: any[], sport: Sport, isLive: boolean, league: str
   return events;
 }
 
-/** Merge all Socket.IO "m" messages into a single state object */
+/** Merge all Socket.IO "m" / "message" messages into a single state object */
 function mergeWsMessage(state: Record<string, any>, msg: Record<string, any>): void {
   for (const [k, v] of Object.entries(msg)) {
     if (v !== null && typeof v === "object" && !Array.isArray(v) && typeof state[k] === "object" && !Array.isArray(state[k])) {
@@ -163,6 +163,20 @@ function mergeWsMessage(state: Record<string, any>, msg: Record<string, any>): v
       state[k] = v;
     }
   }
+}
+
+/**
+ * Returns the effective matches/bets/odds dicts from wsState, handling
+ * both the old format (fields at root) and the new format where Winamax
+ * sends event name "message" instead of "m" (fields nested under state.message).
+ */
+function resolveWsStateRoot(state: Record<string, any>): Record<string, any> {
+  if (state.matches != null) return state;
+  // Winamax changed WS event name from "m" to "message" — check nested
+  if (state.message != null && typeof state.message === "object" && state.message.matches != null) {
+    return state.message as Record<string, any>;
+  }
+  return state;
 }
 
 // ─── Secondary market parsing (corners, cards, handicap, O/U goals, player props) ────
@@ -376,10 +390,13 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   const events: ScrapedEvent[] = [];
   const targetSportId = SPORT_IDS[sport];
 
-  const matches: Record<string, any> = state.matches ?? {};
-  const bets: Record<string, any> = state.bets ?? {};
-  const odds: Record<string, any> = state.odds ?? {};
-  const outcomesMeta: Record<string, any> = state.outcomes ?? {};
+  // Support both old ("m" event → fields at root) and new ("message" event → nested)
+  const root = resolveWsStateRoot(state);
+
+  const matches: Record<string, any> = root.matches ?? {};
+  const bets: Record<string, any> = root.bets ?? {};
+  const odds: Record<string, any> = root.odds ?? {};
+  const outcomesMeta: Record<string, any> = root.outcomes ?? {};
 
   // Pre-index bets by matchId so we can find all bets for a match
   const betsByMatch = new Map<string, string[]>();
@@ -391,9 +408,9 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     betsByMatch.set(matchId, list);
   }
 
-  // Log sport ID mapping from state.sports (first time only)
-  if (state.sports && typeof state.sports === "object") {
-    const sportsInfo = Object.entries(state.sports as Record<string, any>)
+  // Log sport ID mapping from root.sports (first time only)
+  if (root.sports && typeof root.sports === "object") {
+    const sportsInfo = Object.entries(root.sports as Record<string, any>)
       .slice(0, 10)
       .map(([id, s]: [string, any]) => `${id}=${s?.name ?? s?.sportName ?? "?"}`)
       .join(", ");
@@ -404,8 +421,16 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   for (const [, match] of Object.entries(matches)) {
     if (!match || typeof match !== "object") continue;
     if (match.sportId !== targetSportId) continue;
-    // Q6: accept multiple live status variants used by different Winamax API versions
-    const matchIsLive = match.status === "LIVE" || match.is_live === true || match.match_status === 1;
+    // Accept multiple live status variants (Winamax has changed this field over time)
+    const matchIsLive = match.status === "LIVE"
+      || match.status === "IN_PLAY"
+      || match.status === "LIVE_EVENT"
+      || match.status === "PLAYING"
+      || match.matchStatus === "LIVE"
+      || match.matchStatus === "IN_PLAY"
+      || match.is_live === true
+      || match.match_status === 1
+      || match.isLive === true;
     if (isLive && !matchIsLive) continue;
     if (!isLive && matchIsLive) continue; // excluye live; acepta PREMATCH/NotStarted/SCHEDULED/etc.
     if (match.available === false || match.available === 0) continue;
@@ -446,7 +471,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     const startTime = rawStart ? new Date(typeof rawStart === 'number' ? rawStart * 1000 : rawStart) : (isLive ? new Date() : undefined);
     const eventKey = buildEventKey(sport, title, startTime);
     const tournamentId: number = match.tournamentId;
-    const tournaments: Record<string, any> = state.tournaments ?? state.competitions ?? {};
+    const tournaments: Record<string, any> = root.tournaments ?? root.competitions ?? {};
     const league: string = tournaments[String(tournamentId)]?.name
       ?? tournaments[String(tournamentId)]?.title
       ?? "";
@@ -609,7 +634,9 @@ async function waitForWsOrRest(
 ): Promise<WsWaitResult> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
-    if (Object.keys(wsState.matches ?? {}).length > 0) return "ws_data";
+    // Check both root-level and nested under "message" key (Winamax format change)
+    const root = resolveWsStateRoot(wsState);
+    if (Object.keys(root.matches ?? {}).length > 0) return "ws_data";
     if (captured.length > 0) return "rest_data";
     if (page.isClosed()) return "timeout";
     await new Promise<void>((r) => setTimeout(r, 400));
@@ -693,7 +720,8 @@ export class WinamaxScraper extends BaseScraper {
               const arr = JSON.parse(stripped);
               if (Array.isArray(arr) && typeof arr[0] === "string" && arr[1] !== undefined) {
                 const evtName = arr[0];
-                if (evtName === "m" && typeof arr[1] === "object" && arr[1] !== null) {
+                // "m" is the historic event name; Winamax now also sends "message" with same structure
+                if ((evtName === "m" || evtName === "message") && typeof arr[1] === "object" && arr[1] !== null) {
                   mergeWsMessage(wsState, arr[1]);
                 } else if (typeof arr[1] === "object" && arr[1] !== null) {
                   wsState[evtName] = arr[1];
@@ -733,15 +761,16 @@ export class WinamaxScraper extends BaseScraper {
 
       // Subscribe to each match individually to load secondary markets (corners, goals, handicap)
       // Each "route":"match:MATCHID" emit causes the server to push all bets for that match.
+      const wsRoot = resolveWsStateRoot(wsState);
       if (waitResult === "ws_data") {
-        const matchIds = Object.values(wsState.matches ?? {})
+        const matchIds = Object.values(wsRoot.matches ?? {})
           .filter((m: any) => m && typeof m === "object")
           .map((m: any) => String(m.matchId ?? m.id ?? ""))
           .filter(Boolean);
 
         if (matchIds.length > 0) {
-          const betsBefore = Object.keys(wsState.bets ?? {}).length;
-          const nullBefore = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          const betsBefore = Object.keys(wsRoot.bets ?? {}).length;
+          const nullBefore = Object.values(wsRoot.bets ?? {}).filter((b: any) => b === null).length;
           this.log(`WS match subscription: subscribing to ${matchIds.length} matches for secondary markets`);
 
           // Emit match route subscriptions in batches via the captured WS
@@ -760,8 +789,9 @@ export class WinamaxScraper extends BaseScraper {
 
           // Wait for server to push all the secondary market data
           await new Promise<void>((r) => setTimeout(r, 3000));
-          const betsAfter = Object.keys(wsState.bets ?? {}).length;
-          const nullAfter = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          const wsRoot2 = resolveWsStateRoot(wsState);
+          const betsAfter = Object.keys(wsRoot2.bets ?? {}).length;
+          const nullAfter = Object.values(wsRoot2.bets ?? {}).filter((b: any) => b === null).length;
           this.log(`WS match subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
         }
       }
@@ -777,7 +807,7 @@ export class WinamaxScraper extends BaseScraper {
       }).join(",");
       this.log(`WS: ${wsMessages.length} msgs, keys=[${wsStateKeys.slice(0, 10).join(",")}], evts=[${sampleEvts}], url=${wsUrls.slice(0, 100)}`);
 
-      const matchCount = Object.keys(wsState.matches ?? {}).length;
+      const matchCount = Object.keys(wsRoot.matches ?? {}).length;
 
       for (const sport of this.sports) {
         if (wsStateKeys.length > 0) {
@@ -787,10 +817,20 @@ export class WinamaxScraper extends BaseScraper {
             events.push(...wsEvents);
           } else {
             const sportId = SPORT_IDS[sport];
-            const sportMatches = Object.values(wsState.matches ?? {}).filter(
-              (m: any) => m?.sportId === sportId && (isLive ? m?.status === "LIVE" : m?.status === "PREMATCH")
+            const wsRoot2 = resolveWsStateRoot(wsState);
+            const sportMatches = Object.values(wsRoot2.matches ?? {}).filter(
+              (m: any) => {
+                const sid = m?.sportId;
+                if (sid !== sportId && String(sid) !== String(sportId)) return false;
+                if (!isLive) return true;
+                return m?.status === "LIVE" || m?.status === "IN_PLAY" || m?.status === "LIVE_EVENT"
+                  || m?.status === "PLAYING" || m?.is_live === true || m?.match_status === 1 || m?.isLive === true;
+              }
             ).length;
-            this.warn(`WS 0 events for ${sport} (id=${sportId}, total=${matchCount}, ${isLive ? "live" : "pre"}=${sportMatches})`);
+            const statusSample = [...new Set(
+              Object.values(wsRoot2.matches ?? {}).slice(0, 8).map((m: any) => m?.status ?? "?")
+            )].join(",");
+            this.warn(`WS 0 events for ${sport} (id=${sportId}, total=${matchCount}, ${isLive ? "live" : "pre"}=${sportMatches}, statuses=${statusSample})`);
             // Fallback: try parseWinamaxData on wsState itself (handles sports/competitions/matches structure)
             const fallback = parseWinamaxData(wsState, sport, isLive, "ws-state");
             if (fallback.length > 0) {
@@ -867,7 +907,8 @@ export class WinamaxScraper extends BaseScraper {
               const arr = JSON.parse(stripped);
               if (Array.isArray(arr) && typeof arr[0] === "string" && arr[1] !== undefined) {
                 const evtName = arr[0];
-                if (evtName === "m" && typeof arr[1] === "object" && arr[1] !== null) {
+                // "m" is the historic event name; Winamax now also sends "message" with same structure
+                if ((evtName === "m" || evtName === "message") && typeof arr[1] === "object" && arr[1] !== null) {
                   mergeWsMessage(wsState, arr[1]);
                 } else if (typeof arr[1] === "object" && arr[1] !== null) {
                   wsState[evtName] = arr[1];
@@ -911,20 +952,20 @@ export class WinamaxScraper extends BaseScraper {
         this.warn(`Prematch ${sport}: sin datos WS ni REST en ${wsTimeout / 1000}s — posible bloqueo`);
       }
 
+      const wsRootP = resolveWsStateRoot(wsState);
       if (waitResult === "ws_data") {
-        const allMatchIds = Object.values(wsState.matches ?? {})
+        const allMatchIds = Object.values(wsRootP.matches ?? {})
           .filter((m: any) => m && typeof m === "object")
           .map((m: any) => String(m.matchId ?? m.id ?? ""))
           .filter(Boolean);
 
-        // Cap at 120 to avoid 100+ second blocking subscription loops that starve the LIVE cycle.
-        // 120 / 20 per batch × 1s delay = ~7s + 3s wait = ~10s per sport.
+        // Cap at 200 to avoid 100+ second blocking subscription loops that starve the LIVE cycle.
         const MAX_PREMATCH_SUBS = 200;
         const matchIds = allMatchIds.slice(0, MAX_PREMATCH_SUBS);
 
         if (matchIds.length > 0) {
-          const betsBefore = Object.keys(wsState.bets ?? {}).length;
-          const nullBefore = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          const betsBefore = Object.keys(wsRootP.bets ?? {}).length;
+          const nullBefore = Object.values(wsRootP.bets ?? {}).filter((b: any) => b === null).length;
           const cappedNote = allMatchIds.length > MAX_PREMATCH_SUBS ? ` (capped from ${allMatchIds.length})` : "";
           this.log(`WS prematch ${sport} subscription: ${matchIds.length} matches${cappedNote}`);
 
@@ -942,8 +983,9 @@ export class WinamaxScraper extends BaseScraper {
           }
 
           await new Promise<void>((r) => setTimeout(r, 3000));
-          const betsAfter = Object.keys(wsState.bets ?? {}).length;
-          const nullAfter = Object.values(wsState.bets ?? {}).filter((b: any) => b === null).length;
+          const wsRootP2 = resolveWsStateRoot(wsState);
+          const betsAfter = Object.keys(wsRootP2.bets ?? {}).length;
+          const nullAfter = Object.values(wsRootP2.bets ?? {}).filter((b: any) => b === null).length;
           this.log(`WS prematch ${sport} subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
         }
       }
@@ -962,7 +1004,7 @@ export class WinamaxScraper extends BaseScraper {
       }
       if (events.length === 0) {
         const wsKeys = Object.keys(wsState).slice(0, 10).join(",");
-        const fallback = parseWinamaxData(wsState, sport, false, "ws-state");
+        const fallback = parseWinamaxData(wsRootP, sport, false, "ws-state");
         if (fallback.length > 0) {
           this.log(`WS prematch ${sport} fallback: ${fallback.length} events from wsState`);
           events.push(...fallback);
