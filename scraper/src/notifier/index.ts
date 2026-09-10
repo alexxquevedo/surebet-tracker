@@ -1,6 +1,13 @@
 /**
  * Sends Telegram alerts for detected arbs.
- * Reads subscriber list from BotSubscription table and filters by their config.
+ *
+ * Architecture:
+ *  1. notifyArbs() is NON-BLOCKING — pushes to an async queue and returns immediately
+ *     so the scanner cycle is never stalled by Telegram API latency or many subscribers.
+ *  2. Subscriber configs are cached in memory (60s TTL) to avoid a DB hit per arb cycle.
+ *  3. Per-user rate limiter prevents duplicate alerts for the same event within 5 minutes.
+ *  4. Gatekeeper validates admin / active subscription / free-trial BEFORE evaluating filters.
+ *  5. Bookmaker whitelist requires ALL arb legs to be in the user's allowed list.
  */
 
 import axios from "axios";
@@ -30,6 +37,8 @@ async function sendMessage(
     return undefined;
   }
 }
+
+// ─── Display helpers ──────────────────────────────────────────────────────────
 
 const SPORT_EMOJI: Record<string, string> = {
   FOOTBALL: "⚽", TENNIS: "🎾", BASKETBALL: "🏀",
@@ -83,7 +92,6 @@ function resolveMarketLabelBySport(market: string, sport: string): string {
   return resolveMarketLabel(market);
 }
 
-// Market → Spanish unit for O/U middle legs ("Over 1.5 goles", "Más 3.5 córners")
 const MARKET_UNIT: Record<string, string> = {
   goals: "goles", h1_goals: "goles (1ª parte)", h2_goals: "goles (2ª parte)",
   corners: "córners", yellow_cards: "amarillas", red_cards: "rojas", cards: "tarjetas",
@@ -93,7 +101,6 @@ const MARKET_UNIT: Record<string, string> = {
   totals: "puntos",
 };
 
-/** Translates "Over 1.5" / "Under 3.5" to "Más 1.5 goles" / "Menos 3.5 goles" for a given market */
 function translateMiddleSelection(selection: string, market: string): string {
   const unit = MARKET_UNIT[market] ?? market;
   const m = selection.match(/^(Over|Under)\s+([\d.]+)$/i);
@@ -102,36 +109,18 @@ function translateMiddleSelection(selection: string, market: string): string {
   return `${dir} ${m[2]} ${unit}`;
 }
 
-// Stat code → Spanish description for player props
 const STAT_LABEL: Record<string, string> = {
   PRA: "puntos + asistencias + rebotes",
-  PTS: "puntos",
-  REB: "rebotes",
-  AST: "asistencias",
-  "3PT": "triples",
-  shots: "tiros",
-  goals: "goles",
-  passes: "pases",
-  tackles: "entradas",
-  corners_taken: "córners",
-  cards: "tarjetas",
-  aces: "aces",
-  double_faults: "dobles faltas",
-  first_serve_pct: "% primer saque",
-  games: "juegos",
-  hits: "hits",
-  runs_batted_in: "carreras impulsadas",
-  strikeouts: "ponches",
-  home_runs: "jonrones",
-  tries: "ensayos",
-  conversions: "conversiones",
-  points: "puntos",
-  rebounds: "rebotes",
+  PTS: "puntos", REB: "rebotes", AST: "asistencias", "3PT": "triples",
+  shots: "tiros", goals: "goles", passes: "pases", tackles: "entradas",
+  corners_taken: "córners", cards: "tarjetas", aces: "aces",
+  double_faults: "dobles faltas", first_serve_pct: "% primer saque",
+  games: "juegos", hits: "hits", runs_batted_in: "carreras impulsadas",
+  strikeouts: "ponches", home_runs: "jonrones", tries: "ensayos",
+  conversions: "conversiones", points: "puntos", rebounds: "rebotes",
   assists: "asistencias",
 };
 
-// Translates a stat abbreviation at the END of a player prop selection string.
-// e.g. "Julian Champagnie +19.5 PRA" → "Julian Champagnie +19.5 puntos + asistencias + rebotes"
 function translateSelection(selection: string): string {
   return selection.replace(/\b([A-Za-z0-9_]+)$/, (_, stat) => STAT_LABEL[stat] ?? stat);
 }
@@ -159,7 +148,6 @@ function formatDatetime(d: Date | undefined, isLive: boolean): string {
 
 function formatSentAt(): string {
   const now = new Date();
-  // Use Spain local time (UTC+2 in summer, UTC+1 in winter)
   const madridOffset = 2; // CEST; adjust to 1 in winter if needed
   const local = new Date(now.getTime() + madridOffset * 3600_000);
   const hh  = String(local.getUTCHours()).padStart(2, "0");
@@ -170,7 +158,6 @@ function formatSentAt(): string {
 
 function resolveMarketLabel(market: string): string {
   if (MARKET_LABEL[market]) return MARKET_LABEL[market];
-  // Handle patterns like "corners O/U 9.5", "goals O/U 2.5", "Totals 2.5/3.5"
   const ouMatch = market.match(/^(\w+)\s+O\/U\s+([\d.]+)$/i);
   if (ouMatch) {
     const baseKey = ouMatch[1].toLowerCase();
@@ -189,7 +176,6 @@ function formatStake(stakePercent: number, bankrollEur?: number): string {
   return pct;
 }
 
-/** Returns "hace Xs" age tag for a leg's odds, or empty string if unknown */
 function oddsAgeTag(scrapedAt?: number): string {
   if (!scrapedAt) return "";
   const sec = Math.round((Date.now() - scrapedAt) / 1000);
@@ -198,16 +184,16 @@ function oddsAgeTag(scrapedAt?: number): string {
   return ` <i>${icon}${sec}s</i>`;
 }
 
+// ─── Message formatters ───────────────────────────────────────────────────────
+
 function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
   const sportEmoji = SPORT_EMOJI[arb.sport] ?? "🏅";
   const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
-
   const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
   const tierMark = _tier === 1 ? "⭐ " : "";
   const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
-  // For O/U surebets (market = "goals O/U 4.5"), extract the base market key for translation
   const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
   const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
@@ -239,7 +225,6 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const datetimeLine = formatDatetime(arb.startTime, arb.isLive);
   const liveTag = arb.isLive ? " 🎥 LIVE" : "";
   const probPct = (arb.middleProbability * 100).toFixed(2);
-
   const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
   const tierMark = _tier === 1 ? "⭐ " : "";
   const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
@@ -274,7 +259,6 @@ function formatArb(arb: DetectedArb, bankrollEur?: number): string {
 }
 
 function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
-  // Sort highest profit first
   const sorted = [...arbs].sort((a, b) => b.profitPct - a.profitPct);
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
@@ -293,13 +277,11 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
     const sportLabel = SPORT_LABEL[arb.sport] ?? arb.sport;
     const datetimeLine = formatDatetime((arb as any).startTime, arb.isLive);
     const _tier = arb.league ? classifyCompetition(arb.league, arb.sport) : 2;
-  const tierMark = _tier === 1 ? "⭐ " : "";
-  const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
-
+    const tierMark = _tier === 1 ? "⭐ " : "";
+    const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
     const profitLine = arb.type === "SUREBET"
       ? `💎 Profit: +${arb.profitPct.toFixed(2)}%`
       : `💎 Valor esperado: +${arb.profitPct.toFixed(2)}% ~ +${(arb as DetectedMiddle).maxProfitPct.toFixed(2)}%`;
-
     const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
     const legLines = arb.legs
       .map((leg) => {
@@ -310,7 +292,6 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
         return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)}${oddsAgeTag(leg.scrapedAt)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
       })
       .join("\n");
-
     lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`, legLines);
   }
 
@@ -318,35 +299,78 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
   return lines.join("\n");
 }
 
-/**
- * Get all active bot subscribers that have the scanner feature enabled.
- * Each subscriber's config JSON may contain a "scanner" key with their preferences.
- */
-async function getActiveSubscribers(): Promise<
-  Array<{ telegramId: string; config: any; plan: string }>
-> {
-  const now = new Date();
-  const subs = await prisma.botSubscription.findMany({
-    where: {
-      OR: [
-        { expiresAt: null },          // permanent / admin
-        { expiresAt: { gt: now } },   // active subscription
-      ],
-    },
-    select: { telegramId: true, config: true, plan: true },
-  });
-  // Support both the new `scanner.enabled` key and the old `surebets_on`/`middlebets_on` format
-  return subs.filter((s: (typeof subs)[0]) => {
-    const cfg = s.config as any;
-    if (cfg?.scanner?.enabled === true || cfg?.scanner?.active === true) return true;
-    return cfg?.surebets_on === true || cfg?.middlebets_on === true;
-  });
+// ─── 1. Subscriber cache (60s TTL, no DB hit per arb cycle) ──────────────────
+
+interface CachedSub {
+  telegramId: string;
+  config: any;
+  plan: string;
+  isAdmin: boolean;
 }
 
-/**
- * Check if an arb matches a subscriber's preferences.
- */
-// Maps old-format sport keys (soccer, basketball…) to our internal SPORT type
+const SUB_CACHE_TTL_MS = 60_000;
+let _subCache: CachedSub[] = [];
+let _subCacheAt = 0;
+
+function invalidateSubCache(): void { _subCacheAt = 0; }
+
+async function getCachedSubscribers(): Promise<CachedSub[]> {
+  if (Date.now() - _subCacheAt < SUB_CACHE_TTL_MS) return _subCache;
+  const now = new Date();
+  const rows = await prisma.botSubscription.findMany({
+    where: {
+      OR: [
+        { expiresAt: null },                         // admin / permanent
+        { expiresAt: { gt: now } },                  // active subscription
+      ],
+    },
+    select: { telegramId: true, config: true, plan: true, expiresAt: true },
+  });
+
+  type SubRow = typeof rows[number];
+  _subCache = rows
+    .filter((s: SubRow) => {
+      const cfg = s.config as any;
+      // Gatekeeper: scanner must be enabled in config
+      if (cfg?.scanner?.enabled === true || cfg?.scanner?.active === true) return true;
+      return cfg?.surebets_on === true || cfg?.middlebets_on === true;
+    })
+    .map((s: SubRow) => ({
+      telegramId: s.telegramId,
+      config: s.config,
+      plan: s.plan,
+      isAdmin: s.expiresAt === null,   // null expiry = permanent admin
+    }));
+
+  _subCacheAt = Date.now();
+  return _subCache;
+}
+
+// ─── 2. Per-user rate limiter (prevents alert spam) ──────────────────────────
+// Key: `{telegramId}::{eventName}::{type}::{market}` → last sent ms
+// Same arb to same user: max once per 5 minutes.
+
+const RATE_LIMIT_MS = 5 * 60_000;
+const _rateLimitMap = new Map<string, number>();
+
+// Cleanup stale rate-limit entries every 10 min to prevent memory growth
+setInterval(() => {
+  const cutoff = Date.now() - RATE_LIMIT_MS * 2;
+  for (const [k, ts] of _rateLimitMap) {
+    if (ts < cutoff) _rateLimitMap.delete(k);
+  }
+}, 10 * 60_000);
+
+function isRateLimited(telegramId: string, arb: DetectedArb): boolean {
+  const key = `${telegramId}::${arb.eventName}::${arb.type}::${arb.market}`;
+  const last = _rateLimitMap.get(key) ?? 0;
+  if (Date.now() - last < RATE_LIMIT_MS) return true;
+  _rateLimitMap.set(key, Date.now());
+  return false;
+}
+
+// ─── 3. Per-user filter engine ────────────────────────────────────────────────
+
 const OLD_SPORT_KEY: Record<string, string> = {
   soccer: "FOOTBALL", football: "FOOTBALL",
   tennis: "TENNIS", basketball: "BASKETBALL",
@@ -358,70 +382,106 @@ const OLD_SPORT_KEY: Record<string, string> = {
 };
 
 function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
+  // Normalise: sc = new-format scanner block; old = legacy flat config
   const sc = (subConfig?.scanner?.active === false || subConfig?.scanner?.enabled === false)
     ? {}
     : (subConfig?.scanner ?? {});
   const old = subConfig ?? {};
 
-  // Min profit: check new format first, then old per-type format
-  const minProfitNew = sc.min_profit ?? sc.minProfitPct;
-  const minProfitOld = arb.type === "SUREBET"
-    ? (old.min_profit_surebet ?? old.minProfitSurebet)
-    : (old.min_profit_middle ?? old.minProfitMiddle);
-  const minProfit = minProfitNew ?? minProfitOld;
-  if (minProfit !== undefined && arb.profitPct < Number(minProfit)) return false;
+  // ── Type switches ─────────────────────────────────────────────────────────
+  if (arb.type === "SUREBET") {
+    const on = sc.surebets_enabled ?? sc.alertSurebets;
+    if (on === false) return false;
+    if (on === undefined && old.surebets_on === false) return false;
+  }
+  if (arb.type === "MIDDLE") {
+    const on = sc.middlebets_enabled ?? sc.alertMiddles;
+    if (on === false) return false;
+    if (on === undefined && old.middlebets_on === false) return false;
+  }
 
-  // Sports filter — new format: string[]; old format: {soccer: true, basketball: false, ...}
-  if (sc.sports?.length && !sc.sports.includes(arb.sport)) return false;
+  // ── Live / prematch switches ──────────────────────────────────────────────
+  if (arb.isLive) {
+    const on = sc.live_enabled ?? sc.alertLive;
+    if (on === false) return false;
+    if (on === undefined && old.surebets_live_on === false) return false;
+  }
+  if (!arb.isLive) {
+    const on = sc.prematch_enabled ?? sc.alertPrematch;
+    if (on === false) return false;
+  }
+
+  // Skip prematch events whose start time has already passed
+  if (!arb.isLive && arb.startTime && arb.startTime.getTime() < Date.now()) return false;
+
+  // ── Min profit thresholds ─────────────────────────────────────────────────
+  if (arb.type === "SUREBET") {
+    const minProfit =
+      sc.min_profit_surebets ?? sc.min_profit ?? sc.minProfitPct ??
+      old.min_profit_surebet ?? old.minProfitSurebet;
+    if (minProfit !== undefined && arb.profitPct < Number(minProfit)) return false;
+  }
+  if (arb.type === "MIDDLE") {
+    const minProfit =
+      sc.min_profit_middlebet ?? sc.min_profit ?? sc.minProfitPct ??
+      old.min_profit_middle ?? old.minProfitMiddle;
+    if (minProfit !== undefined && arb.profitPct < Number(minProfit)) return false;
+
+    // Min middle probability threshold
+    const minProb =
+      sc.min_prob_middle ?? sc.minProbMiddle ?? old.min_prob_middle;
+    if (minProb !== undefined) {
+      const prob = (arb as DetectedMiddle).middleProbability * 100;
+      if (prob < Number(minProb)) return false;
+    }
+  }
+
+  // ── Pre-match days-ahead filter ───────────────────────────────────────────
+  // Accepts: sc.max_prematch_days | sc.prematch_days_filter | sc.max_days | old.max_days
+  if (!arb.isLive && arb.startTime) {
+    const maxDays =
+      sc.max_prematch_days ?? sc.prematch_days_filter ?? sc.max_days ?? sc.maxDaysAhead ??
+      old.max_days;
+    if (maxDays !== undefined) {
+      const msLimit = Number(maxDays) * 24 * 3600_000;
+      if (arb.startTime.getTime() - Date.now() > msLimit) return false;
+    }
+  }
+
+  // ── Sports whitelist ──────────────────────────────────────────────────────
+  const allowedSports: string[] | undefined =
+    Array.isArray(sc.allowed_sports) ? sc.allowed_sports :
+    Array.isArray(sc.sports) ? sc.sports : undefined;
+
+  if (allowedSports?.length && !allowedSports.includes(arb.sport)) return false;
+
+  // Legacy object format: { soccer: true, tennis: false }
   if (old.sports && typeof old.sports === "object" && !Array.isArray(old.sports)) {
-    // Object format: { soccer: true, tennis: false } — any key mapping to arb.sport must be true
     const allowed = Object.entries(old.sports as Record<string, boolean>)
       .filter(([, v]) => v === true)
       .map(([k]) => OLD_SPORT_KEY[k] ?? k.toUpperCase());
     if (allowed.length > 0 && !allowed.includes(arb.sport)) return false;
   }
 
-  // Surebet/Middle type filter
-  if (arb.type === "SUREBET") {
-    if (sc.alertSurebets === false) return false;
-    if (sc.alertSurebets === undefined && old.surebets_on === false) return false;
-  }
-  if (arb.type === "MIDDLE") {
-    if (sc.alertMiddles === false) return false;
-    if (sc.alertMiddles === undefined && old.middlebets_on === false) return false;
-  }
+  // ── Bookmaker whitelist (EXCLUSIVE: ALL legs must be in the allowed list) ─
+  const allowedBooks: string[] | undefined =
+    Array.isArray(sc.allowed_bookmakers) ? sc.allowed_bookmakers :
+    Array.isArray(sc.bookmakers) ? sc.bookmakers : undefined;
 
-  // Live/prematch filter
-  if (arb.isLive) {
-    if (sc.alertLive === false) return false;
-    if (sc.alertLive === undefined && old.surebets_live_on === false) return false;
-  }
-  if (!arb.isLive && sc.alertPrematch === false) return false;
-
-  // Skip pre-match alerts for games that have already started
-  if (!arb.isLive && arb.startTime && arb.startTime.getTime() < Date.now()) return false;
-
-  // Pre-match days-ahead filter: config field "max_days" (old format) or sc.max_days / sc.maxDaysAhead
-  if (!arb.isLive && arb.startTime) {
-    const maxDays = sc.max_days ?? sc.maxDaysAhead ?? old.max_days;
-    if (maxDays !== undefined) {
-      const msLimit = Number(maxDays) * 24 * 3600 * 1000;
-      if (arb.startTime.getTime() - Date.now() > msLimit) return false;
-    }
-  }
-
-  // Bookmakers filter — new format: string[]; old format: {codere: true, bet365: false, ...}
-  const arbBooks = arb.legs.map((l: any) => l.bookmaker);
-  if (sc.bookmakers?.length) {
-    if (!arbBooks.some((b: string) => sc.bookmakers.includes(b))) return false;
+  if (allowedBooks?.length) {
+    const arbBooks = arb.legs.map((l) => l.bookmaker);
+    if (!arbBooks.every((b) => allowedBooks.includes(b))) return false;
   } else if (old.bookmakers && typeof old.bookmakers === "object" && !Array.isArray(old.bookmakers)) {
     const allowed = Object.entries(old.bookmakers as Record<string, boolean>)
       .filter(([, v]) => v === true)
       .map(([k]) => k);
-    if (allowed.length > 0 && !arbBooks.some((b: string) => allowed.includes(b))) return false;
+    if (allowed.length > 0) {
+      const arbBooks = arb.legs.map((l) => l.bookmaker);
+      if (!arbBooks.every((b) => allowed.includes(b))) return false;
+    }
   }
 
-  // Draw-risk: football/icehockey h2h surebets do not cover draw
+  // ── Draw-risk guard (football/icehockey h2h surebets don't cover draw) ───
   if (arb.type === "SUREBET" && arb.market === "h2h" && THREE_WAY_SPORTS.has(arb.sport)) {
     const blockDraw = sc.blockDrawRisk ?? old.block_draw_risk_surebets;
     if (blockDraw !== false) return false;
@@ -430,42 +490,62 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
   return true;
 }
 
-/**
- * Main notify function — called after each arb detection cycle.
- * Sends alerts to matching subscribers and records them in ArbNotification.
- * @param newArbs  New arbs with their DB id and the timestamp they were detected
- */
-export async function notifyArbs(
+// ─── 4. Async notification queue (scanner never blocks on Telegram I/O) ──────
+
+type NotifyJob = Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>;
+
+const _queue: NotifyJob[] = [];
+let _processing = false;
+
+async function _processQueue(): Promise<void> {
+  if (_processing) return;
+  _processing = true;
+  try {
+    while (_queue.length > 0) {
+      const batch = _queue.shift()!;
+      await _dispatchBatch(batch);
+    }
+  } finally {
+    _processing = false;
+  }
+}
+
+async function _dispatchBatch(
   newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>,
 ): Promise<void> {
   if (!newArbs.length) return;
 
-  // Smart queue: send highest-profit opportunities first
+  // High-profit arbs first (smart queue)
   const prioritized = [...newArbs].sort((a, b) => b.arb.profitPct - a.arb.profitPct);
 
-  const subscribers = await getActiveSubscribers();
+  const subscribers = await getCachedSubscribers();
   if (!subscribers.length) return;
 
   let notified = 0;
+
   for (const sub of subscribers) {
+    // ── Per-user filter ──────────────────────────────────────────────────────
+    const matching = prioritized.filter(({ arb }) => matchesPrefs(arb, sub.config));
+    if (!matching.length) continue;
+
+    // ── Rate limiting: skip events already alerted within 5 min ─────────────
+    const deduped = matching.filter(({ arb }) => !isRateLimited(sub.telegramId, arb));
+    if (!deduped.length) continue;
+
     const bankrollEur: number | undefined = (sub.config as any)?.stake > 0
       ? Number((sub.config as any).stake) : undefined;
     const hasTracker = sub.plan === "PRO_TRACKER" || sub.plan === "ENTERPRISE";
 
-    // Per-user filter: draw-risk for football/icehockey is inside matchesPrefs
-    const matching = prioritized.filter(({ arb }) => matchesPrefs(arb, sub.config));
-    if (!matching.length) continue;
-
     // Group by event+type so same match = one message
     const groups = new Map<string, Array<{ dbId: string; arb: DetectedArb }>>();
-    for (const item of matching) {
+    for (const item of deduped) {
       const key = `${item.arb.sport}::${item.arb.eventName}::${item.arb.type}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(item);
     }
 
     for (const group of groups.values()) {
-      // Record each arb — unique constraint prevents duplicates; skip already-notified ones
+      // Dedup via ArbNotification unique constraint (arbId + telegramId)
       const toSend: Array<{ dbId: string; arb: DetectedArb }> = [];
       for (const item of group) {
         try {
@@ -474,13 +554,12 @@ export async function notifyArbs(
           });
           toSend.push(item);
         } catch (err: any) {
-          if (err.code !== "P2002") throw err;
+          if (err.code !== "P2002") throw err; // P2002 = already sent
         }
       }
       if (!toSend.length) continue;
 
       if (toSend.length === 1) {
-        // Single arb: send individual message with ✅/❌ buttons
         const { dbId, arb } = toSend[0];
         const replyMarkup = {
           inline_keyboard: [[
@@ -490,13 +569,34 @@ export async function notifyArbs(
         };
         await sendMessage(sub.telegramId, formatArb(arb, bankrollEur), replyMarkup);
       } else {
-        // Multiple arbs same event: one grouped message (no per-arb buttons)
         await sendMessage(sub.telegramId, formatGroupedArbs(toSend.map((i) => i.arb), bankrollEur));
       }
       notified += toSend.length;
     }
   }
+
   if (notified > 0) {
     console.log(`[notifier] Sent notifications for ${notified} arbs`);
   }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Non-blocking entry point — called after each arb detection cycle.
+ * Pushes work to the async queue and returns immediately so the scanner
+ * can start the next poll cycle without waiting for Telegram I/O.
+ */
+export async function notifyArbs(
+  newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>,
+): Promise<void> {
+  if (!newArbs.length) return;
+  _queue.push(newArbs);
+  // Fire-and-forget: do NOT await — scanner must not block on notification
+  _processQueue().catch((err) => console.error("[notifier] Queue error:", err));
+}
+
+/** Force-refresh the subscriber cache (call after admin changes a user's config). */
+export function refreshSubscriberCache(): void {
+  invalidateSubCache();
 }
