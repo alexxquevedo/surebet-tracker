@@ -581,11 +581,12 @@ async function pollCycle(isLive: boolean): Promise<void> {
   if (!newArbs.length) return;
 
   // 4. Save new arbs to DB (sequential to avoid exhausting the connection pool)
-  const savedArbs: Array<{ dbId: string; arb: DetectedArb }> = [];
+  const detectedAt = Date.now();
+  const savedArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }> = [];
   for (const arb of newArbs) {
     try {
       const dbId = await saveDetectedArb(arb);
-      savedArbs.push({ dbId, arb });
+      savedArbs.push({ dbId, arb, detectedAt });
     } catch (err: any) {
       console.warn(`[orchestrator] Failed to save arb for ${arb.eventName}:`, err?.message);
     }

@@ -93,6 +93,70 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     if (simA >= 0.7 && simA > simB) nameToPos.set(name, "1");
     else if (simB >= 0.7 && simB > simA) nameToPos.set(name, "2");
   }
+
+  // ── Anti-side-swap: verify numeric "1"/"2" map to the correct alphabetical positions ──
+  // Bookmakers encode "1" = home team wins, "2" = away team wins.
+  // Our eventKey positions are alphabetical (teamA="1", teamB="2").
+  // If the home team sorts alphabetically AFTER the away team, numeric "1" corresponds
+  // to position "2" in our system — causing a false arb where both legs bet the same team.
+  // Heuristic: compare numeric-only bookmakers' "1" odds to the named bookmakers' per-position
+  // average odds. If numeric "1" is closer to named-bookmakers' position-"2" odds than to
+  // position-"1" odds, the numeric codes are inverted and need to be swapped.
+  if (teamA && teamB) {
+    // Split bookmakers: "numeric-only" (uses "1"/"2" but no team names) vs "named"
+    const numericOnlyBooks = new Set<string>();
+    const namedBooks = new Set<string>();
+    for (const [book, outcomes] of market.byBook) {
+      if (!isH2H(outcomes)) continue;
+      let hasNum = false, hasNamed = false;
+      for (const o of outcomes) {
+        const n = normalizeOutcomeName(o.name);
+        if (n === "1" || n === "2") hasNum = true;
+        else if (n !== "X" && n !== "Draw") hasNamed = true;
+      }
+      if (hasNum && !hasNamed) numericOnlyBooks.add(book);
+      if (hasNamed) namedBooks.add(book);
+    }
+
+    if (numericOnlyBooks.size > 0 && namedBooks.size > 0) {
+      // Collect odds for position "1" and "2" from named bookmakers
+      const pos1Odds: number[] = [], pos2Odds: number[] = [];
+      for (const [book, outcomes] of market.byBook) {
+        if (!namedBooks.has(book) || !isH2H(outcomes)) continue;
+        for (const o of outcomes) {
+          const p = nameToPos.get(normalizeOutcomeName(o.name));
+          if (p === "1") pos1Odds.push(o.odds);
+          else if (p === "2") pos2Odds.push(o.odds);
+        }
+      }
+
+      if (pos1Odds.length > 0 && pos2Odds.length > 0) {
+        const avg1 = pos1Odds.reduce((a, b) => a + b, 0) / pos1Odds.length;
+        const avg2 = pos2Odds.reduce((a, b) => a + b, 0) / pos2Odds.length;
+        const ratio = Math.max(avg1, avg2) / Math.min(avg1, avg2);
+
+        // Only apply when there is a meaningful odds spread (1.3x+ difference).
+        // For near-even matches the heuristic is unreliable — leave as-is.
+        if (ratio > 1.3) {
+          const num1Odds: number[] = [];
+          for (const [book, outcomes] of market.byBook) {
+            if (!numericOnlyBooks.has(book) || !isH2H(outcomes)) continue;
+            const o1 = outcomes.find(o => normalizeOutcomeName(o.name) === "1");
+            if (o1) num1Odds.push(o1.odds);
+          }
+          if (num1Odds.length > 0) {
+            const avgNum1 = num1Odds.reduce((a, b) => a + b, 0) / num1Odds.length;
+            if (Math.abs(avgNum1 - avg2) < Math.abs(avgNum1 - avg1)) {
+              // Numeric "1" is closer to named position "2" — codes are inverted; swap
+              nameToPos.set("1", "2");
+              nameToPos.set("2", "1");
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Use positions if ALL names were mapped — collapses 5-name mixed set to 3-name positional set
   const positionNames = new Set(["1", "X", "2"]);
   const allMapped = [...allNames].every(n => nameToPos.has(n));
