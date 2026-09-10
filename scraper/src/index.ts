@@ -37,6 +37,8 @@ import { Bet365Scraper } from "./scrapers/bet365";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
 import { KirolbetScraper } from "./scrapers/kirolbet";
+import { BetwayScraper } from "./scrapers/betway";
+import { Sport888Scraper } from "./scrapers/888sport";
 import { RetabetScraper } from "./scrapers/retabet";
 import { JokerBetScraper } from "./scrapers/jokerbet";
 import { PastonScraper } from "./scrapers/paston";
@@ -61,7 +63,8 @@ const scrapers: BaseScraper[] = [
   new PokerStarsScraper(),
   // Kambi B2B — casas espanolas (requiere KAMBI_PROXY_URL)
   new KambiScraper("leovegas",   "leovegas"),
-  new KambiScraper("888sport",   "888sport"),
+  // 888sport migró de Kambi a Spectate — usa scraper Playwright propio
+  new Sport888Scraper(),
   // Kambi ES — Unibet España usa "unibet_spain" como clientId (verificado vía CDN)
   new KambiScraper("unibet",     "unibet_spain"),
   // Kirolbet — Kirolsoft platform (apuestas.kirolbet.es), SSR HTML scraper
@@ -74,6 +77,7 @@ const scrapers: BaseScraper[] = [
   // New bookmakers (Sportradar/SBTech platform — endpoints TBD via DevTools)
   new JokerBetScraper(),
   new PastonScraper(),
+  new BetwayScraper(),
 ];
 
 // ─── Sport → Prisma enum mapping ─────────────────────────────────────────────
