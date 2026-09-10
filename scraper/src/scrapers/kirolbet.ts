@@ -22,11 +22,12 @@ const execFileAsync = promisify(execFile);
 const BASE_URL = "https://apuestas.kirolbet.es";
 
 const SPORT_IDS: Partial<Record<Sport, number>> = {
-  FOOTBALL:   40,
-  TENNIS:     285,
-  BASKETBALL: 50,
-  BASEBALL:   429,
-  ICEHOCKEY:  418,
+  FOOTBALL:         40,
+  TENNIS:           285,
+  BASKETBALL:       50,
+  BASEBALL:         429,
+  ICEHOCKEY:        418,
+  AMERICANFOOTBALL: 430,
 };
 
 function getProxy(): string {
@@ -144,7 +145,7 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
 
 export class KirolbetScraper extends BaseScraper {
   readonly name    = "kirolbet";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "AMERICANFOOTBALL"];
 
   private async scrapeSport(sport: Sport): Promise<ScrapedEvent[]> {
     const sportId = SPORT_IDS[sport];
