@@ -208,15 +208,27 @@ export class PokerStarsScraper extends BaseScraper {
       const classified = this.classifyPSMarket(mkt.marketType);
       if (!classified) continue;
 
-      const { key: marketKey, line: ouLine } = classified;
+      const psEvent0 = psEvents[String(mkt.eventId)];
+      if (!psEvent0) continue;
+      const sport0: Sport | undefined = SPORT_MAP[psEvent0.eventTypeId];
+      if (!sport0) continue;
+
+      // Fix: OVER_UNDER_* and TOTAL_POINTS_* get "goals" from classifyPSMarket, but
+      // the correct key depends on sport. Remap before further processing.
+      let { key: marketKey, line: ouLine } = classified;
+      if (marketKey === "goals") {
+        if (sport0 === "TENNIS")            marketKey = ouLine && ouLine <= 5 ? "sets" : "games";
+        else if (sport0 === "BASKETBALL")   marketKey = "match_points";
+        else if (sport0 === "BASEBALL")     marketKey = "runs";
+        else if (sport0 === "AMERICANFOOTBALL") marketKey = "match_points";
+        // FOOTBALL and ICEHOCKEY stay as "goals"
+      }
       const dedupeKey = `${mkt.eventId}:${mkt.marketType}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
 
-      const psEvent = psEvents[String(mkt.eventId)];
-      if (!psEvent) continue;
-      const sport: Sport | undefined = SPORT_MAP[psEvent.eventTypeId];
-      if (!sport) continue;
+      const psEvent = psEvent0;
+      const sport: Sport = sport0;
 
       const comp = competitions[String(psEvent.competitionId)];
       const league = comp?.competitionName ?? "";
