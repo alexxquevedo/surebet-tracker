@@ -105,7 +105,7 @@ function parseHtml(html: string, sport: Sport): ScrapedEvent[] {
       const attrs = mktM[1];
       if (
         attrs.includes(`data-ideve="${ideve}_`) &&
-        attrs.includes('des="1X2"') &&
+        (attrs.includes('des="1X2"') || attrs.includes('des="Ganador"')) &&
         !attrs.includes("houdini_apuesta")
       ) {
         mktHtml = mktM[2];
