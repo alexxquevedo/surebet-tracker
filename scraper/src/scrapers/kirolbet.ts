@@ -11,14 +11,13 @@
  * Note: Live data uses WebSocket push — scrapeLive() returns [].
  */
 
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { BaseScraper } from "./base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { SocksProxyAgent } = require("socks-proxy-agent");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const axios = require("axios").default ?? require("axios");
+const execFileAsync = promisify(execFile);
 
 const BASE_URL = "https://apuestas.kirolbet.es";
 
@@ -34,21 +33,21 @@ function getProxy(): string {
   return process.env.ROUTER_PROXY_URL ?? "";
 }
 
+// Use curl instead of axios: Akamai WAF blocks Node.js TLS fingerprint but passes curl.
 async function fetchHtml(url: string, proxy: string): Promise<string> {
-  const agent = new SocksProxyAgent(proxy);
-  const resp = await axios.get(url, {
-    httpAgent: agent,
-    httpsAgent: agent,
-    timeout: 20_000,
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "es-ES,es;q=0.9",
-      "Accept-Encoding": "gzip, deflate, br",
-      Referer: BASE_URL,
-    },
-  });
-  return String(resp.data);
+  // proxy is socks5h://host:port — strip protocol for --socks5-hostname
+  const socksAddr = proxy.replace(/^socks5h?:\/\//, "");
+  const { stdout } = await execFileAsync("curl", [
+    "-s",
+    "--max-time", "20",
+    "--socks5-hostname", socksAddr,
+    "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "-H", "Accept: text/html,application/xhtml+xml",
+    "-H", "Accept-Language: es-ES,es;q=0.9",
+    "-H", `Referer: ${BASE_URL}`,
+    url,
+  ], { maxBuffer: 10 * 1024 * 1024 });
+  return stdout;
 }
 
 function decodeHtmlEntities(s: string): string {
