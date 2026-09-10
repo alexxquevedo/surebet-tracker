@@ -207,13 +207,13 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   const profitPct = parseFloat(((1 / impliedSum - 1) * 100).toFixed(2));
 
   // Safety cap: profits above these thresholds are almost certainly parsing errors or stale prices.
-  // Empirically, live codere vs WH tennis arbs run 6-9% (books lag behind each other on live updates).
+  // Live tennis can swing 12-14% between books during set changes; live football rarely exceeds 10%.
   // Prematch WH vs winamax/codere can diverge 4-7% on minor-league baseball and ATP qualifiers.
-  const PROFIT_CAP_LIVE = 12.0;
+  const PROFIT_CAP_LIVE = 15.0;
   const PROFIT_CAP_PREMATCH = 11.0;
   const cap = market.isLive ? PROFIT_CAP_LIVE : PROFIT_CAP_PREMATCH;
-  // Silent skip: profit >15% is almost certainly settled/suspended odds — too noisy to log
-  if (profitPct > 15) return null;
+  // Silent skip: profit >20% is almost certainly settled/suspended odds — too noisy to log
+  if (profitPct > 20) return null;
   if (profitPct > cap) {
     console.warn(
       `[calculator] Anomaly: ${market.eventKey} ${market.market} ${profitPct.toFixed(2)}% > cap ${cap}% discarded`,
