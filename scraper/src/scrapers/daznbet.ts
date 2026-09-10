@@ -14,7 +14,7 @@
 import { BaseScraper } from "./base";
 import { browserManager, dismissCookies, parseOdds, logPageState, getProxyForScraper, saveFailedPayload } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
 // Q-M: use final redirected URLs (avoid 302 overhead; confirmed from PM2 logs)
 const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
@@ -225,6 +225,53 @@ function parseStompMessage(body: any, sport: Sport, isLive: boolean): ScrapedEve
     }
   }
   return events;
+}
+
+// ─── Secondary market helpers ────────────────────────────────────────────────
+
+function classifyDaznMarket(mktName: string, mcKey: string): string | null {
+  const n = mktName.toLowerCase();
+  if (/1x2|resultado|match\s*result|ganador|winner|full\s*time|ft\s*1x2|3[\s-]?way/i.test(mktName) ||
+      /^(?:MAIN|WIN)$/.test(mcKey)) return "h2h";
+  if (/ambos equipos marcan|both teams to score|btts/i.test(n)) return "btts";
+  if (/doble oportunidad|double chance/i.test(n)) return "double_chance";
+  if (/h[aá]ndicap\s+asi[aá]tico|asian\s+handicap/i.test(n) || /^AH/.test(mcKey)) return "asian_handicap";
+  if (/h[aá]ndicap/i.test(n)) return "handicap";
+  if (/primera\s+mitad.*goles?|goles?.*primera\s+mitad|half.?time.*total|ht.*goles?|1[aª].*parte.*goles?/i.test(n) ||
+      /^HT/.test(mcKey)) return "h1_goals";
+  if (/segunda\s+mitad.*goles?|2[aª].*parte.*goles?/i.test(n)) return "h2_goals";
+  if (/c[oó]rner/i.test(n)) return "corners";
+  if (/tarjeta\s+amarilla|yellow\s+card/i.test(n)) return "yellow_cards";
+  if (/tarjeta\s+roja|red\s+card/i.test(n)) return "red_cards";
+  if (/tarjeta|card|booking/i.test(n)) return "cards";
+  if (/total.*goles?|goles?.*total|m[aá]s.*menos.*goles?|over.*under.*goal|total.*buts?/i.test(n) ||
+      /^TOTR/.test(mcKey)) return "goals";
+  if (/total.*puntos?|puntos?.*total|total.*points?/i.test(n) || /^PNTS|^PTOT|^TOTPTS/.test(mcKey)) return "goals";
+  if (/total.*juegos?|juegos?.*total|total.*games?/i.test(n) || /^GMES/.test(mcKey)) return "games";
+  if (/total.*sets?|sets?.*total/i.test(n) || /^SETS/.test(mcKey)) return "sets";
+  if (/\baces?\b|saques?\s+directos?/i.test(n)) return "aces";
+  if (/dobles?\s+faltas?|double\s+faults?/i.test(n)) return "double_faults";
+  if (/runs?\s+total|total.*runs?/i.test(n)) return "runs";
+  if (/touchdowns?\s+total|total.*touchdowns?/i.test(n)) return "touchdowns";
+  if (/(?:tiros?|disparos?|lanzamientos?)\s*(?:del\s+portero|portero\s+(?:para|salva))/i.test(n)) return "goalkeeper_saves";
+  return null;
+}
+
+function parseOUSelections(sels: any[]): TotalsLine | null {
+  let over = 0, under = 0, line = 0;
+  for (const s of sels) {
+    const dec = parseFloat(String(s?.price?.dec ?? s?.odds ?? s?.Price ?? "0"));
+    if (!isFinite(dec) || dec <= 1.0) continue;
+    const name: string = s.name ?? s.Name ?? "";
+    const numMatch = name.match(/(\d+[.,]?\d*)/);
+    if (!line && numMatch) line = parseFloat(numMatch[1].replace(",", "."));
+    if (/m[aá]s\s*de|over|por\s*encima|^[+>]/i.test(name))    over = dec;
+    else if (/menos\s*de|under|por\s*debajo|^[-<]/i.test(name)) under = dec;
+    else if ((s.sortOrder ?? s.position ?? sels.indexOf(s)) === 0) over = dec;
+    else under = dec;
+  }
+  if (!over || !under || !line) return null;
+  return { line, over, under };
 }
 
 // ─── Scraper ─────────────────────────────────────────────────────────────────
@@ -491,7 +538,7 @@ export class DaznBetScraper extends BaseScraper {
       }
       this.log(`DaznBet startTimes from events: ${eventStartTimes.size}`);
 
-      // Phase 2.5: subscribe to MAIN market IDs (h2h winner) from miniCoupons
+      // Phase 2.5: subscribe to ALL market IDs from miniCoupons (H2H + secondary)
       // Extract market IDs from events/{id} STOMP bodies → subscribe on marketlivedocl1
       const MARKET_H2H_KEYS: Partial<Record<string, string[]>> = {
         FOOTBALL: ["MAIN", "WIN+TOTR2", "TOTR3"],
@@ -505,7 +552,8 @@ export class DaznBetScraper extends BaseScraper {
         RUGBYLEAGUE: ["WIN", "MAIN"],
       };
       const h2hKeys = MARKET_H2H_KEYS[sport] ?? ["MAIN"];
-      const mktIdsToSub: Array<{ eventId: string; eventName: string; marketId: string }> = [];
+      const MC_MAX_PER_EVENT = 15; // max market subscriptions per event (including H2H)
+      const mktIdsToSub: Array<{ eventId: string; eventName: string; marketId: string; mcKey: string }> = [];
       for (const { payload: capPayload } of wsCaptures) {
         for (const frame of parseStompSockJS(capPayload)) {
           if (frame.command !== "MESSAGE") continue;
@@ -517,21 +565,35 @@ export class DaznBetScraper extends BaseScraper {
             for (const patch25 of patches25) {
               const ev25 = patch25?.value;
               if (!ev25?.miniCoupons) continue;
+              const evName25: string = ev25.name ?? "";
               const mc25 = ev25.miniCoupons as Record<string, string[]>;
+              const alreadySubForEvent = mktIdsToSub.filter(x => x.eventId === ev25.id);
+              if (alreadySubForEvent.length >= MC_MAX_PER_EVENT) continue;
+
+              // H2H first (priority)
+              let foundH2h = false;
               for (const key25 of h2hKeys) {
                 const mids25 = mc25[key25];
-                if (mids25 && mids25.length > 0) {
-                  if (!mktIdsToSub.find(x => x.eventId === ev25.id)) {
-                    mktIdsToSub.push({ eventId: ev25.id, eventName: ev25.name ?? "", marketId: mids25[0] });
-                  }
-                  break;
+                if (mids25?.length && !alreadySubForEvent.find(x => x.mcKey === key25)) {
+                  mktIdsToSub.push({ eventId: ev25.id, eventName: evName25, marketId: mids25[0], mcKey: key25 });
+                  foundH2h = true; break;
                 }
+              }
+              // Secondary markets from all remaining keys
+              let added = alreadySubForEvent.length + (foundH2h ? 1 : 0);
+              for (const [key25, mids25] of Object.entries(mc25)) {
+                if (added >= MC_MAX_PER_EVENT) break;
+                if (h2hKeys.includes(key25)) continue; // H2H already handled
+                if (!Array.isArray(mids25) || !mids25.length) continue;
+                if (mktIdsToSub.find(x => x.eventId === ev25.id && x.mcKey === key25)) continue;
+                mktIdsToSub.push({ eventId: ev25.id, eventName: evName25, marketId: mids25[0], mcKey: key25 });
+                added++;
               }
             }
           } catch { /* not JSON */ }
         }
       }
-      const topMkts = isLive ? mktIdsToSub.slice(0, 20) : mktIdsToSub.slice(0, 150);
+      const topMkts = isLive ? mktIdsToSub.slice(0, 50) : mktIdsToSub.slice(0, 300);
       this.log(`Market sub: ${topMkts.length} markets (keys=${h2hKeys.join(",")}): ${topMkts.map(m => m.marketId).join(", ")}`);
 
       if (topMkts.length > 0) {
@@ -593,30 +655,47 @@ export class DaznBetScraper extends BaseScraper {
                 const mkt = mp?.value;
                 if (!mkt?.selections || !Array.isArray(mkt.selections[0])) continue;
                 const sels: any[] = mkt.selections[0];
-                const outcomes: H2HOutcome[] = sels
-                  .map((s: any) => {
-                    const dec = parseFloat(s?.price?.dec ?? "0");
-                    return isFinite(dec) && dec > 1.0 ? { name: s.name ?? "", odds: dec } : null;
-                  })
-                  .filter((x: any): x is H2HOutcome => x !== null);
-                if (outcomes.length < 2) continue;
-                // Match eventName from mktIdsToSub
                 const mktEntry = topMkts.find((m) => m.marketId === mkt.id);
-                const eventName = mktEntry?.eventName ?? outcomes.map((o) => o.name).join(" v ");
+                const eventName = mktEntry?.eventName ?? "";
+                const mcKey: string = mktEntry?.mcKey ?? "";
+                const mktName: string = mkt.name ?? mkt.type ?? mkt.marketType ?? "";
                 const startTime = mkt.betting?.startTime
                   ? new Date(mkt.betting.startTime)
                   : (mkt.eventId ? eventStartTimes.get(String(mkt.eventId)) : undefined);
                 const eventKey = buildEventKey(sport as Sport, eventName, startTime);
-                events.push({
-                  bookmaker: "daznbet",
-                  sport: sport as any,
-                  eventKey,
-                  eventName,
-                  isLive,
-                  market: "h2h",
-                  outcomes,
-                  ...(startTime ? { startTime } : {}),
-                });
+                const baseEv = { bookmaker: "daznbet" as const, sport: sport as Sport, eventKey, eventName, isLive, ...(startTime ? { startTime } : {}) };
+
+                const marketKey = classifyDaznMarket(mktName, mcKey);
+
+                if (!marketKey || marketKey === "h2h" || marketKey === "btts" || marketKey === "double_chance") {
+                  // H2H-style: 2-3 outcomes with names
+                  const outcomes: H2HOutcome[] = sels
+                    .map((s: any) => {
+                      const dec = parseFloat(String(s?.price?.dec ?? s?.odds ?? "0"));
+                      return isFinite(dec) && dec > 1.0 ? { name: s.name ?? "", odds: dec } : null;
+                    })
+                    .filter((x: any): x is H2HOutcome => x !== null);
+                  if (outcomes.length >= 2) {
+                    events.push({ ...baseEv, market: marketKey ?? "h2h", outcomes });
+                  }
+                } else {
+                  // O/U or handicap: try to extract line from selection names
+                  const tl = parseOUSelections(sels);
+                  if (tl) {
+                    events.push({ ...baseEv, market: marketKey, outcomes: [tl] });
+                  } else {
+                    // Fallback: treat as H2H-style if parseOU fails
+                    const outcomes: H2HOutcome[] = sels
+                      .map((s: any) => {
+                        const dec = parseFloat(String(s?.price?.dec ?? s?.odds ?? "0"));
+                        return isFinite(dec) && dec > 1.0 ? { name: s.name ?? "", odds: dec } : null;
+                      })
+                      .filter((x: any): x is H2HOutcome => x !== null);
+                    if (outcomes.length >= 2) {
+                      events.push({ ...baseEv, market: marketKey, outcomes });
+                    }
+                  }
+                }
               }
             } catch { /* skip */ }
           }
