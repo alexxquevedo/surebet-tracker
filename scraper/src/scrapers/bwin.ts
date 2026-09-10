@@ -162,42 +162,71 @@ function parseCdsFixtures(data: any, sport: Sport, isLive: boolean): ScrapedEven
       const mName: string = (market.name?.value ?? market.betOfferType?.name ?? market.name ?? "").toLowerCase();
       const outcomes: any[] = market.outcomes ?? market.selections ?? market.options ?? [];
 
-      const isCombo = mName.includes(" et ") || mName.includes(" and ") || mName.includes("y ") ||
-        mName.includes("btts") || mName.includes("les deux équipes") || mName.includes("ambos equipos");
+      const bOdds = (o: any): number => { const r = o.price?.decimal ?? o.price?.odds ?? o.odds ?? 0; return r > 100 ? r / 1000 : Number(r); };
+      const bName = (o: any): string => o.name?.value ?? o.label ?? o.type ?? o.name ?? "";
 
-      if (!isCombo && (
-        mName.includes("resultado") || mName.includes("ganador") ||
-        mName.includes("résultat") || mName.includes("vainqueur") ||
-        mName.includes("1x2") || mName.includes("match result") || mName.includes("match winner")
-      )) {
+      // Classify market type
+      let mKey: string | null = null;
+      if (/btts|ambos\s+(equipo|marcan)|both\s+teams|les\s+deux\s+[eé]quipes/i.test(mName))           mKey = "btts";
+      else if (/doble\s+oportunidad|double\s+chance|chance\s+double/i.test(mName))                    mKey = "double_chance";
+      else if (/h[aá]ndicap\s+asi[aá]tico|asian\s+handicap/i.test(mName))                            mKey = "asian_handicap";
+      else if (/h[aá]ndicap|ventaja\s+europea/i.test(mName))                                          mKey = "handicap";
+      else if (/resultado|ganador|résultat|vainqueur|1x2|match\s+result|match\s+winner/i.test(mName)) mKey = "h2h";
+      else if (/c[oó]rner|esquina/i.test(mName))                                                      mKey = "corners";
+      else if (/tarjeta|card|booking/i.test(mName))                                                   mKey = "cards";
+      else if (/disparo|tiro|shot/i.test(mName))                                                      mKey = "shots";
+      else if (/más\/menos|plus\/moins|over\/under|total/i.test(mName))                               mKey = "goals";
+      if (!mKey) continue;
+
+      if (mKey === "h2h" || mKey === "btts" || mKey === "double_chance" || mKey === "handicap") {
         const h2h: H2HOutcome[] = outcomes.map((o: any) => {
-          const rawOdds = o.price?.decimal ?? o.price?.odds ?? o.odds ?? 0;
-          const odds = rawOdds > 100 ? rawOdds / 1000 : Number(rawOdds);
-          const name: string = o.name?.value ?? o.label ?? o.type ?? o.name ?? "";
+          const odds = bOdds(o);
+          const name = bName(o);
           return odds >= 1.01 && name ? { name, odds } : null;
         }).filter(Boolean) as H2HOutcome[];
-
         if (h2h.length >= 2) {
-          events.push({ bookmaker: "bwin", sport, eventKey, eventName, league, startTime, isLive, market: "h2h", outcomes: h2h });
+          events.push({ bookmaker: "bwin", sport, eventKey, eventName, league, startTime, isLive, market: mKey, outcomes: h2h });
         }
-      } else if (mName.includes("más/menos") || mName.includes("plus/moins") || mName.includes("over/under") || mName.includes("total")) {
-        const byLine = new Map<number, TotalsLine>();
+      } else if (mKey === "asian_handicap") {
+        const byLine = new Map<number, { over: number; under: number }>();
         for (const o of outcomes) {
-          const lbl: string = (o.name?.value ?? o.label ?? "").toLowerCase();
-          const lm = lbl.match(/(\d+[.,]\d+)/);
+          const lbl: string = bName(o).toLowerCase();
+          const lm = lbl.match(/([+-]?\d+[.,]\d+|[+-]?\d+)/);
           if (!lm) continue;
           const line = parseFloat(lm[1].replace(",", "."));
-          const rawOdds = o.price?.decimal ?? o.price?.odds ?? o.odds ?? 0;
-          const odds = rawOdds > 100 ? rawOdds / 1000 : Number(rawOdds);
+          const odds = bOdds(o);
           if (odds < 1.01) continue;
-          const entry = byLine.get(line) ?? { line, over: 0, under: 0 };
-          if (lbl.includes("más") || lbl.includes("plus") || lbl.includes("over") || lbl.includes("+")) entry.over = odds;
-          else entry.under = odds;
-          byLine.set(line, entry);
+          const cur = byLine.get(line) ?? { over: 0, under: 0 };
+          if (/home|casa|1\b|\bh\b/i.test(lbl)) cur.over = odds;
+          else cur.under = odds;
+          byLine.set(line, cur);
         }
-        const totals = [...byLine.values()].filter(t => t.over > 0 && t.under > 0);
+        const totals: TotalsLine[] = [...byLine.entries()]
+          .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+          .map(([line, { over, under }]) => ({ line, over, under }));
         if (totals.length > 0) {
-          events.push({ bookmaker: "bwin", sport, eventKey, eventName, league, startTime, isLive, market: "totals", outcomes: totals });
+          events.push({ bookmaker: "bwin", sport, eventKey, eventName, league, startTime, isLive, market: "asian_handicap", outcomes: totals });
+        }
+      } else {
+        // O/U markets: goals, corners, cards, shots
+        const byLine = new Map<number, { over: number; under: number }>();
+        for (const o of outcomes) {
+          const lbl: string = bName(o).toLowerCase();
+          const lm = lbl.match(/(\d+[.,]\d+|\d+)/);
+          if (!lm) continue;
+          const line = parseFloat(lm[1].replace(",", "."));
+          const odds = bOdds(o);
+          if (odds < 1.01) continue;
+          const cur = byLine.get(line) ?? { over: 0, under: 0 };
+          if (/más|plus|over|\+/i.test(lbl)) cur.over = odds;
+          else cur.under = odds;
+          byLine.set(line, cur);
+        }
+        const totals: TotalsLine[] = [...byLine.entries()]
+          .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+          .map(([line, { over, under }]) => ({ line, over, under }));
+        if (totals.length > 0) {
+          events.push({ bookmaker: "bwin", sport, eventKey, eventName, league, startTime, isLive, market: mKey, outcomes: totals });
         }
       }
     }

@@ -527,7 +527,6 @@ def _parse_file_db(data: dict) -> tuple[dict, dict, dict]:
         for bk in DEFAULT_USER_CONFIG["bookmakers"]:
             if bk not in cfg.get("bookmakers", {}):
                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
-        cfg.get("bookmakers", {}).pop("marathonbet", None)   # eliminada del mercado español
         # Migrar casas nuevas que se añadieron con default=False por error — activarlas para usuarios existentes
         for _bk_new in ("betway", "betano", "tonybet", "casino-gran-madrid", "kirolbet"):
             if cfg.get("bookmakers", {}).get(_bk_new) is False:
@@ -638,7 +637,6 @@ async def cargar_db():
                         for bk in DEFAULT_USER_CONFIG["bookmakers"]:
                             if bk not in cfg.get("bookmakers", {}):
                                 cfg.setdefault("bookmakers", {})[bk] = DEFAULT_USER_CONFIG["bookmakers"][bk]
-                        cfg.get("bookmakers", {}).pop("marathonbet", None)
                         for _bk_new in ("betway", "betano", "tonybet", "casino-gran-madrid", "kirolbet"):
                             if cfg.get("bookmakers", {}).get(_bk_new) is False:
                                 cfg["bookmakers"][_bk_new] = True

@@ -15,7 +15,7 @@ import type { Page, Response as PlaywrightResponse } from "playwright";
 import { BaseScraper } from "./base";
 import { browserManager, getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
 
 // Q5: updated customer IDs — "sportiumes" is the 2026 customer key for Sportium ES.
 // Fallback: "sisp" (old) then "pafes" (alternative). Change here if Kambi returns 404.
@@ -295,10 +295,155 @@ async function fetchKambi(sport: Sport, isLive: boolean): Promise<any | null> {
   }
 }
 
-const toDecimal = (raw: any): number => {
-  const n = typeof raw === "string" ? parseInt(raw, 10) : Number(raw);
-  return n > 100 ? n / 1000 : n;
+// ─── Kambi market classification (shared with kambi.ts) ───────────────────────
+
+const CRITERION_TO_MARKET_SP: Array<[RegExp, string]> = [
+  [/BOTH_TEAMS_TO_SCORE|BOTH_TEAMS_SCORE/i,           "btts"],
+  [/DOUBLE_CHANCE/i,                                   "double_chance"],
+  [/ASIAN_HANDICAP/i,                                  "asian_handicap"],
+  [/EUROPEAN_HANDICAP|HANDICAP/i,                      "handicap"],
+  [/MATCH_RESULT|MATCH_WINNER|FULL_TIME_RESULT|1_1$/i, "h2h"],
+  [/CORNER/i,                                          "corners"],
+  [/YELLOW_CARD|BOOKING/i,                             "yellow_cards"],
+  [/RED_CARD/i,                                        "red_cards"],
+  [/CARD/i,                                            "cards"],
+  [/SHOT/i,                                            "shots"],
+  [/HALF_TIME/i,                                       "h1_goals"],
+  [/ACE/i,                                             "aces"],
+  [/DOUBLE_FAULT/i,                                    "double_faults"],
+  [/GAME/i,                                            "games"],
+  [/SET/i,                                             "sets"],
+  [/OVER_UNDER|GOALS_OVER_UNDER/i,                     "goals"],
+  [/POINTS/i,                                          "match_points"],
+  [/RUN/i,                                             "runs"],
+  [/STRIKEOUT/i,                                       "strikeouts"],
+  [/SAVE/i,                                            "goalie_saves"],
+];
+
+const LABEL_TO_MARKET_SP: Array<[RegExp, string]> = [
+  [/ambos\s+marcan|both\s+teams\s+score|btts/i,        "btts"],
+  [/doble\s+oportunidad|double\s+chance/i,              "double_chance"],
+  [/asi[aá]tico|asian\s+handicap/i,                    "asian_handicap"],
+  [/h[aá]ndicap/i,                                     "handicap"],
+  [/c[oó]rner|esquina/i,                               "corners"],
+  [/tarjetas?\s+amarillas?/i,                           "yellow_cards"],
+  [/tarjetas?\s+rojas?/i,                               "red_cards"],
+  [/tarjetas?/i,                                        "cards"],
+  [/disparos?|tiros?|shots?/i,                          "shots"],
+  [/primera\s+mitad|half[\s-]time|1ª\s*parte/i,         "h1_goals"],
+  [/segunda\s+mitad|2nd\s+half|2ª\s*parte/i,            "h2_goals"],
+  [/\baces?\b/i,                                        "aces"],
+  [/dobles?\s+faltas?/i,                                "double_faults"],
+  [/\bjuegos?\b/i,                                      "games"],
+  [/\bsets?\b/i,                                        "sets"],
+  [/goles?\s+totales?|total\s+goles?|over\s*\/\s*under/i, "goals"],
+  [/total\s+puntos?|points?\s+totales?/i,               "match_points"],
+  [/carreras?\s+totales?/i,                             "runs"],
+  [/strikeouts?|ponches?/i,                             "strikeouts"],
+  [/paradas?|saves?/i,                                  "goalie_saves"],
+  [/1\s*x\s*2|resultado\s+final|match\s+result/i,       "h2h"],
+];
+
+function classifySportiumOffer(offer: any): string | null {
+  const criterionType = offer.criterion?.type ?? "";
+  const label = (offer.criterion?.label ?? offer.criterion?.englishLabel ?? offer.betOfferType?.name ?? "").toLowerCase();
+  for (const [re, market] of CRITERION_TO_MARKET_SP) {
+    if (re.test(criterionType)) return market;
+  }
+  for (const [re, market] of LABEL_TO_MARKET_SP) {
+    if (re.test(label)) return market;
+  }
+  return null;
+}
+
+const kOddsSp = (raw: any): number => {
+  const n = Number(raw ?? 0);
+  return n >= 100 ? n / 1000 : n;
 };
+
+const kLineSp = (raw: any): number => {
+  const n = Number(raw ?? 0);
+  return isFinite(n) ? n / 1000 : 0;
+};
+
+function parseSportiumOffer(
+  offer: any,
+  market: string,
+  sport: Sport,
+  eventKey: string,
+  eventName: string,
+  startTime: Date | undefined,
+  isLive: boolean,
+): ScrapedEvent[] {
+  if (offer.suspended || offer.closed) return [];
+  const outcomes: any[] = offer.outcomes ?? [];
+
+  if (market === "h2h" || market === "btts" || market === "double_chance" || market === "handicap") {
+    const h2h: H2HOutcome[] = outcomes.map((o: any) => {
+      const odds = kOddsSp(o.odds);
+      if (odds < 1.01) return null;
+      let name: string = o.englishLabel ?? o.label ?? String(o.type ?? "");
+      if (name === "OT_ONE")          name = "1";
+      if (name === "OT_CROSS")        name = "X";
+      if (name === "OT_TWO")          name = "2";
+      if (name === "OT_YES")          name = "Yes";
+      if (name === "OT_NO")           name = "No";
+      if (name === "OT_ONE_OR_CROSS") name = "1X";
+      if (name === "OT_CROSS_OR_TWO") name = "X2";
+      if (name === "OT_ONE_OR_TWO")   name = "12";
+      if (!name) return null;
+      return { name, odds } as H2HOutcome;
+    }).filter((x): x is H2HOutcome => x !== null);
+    if (h2h.length < 2) return [];
+    return [{ bookmaker: "sportium", sport, eventKey, eventName, startTime, isLive, market, outcomes: h2h }];
+  }
+
+  if (market === "asian_handicap") {
+    const lines: TotalsLine[] = [];
+    const subOffers: any[] = offer.rangeBetOffers?.length ? offer.rangeBetOffers : [offer];
+    for (const sub of subOffers) {
+      const lineVal = kLineSp(sub.line ?? offer.line);
+      const subOuts: any[] = sub.outcomes ?? [];
+      const homeOut = subOuts.find((o: any) => o.type === "OT_ONE" || /home|1$/i.test(o.label ?? ""));
+      const awayOut = subOuts.find((o: any) => o.type === "OT_TWO" || /away|2$/i.test(o.label ?? ""));
+      if (!homeOut || !awayOut) continue;
+      const homeOdds = kOddsSp(homeOut.odds);
+      const awayOdds = kOddsSp(awayOut.odds);
+      if (homeOdds < 1.01 || awayOdds < 1.01) continue;
+      lines.push({ line: lineVal, over: homeOdds, under: awayOdds });
+    }
+    if (!lines.length) return [];
+    return [{ bookmaker: "sportium", sport, eventKey, eventName, startTime, isLive, market: "asian_handicap", outcomes: lines }];
+  }
+
+  // O/U markets (goals, corners, cards, shots, sets, games, runs, etc.)
+  const byLine = new Map<number, { over: number; under: number }>();
+  const subOffers: any[] = offer.rangeBetOffers?.length ? offer.rangeBetOffers : [offer];
+  for (const sub of subOffers) {
+    const subOuts: any[] = sub.outcomes ?? [];
+    const lineFromOffer = kLineSp(sub.line ?? 0);
+    for (const o of subOuts) {
+      const odds = kOddsSp(o.odds);
+      if (odds < 1.01) continue;
+      const t = String(o.type ?? "").toUpperCase();
+      const isOver  = t === "OT_OVER"  || /over|más\s*de/i.test(o.label ?? "");
+      const isUnder = t === "OT_UNDER" || /under|menos\s*de/i.test(o.label ?? "");
+      if (!isOver && !isUnder) continue;
+      const lm = (o.label ?? "").match(/(\d+[.,]\d+|\d+)/);
+      const line = lm ? parseFloat(lm[1].replace(",", ".")) : lineFromOffer;
+      if (!line && line !== 0) continue;
+      const cur = byLine.get(line) ?? { over: 0, under: 0 };
+      if (isOver  && odds > cur.over)  cur.over  = odds;
+      if (isUnder && odds > cur.under) cur.under = odds;
+      byLine.set(line, cur);
+    }
+  }
+  const totals: TotalsLine[] = [...byLine.entries()]
+    .filter(([, { over, under }]) => over >= 1.01 && under >= 1.01)
+    .map(([line, { over, under }]) => ({ line, over, under }));
+  if (!totals.length) return [];
+  return [{ bookmaker: "sportium", sport, eventKey, eventName, startTime, isLive, market, outcomes: totals }];
+}
 
 function parseLive(data: any, sport: Sport): ScrapedEvent[] {
   const eventList: any[] = data?.liveEvents ?? data?.events ?? [];
@@ -308,20 +453,11 @@ function parseLive(data: any, sport: Sport): ScrapedEvent[] {
     const eventName: string = ev.name ?? "";
     if (!eventName) continue;
     const eventKey = buildEventKey(sport, eventName);
-    for (const offer of (item.betOffers ?? [])) {
-      const label = (offer.criterion?.label ?? "").toLowerCase();
-      if (label.includes("1x2") || label.includes("full time") || label.includes("resultado")) {
-        const h2h: H2HOutcome[] = (offer.outcomes ?? [])
-          .map((o: any) => {
-            const odds = toDecimal(o.odds);
-            return odds >= 1.01 ? { name: o.label ?? o.type, odds } : null;
-          })
-          .filter(Boolean) as H2HOutcome[];
-        if (h2h.length >= 2) {
-          events.push({ bookmaker: "sportium", sport, eventKey, eventName, isLive: true, market: "h2h", outcomes: h2h });
-          break;
-        }
-      }
+    const allOffers: any[] = [...(item.betOffers ?? []), ...(item.rangeBetOffers ?? [])];
+    for (const offer of allOffers) {
+      const market = classifySportiumOffer(offer);
+      if (!market) continue;
+      events.push(...parseSportiumOffer(offer, market, sport, eventKey, eventName, undefined, true));
     }
   }
   return events;
@@ -337,20 +473,11 @@ function parsePrematch(data: any, sport: Sport): ScrapedEvent[] {
         if (!eventName) continue;
         const startTime = ev.start ? new Date(ev.start) : undefined;
         const eventKey = buildEventKey(sport, eventName, startTime);
-        for (const offer of (item.betOffers ?? [])) {
-          const label = (offer.criterion?.label ?? "").toLowerCase();
-          if (label.includes("1x2") || label.includes("full time") || label.includes("resultado")) {
-            const h2h: H2HOutcome[] = (offer.outcomes ?? [])
-              .map((o: any) => {
-                const odds = toDecimal(o.odds);
-                return odds >= 1.01 ? { name: o.label ?? o.type, odds } : null;
-              })
-              .filter(Boolean) as H2HOutcome[];
-            if (h2h.length >= 2) {
-              events.push({ bookmaker: "sportium", sport, eventKey, eventName, startTime, isLive: false, market: "h2h", outcomes: h2h });
-              break;
-            }
-          }
+        const allOffers: any[] = [...(item.betOffers ?? []), ...(item.rangeBetOffers ?? [])];
+        for (const offer of allOffers) {
+          const market = classifySportiumOffer(offer);
+          if (!market) continue;
+          events.push(...parseSportiumOffer(offer, market, sport, eventKey, eventName, startTime, false));
         }
       }
       if (Array.isArray(g.groups)) walk(g.groups);
