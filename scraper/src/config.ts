@@ -37,21 +37,25 @@ export const config = {
   // Priority: scraper-specific var → ROUTER_PROXY_URL (router LTE tunnel) → ""
   // On router day: just set ROUTER_PROXY_URL=socks5://user:pass@tunnel-ip:port
   scraperProxies: {
-    bwin:        process.env.BWIN_PROXY_URL        ?? process.env.ROUTER_PROXY_URL ?? "",
-    sportium:    process.env.SPORTIUM_PROXY_URL    ?? process.env.ROUTER_PROXY_URL ?? "",
-    codere:      process.env.CODERE_PROXY_URL      ?? "",
-    williamhill: process.env.WILLIAMHILL_PROXY_URL ?? process.env.ROUTER_PROXY_URL ?? "",
-    daznbet:     process.env.DAZNBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
-    bet365:      process.env.BET365_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
-    betfair:     process.env.BETFAIR_PROXY_URL     ?? "",
-    betsson:     process.env.BETSSON_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
-    winamax:     process.env.WINAMAX_PROXY_URL     ?? "",
-    kambi:       process.env.KAMBI_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
-    pokerstars:  process.env.POKERSTARS_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
-    betway:      process.env.BETWAY_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
-    interwetten: process.env.INTERWETTEN_PROXY_URL ?? process.env.ROUTER_PROXY_URL ?? "",
-    betano:      process.env.BETANO_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
-    altenar:     process.env.ALTENAR_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
+    bwin:         process.env.BWIN_PROXY_URL         ?? process.env.ROUTER_PROXY_URL ?? "",
+    sportium:     process.env.SPORTIUM_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
+    codere:       process.env.CODERE_PROXY_URL       ?? "",
+    williamhill:  process.env.WILLIAMHILL_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
+    daznbet:      process.env.DAZNBET_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
+    bet365:       process.env.BET365_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
+    betfair:      process.env.BETFAIR_PROXY_URL      ?? "",
+    betsson:      process.env.BETSSON_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
+    winamax:      process.env.WINAMAX_PROXY_URL      ?? "",
+    kambi:        process.env.KAMBI_PROXY_URL        ?? process.env.ROUTER_PROXY_URL ?? "",
+    pokerstars:   process.env.POKERSTARS_PROXY_URL   ?? process.env.ROUTER_PROXY_URL ?? "",
+    betway:       process.env.BETWAY_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
+    interwetten:  process.env.INTERWETTEN_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
+    betano:       process.env.BETANO_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
+    altenar:      process.env.ALTENAR_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
+    // New bookmakers — share the router proxy until dedicated proxies are configured
+    marathonbet:  process.env.MARATHONBET_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
+    jokerbet:     process.env.JOKERBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
+    paston:       process.env.PASTON_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
   },
   scanner: {
     minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),
@@ -67,8 +71,10 @@ export const config = {
 export const BOOKMAKERS = [
   "betfair", "winamax", "bet365", "codere", "sportium",
   "bwin", "williamhill", "betsson", "daznbet", "pokerstars",
-  "leovegas", "888sport", "casumo", "luckia", "retabet",
+  "leovegas", "888sport", "luckia", "retabet",
   "betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet",
+  // New bookmakers added 2026-09-10
+  "marathonbet", "jokerbet", "paston",
 ] as const;
 
 export type BookmakerKey = (typeof BOOKMAKERS)[number];

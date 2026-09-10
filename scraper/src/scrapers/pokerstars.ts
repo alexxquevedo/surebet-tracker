@@ -19,10 +19,7 @@ const SPORT_MAP: Record<number, Sport> = {
   2: "TENNIS",
   7522: "BASKETBALL",
   7524: "ICEHOCKEY",
-  1477: "RUGBYLEAGUE",
   6423: "AMERICANFOOTBALL",
-  468328: "HANDBALL",
-  998917: "VOLLEYBALL",
   2593174: "BASEBALL",
 };
 
@@ -31,10 +28,7 @@ const SPORT_PAGES = [
   "https://www.pokerstars.es/sports/tennis/",
   "https://www.pokerstars.es/sports/basketball/",
   "https://www.pokerstars.es/sports/ice-hockey/",
-  "https://www.pokerstars.es/sports/handball/",
-  "https://www.pokerstars.es/sports/volleyball/",
   "https://www.pokerstars.es/sports/american-football/",
-  "https://www.pokerstars.es/sports/rugby-league/",
   "https://www.pokerstars.es/sports/baseball/",
 ];
 
@@ -77,7 +71,7 @@ interface PSPageData {
 
 export class PokerStarsScraper extends BaseScraper {
   readonly name = "pokerstars";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "ICEHOCKEY", "RUGBYLEAGUE", "AMERICANFOOTBALL", "HANDBALL", "VOLLEYBALL", "BASEBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "ICEHOCKEY", "AMERICANFOOTBALL", "BASEBALL"];
 
   private cachedData: { ts: number; events: ScrapedEvent[] } | null = null;
   private _fetchInFlight: Promise<ScrapedEvent[]> | null = null;

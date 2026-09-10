@@ -29,11 +29,8 @@ const SPORT_PATHS: Partial<Record<Sport, string>> = {
   FOOTBALL:        "f%C3%BAtbol",
   TENNIS:          "tenis",
   BASKETBALL:      "basketball",
-  HANDBALL:        "balonmano",
-  VOLLEYBALL:      "voleibol",
   BASEBALL:        "baseball",
   AMERICANFOOTBALL:"american-football",
-  RUGBYLEAGUE:     "rugby-league",
   ICEHOCKEY:       "hockey-hielo",
 };
 const LIVE_PATH = "en-directo/all";
@@ -43,12 +40,9 @@ const WH_SPORT_MAP: Record<string, Sport> = {
   OB_SP9:  "FOOTBALL",
   OB_SP24: "TENNIS",
   OB_SP27: "BASKETBALL",   // OB_SP23 = Snooker (not Basketball), OB_SP27 = Baloncesto
-  OB_SP21: "RUGBYLEAGUE",  // OB_SP22 = Rugby Union (not in Sport type — skipped)
   OB_SP1:  "AMERICANFOOTBALL",
   OB_SP26: "ICEHOCKEY",
   OB_SP2:  "BASEBALL",
-  OB_SP12: "HANDBALL",
-  OB_SP30: "VOLLEYBALL",
 };
 
 function getProxy(): string {
@@ -307,7 +301,7 @@ function buildEvents(
 
 export class WilliamHillScraper extends BaseScraper {
   readonly name = "williamhill";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "HANDBALL", "VOLLEYBALL", "BASEBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE", "ICEHOCKEY"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "AMERICANFOOTBALL", "ICEHOCKEY"];
 
   private async scrapePage(
     pageUrl: string,

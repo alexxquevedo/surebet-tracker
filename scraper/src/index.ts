@@ -37,6 +37,8 @@ import { Bet365Scraper } from "./scrapers/bet365";
 import { KambiScraper } from "./scrapers/kambi";
 import { AltenarScraper } from "./scrapers/altenar";
 import { RetabetScraper } from "./scrapers/retabet";
+import { JokerBetScraper } from "./scrapers/jokerbet";
+import { PastonScraper } from "./scrapers/paston";
 import { isProxyPaused, getPauseInfo, preflightCheck } from "./scrapers/ip-rotator";
 import { resetScraperCooldown } from "./scrapers/playwright-base";
 import { recordCycle, writeHealthFile } from "./health-file";
@@ -56,22 +58,21 @@ const scrapers: BaseScraper[] = [
   new BetssonScraper(),
   new DaznBetScraper(),
   new PokerStarsScraper(),
-  // Kambi B2B — 4 casas espanolas (requiere KAMBI_PROXY_URL)
+  // Kambi B2B — casas espanolas (requiere KAMBI_PROXY_URL)
   new KambiScraper("leovegas",   "leovegas"),
   new KambiScraper("888sport",   "888sport"),
-  new KambiScraper("casumo",     "casumo"),
-  new KambiScraper("betsson_es", "betsson"),
   // Kambi ES — Unibet España usa "unibet_spain" como clientId (verificado vía CDN)
-  new KambiScraper("unibet",   "unibet_spain"),
+  new KambiScraper("unibet",     "unibet_spain"),
   // Kambi ES — smaller bookmakers (client IDs pendientes de verificar con proxy)
-  new KambiScraper("marca",    "marcaapuestas"),
-  new KambiScraper("kirolbet", "kirolbet"),
+  new KambiScraper("kirolbet",   "kirolbet"),
   // Altenar B2B — casas espanolas (requiere ALTENAR_PROXY_URL)
-  // TonyBet ES está en Altenar (no Kambi). integrationId pendiente de verificar con proxy.
   new AltenarScraper("luckia",           "Luckia"),
   new AltenarScraper("casino-gran-madrid","CasinoGranMadrid"),
   new AltenarScraper("tonybet",          "TonyBet"),
   new RetabetScraper(),
+  // New bookmakers (Sportradar/SBTech platform — endpoints TBD via DevTools)
+  new JokerBetScraper(),
+  new PastonScraper(),
 ];
 
 // ─── Sport → Prisma enum mapping ─────────────────────────────────────────────
@@ -413,10 +414,12 @@ const proxySemaphore = new ProxySemaphore(3);
 const PROXY_THROTTLED_AXIOS = new Set([
   "williamhill", "betsson",
   // Kambi B2B — each instance serializes its sports internally, so 1 connection at a time per scraper
-  "leovegas", "888sport", "casumo", "betsson_es", "unibet", "marca", "kirolbet",
+  "leovegas", "888sport", "unibet", "kirolbet",
   // Altenar
   "luckia", "casino-gran-madrid", "tonybet",
   "retabet",
+  // New bookmakers (Sportradar/SBTech)
+  "jokerbet", "paston",
 ]);
 
 // ─── Main poll cycle ──────────────────────────────────────────────────────────
@@ -440,7 +443,7 @@ async function pollCycle(isLive: boolean): Promise<void> {
   // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
   // Kambi CDN (eu-offering.kambicdn.org) blocks our IP at TCP level — skip until new proxy
   // Altenar also blocked. Retabet blocked by Akamai.
-  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "casumo", "betsson_es", "unibet", "marca", "kirolbet"]);
+  const KAMBI_BLOCKED = new Set(["leovegas", "888sport", "unibet", "kirolbet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
   const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet

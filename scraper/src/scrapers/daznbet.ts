@@ -30,14 +30,6 @@ const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
     live:     "https://www.daznbet.es/es/sports/baloncesto?liveMode=true",
     prematch: "https://www.daznbet.es/es/sports/baloncesto",
   },
-  HANDBALL: {
-    live:     "https://www.daznbet.es/es/sports/balonmano?liveMode=true",
-    prematch: "https://www.daznbet.es/es/sports/balonmano",
-  },
-  VOLLEYBALL: {
-    live:     "https://www.daznbet.es/es/sports/voleibol?liveMode=true",
-    prematch: "https://www.daznbet.es/es/sports/voleibol",
-  },
   ICEHOCKEY: {
     live:     "https://www.daznbet.es/es/sports/hockey-hielo?liveMode=true",
     prematch: "https://www.daznbet.es/es/sports/hockey-hielo",
@@ -50,14 +42,10 @@ const URLS: Partial<Record<Sport, { live: string; prematch: string }>> = {
     live:     "https://www.daznbet.es/es/sports/futbol-americano?liveMode=true",
     prematch: "https://www.daznbet.es/es/sports/futbol-americano",
   },
-  RUGBYLEAGUE: {
-    live:     "https://www.daznbet.es/es/sports/rugby?liveMode=true",
-    prematch: "https://www.daznbet.es/es/sports/rugby",
-  },
 };
 
 // DaznBet/EveryMatrix sport IDs (estimación — se confirman vía logs)
-const DAZN_SPORT_IDS: Partial<Record<Sport, number>> = { FOOTBALL: 1, TENNIS: 2, BASKETBALL: 3, HANDBALL: 11, VOLLEYBALL: 13, ICEHOCKEY: 7, BASEBALL: 9, AMERICANFOOTBALL: 6, RUGBYLEAGUE: 12 };
+const DAZN_SPORT_IDS: Partial<Record<Sport, number>> = { FOOTBALL: 1, TENNIS: 2, BASKETBALL: 3, ICEHOCKEY: 7, BASEBALL: 9, AMERICANFOOTBALL: 6 };
 
 // ─── EveryMatrix XHR parsers ──────────────────────────────────────────────────
 
@@ -245,7 +233,7 @@ export class DaznBetScraper extends BaseScraper {
   readonly name = "daznbet";
   private _liveRunning = false;
   private _lastLiveResult: ScrapedEvent[] = [];
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "HANDBALL", "VOLLEYBALL", "ICEHOCKEY", "BASEBALL", "AMERICANFOOTBALL"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "ICEHOCKEY", "BASEBALL", "AMERICANFOOTBALL"];
 
   private async scrapePage(url: string, sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     const { page, ctx } = await browserManager.newPage(getProxyForScraper("daznbet"), undefined, 180_000);

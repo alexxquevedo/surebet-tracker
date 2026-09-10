@@ -25,12 +25,9 @@ const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
   FOOTBALL:         "9553177903",
   TENNIS:           "2819846742",
   BASKETBALL:       "9612775584",
-  VOLLEYBALL:       "2819853525",
   AMERICANFOOTBALL: "2819729850",
   ICEHOCKEY:        "2819844477",
   BASEBALL:         "2819833156",
-  RUGBYLEAGUE:      "2819844959",
-  HANDBALL:         "2819843470",
 };
 
 // Secondary market gametypes per sport (semicolon-separated IDs for NavigationService)
@@ -43,9 +40,6 @@ const SPORT_GAMETYPES: Partial<Record<Sport, string>> = {
   ICEHOCKEY:        "4;18",
   BASEBALL:         "4;18",
   AMERICANFOOTBALL: "4;18",
-  RUGBYLEAGUE:      "4;18",
-  VOLLEYBALL:       "4;18",
-  HANDBALL:         "4;18",
 };
 
 // Live secondary gametypes (same IDs work on live endpoint)
@@ -55,12 +49,9 @@ const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   FOOTBALL:         "soccer",
   TENNIS:           "tennis",
   BASKETBALL:       "basketball",
-  VOLLEYBALL:       "volleyball",
   AMERICANFOOTBALL: "american_football",
   ICEHOCKEY:        "ice_hockey",
   BASEBALL:         "baseball",
-  RUGBYLEAGUE:      "rugby_league",
-  HANDBALL:         "handball",
 };
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
@@ -341,8 +332,8 @@ function buildH2HEvent(
 export class CodereScraper extends BaseScraper {
   readonly name = "codere";
   readonly sports: Sport[] = [
-    "FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL",
-    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE", "HANDBALL",
+    "FOOTBALL", "TENNIS", "BASKETBALL",
+    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL",
   ];
 
   async scrapeLive(): Promise<ScrapedEvent[]> {

@@ -24,8 +24,6 @@ const TARGET_SPORTS: { key: string; sport: Sport }[] = [
   { key: "americanfootball_nfl",         sport: "AMERICANFOOTBALL" },
   { key: "icehockey_nhl",               sport: "ICEHOCKEY" },
   { key: "baseball_mlb",                sport: "BASEBALL" },
-  { key: "rugbyleague_nrl",             sport: "RUGBYLEAGUE" },
-  { key: "rugbyleague_super_league",    sport: "RUGBYLEAGUE" },
 ];
 
 // ─── Bookmaker key mapping ────────────────────────────────────────────────────
@@ -60,7 +58,7 @@ const PREMATCH_TTL_MS = parseInt(process.env.ODDS_API_PREMATCH_TTL_SEC ?? "600")
 
 export class OddsApiScraper extends BaseScraper {
   readonly name = "oddsapi";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL"];
 
   private readonly apiKey: string;
 

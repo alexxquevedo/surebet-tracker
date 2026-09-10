@@ -407,19 +407,29 @@ export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
+// Markets treated as discrete H2H (2-way or 3-way) for surebet detection:
+//   h2h           – 1X2 full match result
+//   handicap      – European handicap (Home +1 / Away +1 style)
+//   btts          – Both Teams To Score (Yes / No)
+//   double_chance – Double Chance (1X / X2 / 12)
+const H2H_MARKETS = new Set(["h2h", "handicap", "btts", "double_chance"]);
+
+// Markets treated as continuous O/U lines for surebet + middle detection:
+//   asian_handicap – Asian Handicap (line=offset, over=home, under=away)
+//   All other market names (corners, goals, cards, shots, …)
 export function findArbs(markets: GroupedMarket[], minProfitPct: number): DetectedArb[] {
   const arbs: DetectedArb[] = [];
 
   for (const market of markets) {
-    if (market.market === "h2h" || market.market === "handicap") {
+    if (H2H_MARKETS.has(market.market)) {
       const arb = detectSurebet(market);
       if (arb && arb.profitPct >= minProfitPct) arbs.push(arb);
     } else if (market.market === "player_props") {
       const props = detectPlayerPropSurebets(market);
       arbs.push(...props.filter((p) => p.profitPct >= minProfitPct));
     } else {
-      // Generic over/under market (corners, goals, cards, games, sets, etc.)
-      // Inspect outcome type to confirm TotalsLine before running detectors
+      // Generic O/U market: corners, goals, cards, games, sets, asian_handicap, etc.
+      // Confirm TotalsLine shape before running detectors
       const sampleOutcomes = [...market.byBook.values()][0];
       if (!sampleOutcomes || !isTotals(sampleOutcomes)) continue;
       const surebets = detectOverUnderSurebets(market);

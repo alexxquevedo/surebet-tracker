@@ -263,8 +263,8 @@ function parseRetabetData(data: any, sport: Sport, isLive: boolean): ScrapedEven
 export class RetabetScraper extends BaseScraper {
   readonly name = "retabet";
   readonly sports: Sport[] = [
-    "FOOTBALL", "TENNIS", "BASKETBALL", "VOLLEYBALL",
-    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL", "RUGBYLEAGUE",
+    "FOOTBALL", "TENNIS", "BASKETBALL",
+    "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL",
   ];
 
   private connection: HubConnection | null = null;

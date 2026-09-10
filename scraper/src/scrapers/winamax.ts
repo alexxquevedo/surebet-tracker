@@ -22,34 +22,31 @@ const BASE_FR = "https://www.winamax.fr";
 // 6=Handball, 9=Golf, 10=Boxe, 11=Automobile, 12=Rugby à XV
 // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not in WS dump (not offered or off-season)
 const SPORT_IDS: Partial<Record<Sport, number>> = {
-  FOOTBALL:   1,
-  TENNIS:     5,
-  BASKETBALL: 2,
-  BASEBALL:   3,
-  ICEHOCKEY:  4,
-  HANDBALL:   6,
-  RUGBY:      12, // Rugby à XV (Union) — closest match to RUGBYLEAGUE in Prisma
+  FOOTBALL:         1,
+  TENNIS:           5,
+  BASKETBALL:       2,
+  BASEBALL:         3,
+  ICEHOCKEY:        4,
+  AMERICANFOOTBALL: 18,
 };
 
 const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
-  FOOTBALL:   ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
-  TENNIS:     ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
-  BASKETBALL: ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
-  BASEBALL:   ["/paris-sportifs/sports/3", "/paris-sportifs/sports/3/"],
-  ICEHOCKEY:  ["/paris-sportifs/sports/4", "/paris-sportifs/sports/4/"],
-  HANDBALL:   ["/paris-sportifs/sports/6", "/paris-sportifs/sports/6/"],
-  RUGBY:      ["/paris-sportifs/sports/12", "/paris-sportifs/sports/12/"],
+  FOOTBALL:         ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
+  TENNIS:           ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
+  BASKETBALL:       ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
+  BASEBALL:         ["/paris-sportifs/sports/3", "/paris-sportifs/sports/3/"],
+  ICEHOCKEY:        ["/paris-sportifs/sports/4", "/paris-sportifs/sports/4/"],
+  AMERICANFOOTBALL: ["/paris-sportifs/sports/18", "/paris-sportifs/sports/18/"],
 };
 
 // Fallback text-based click labels (French site)
 const SPORT_LINK_TEXTS: Partial<Record<Sport, string[]>> = {
-  FOOTBALL:   ["football", "foot"],
-  TENNIS:     ["tennis"],
-  BASKETBALL: ["basket", "basketball"],
-  BASEBALL:   ["baseball", "base-ball"],
-  ICEHOCKEY:  ["hockey sur glace", "hockey glace", "hockey"],
-  HANDBALL:   ["handball"],
-  RUGBY:      ["rugby", "rugby à xv"],
+  FOOTBALL:         ["football", "foot"],
+  TENNIS:           ["tennis"],
+  BASKETBALL:       ["basket", "basketball"],
+  BASEBALL:         ["baseball", "base-ball"],
+  ICEHOCKEY:        ["hockey sur glace", "hockey glace", "hockey"],
+  AMERICANFOOTBALL: ["football américain", "american football"],
 };
 
 function parseWinamaxData(raw: any, sport: Sport, isLive: boolean, srcUrl: string): ScrapedEvent[] {
@@ -650,7 +647,7 @@ export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
   // Confirmed IDs: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5, Handball=6, Rugby à XV=12
   // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not offered on Winamax FR (or off-season)
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "HANDBALL", "RUGBY"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "AMERICANFOOTBALL"];
 
   // One page load per cycle: WS sends ALL sports data at once.
   // Live: load /paris-sportifs/live → WS sends all live matches.

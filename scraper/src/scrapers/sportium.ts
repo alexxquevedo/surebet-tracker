@@ -29,7 +29,8 @@ const KAMBI_SPORT_FILTER: Partial<Record<Sport, string>> = {
   TENNIS:            "tennis",
   BASKETBALL:        "basketball",
   AMERICANFOOTBALL:  "american-football",
-  RUGBYLEAGUE:       "rugby-league",
+  ICEHOCKEY:         "ice-hockey",
+  BASEBALL:          "baseball",
 };
 
 const KAMBI_HEADERS = {
@@ -361,7 +362,7 @@ function parsePrematch(data: any, sport: Sport): ScrapedEvent[] {
 
 export class SportiumScraper extends BaseScraper {
   readonly name = "sportium";
-  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "RUGBYLEAGUE"];
+  readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "AMERICANFOOTBALL", "ICEHOCKEY", "BASEBALL"];
 
   private async scrapeOneSport(sport: Sport, isLive: boolean): Promise<ScrapedEvent[]> {
     try {
