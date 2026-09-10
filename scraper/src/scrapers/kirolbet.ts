@@ -213,10 +213,13 @@ export class KirolbetScraper extends BaseScraper {
     return [];
   }
 
+  // Sequential to avoid flooding Akamai WAF with ~120 concurrent curl connections
   async scrapePrematch(): Promise<ScrapedEvent[]> {
-    const chunks = await Promise.all(
-      this.sports.map(sport => this.scrapeSport(sport)),
-    );
-    return chunks.flat();
+    const allEvents: ScrapedEvent[] = [];
+    for (const sport of this.sports) {
+      const events = await this.scrapeSport(sport);
+      allEvents.push(...events);
+    }
+    return allEvents;
   }
 }
