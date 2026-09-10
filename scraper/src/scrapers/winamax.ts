@@ -759,9 +759,9 @@ export class WinamaxScraper extends BaseScraper {
         this.log(`${isLive ? "Live" : "Prematch"}: WS conectó pero sin partidos (estado legítimo)`);
       }
 
-      // Subscribe to all live matches at once to load match/bet/odds data from WS.
+      // Subscribe to live matches in batches to load match/bet/odds data from WS.
       // Without subscription the live page WS only sends metadata — no match-level data.
-      // Send all match IDs in one burst (no inter-batch pause) then wait 2s.
+      // BATCH=20, 1000ms between batches, 2000ms final: ~5s for 40 matches (vs 10.5s old BATCH=10).
       const wsRoot = resolveWsStateRoot(wsState);
       if (waitResult === "ws_data") {
         const matchIds = Object.values(wsRoot.matches ?? {})
@@ -772,13 +772,18 @@ export class WinamaxScraper extends BaseScraper {
         if (matchIds.length > 0) {
           const betsBefore = Object.keys(wsRoot.bets ?? {}).length;
           this.log(`WS live subscription: ${matchIds.length} matches`);
-          await page.evaluate((ids: string[]) => {
-            const ws = (window as any).__winamaxWS as WebSocket | undefined;
-            if (!ws || ws.readyState !== 1) return;
-            for (const id of ids) {
-              ws.send(`42["m",{"route":"match:${id}"}]`);
-            }
-          }, matchIds).catch(() => {});
+          const BATCH = 20;
+          for (let i = 0; i < matchIds.length; i += BATCH) {
+            const batch = matchIds.slice(i, i + BATCH);
+            await page.evaluate((ids: string[]) => {
+              const ws = (window as any).__winamaxWS as WebSocket | undefined;
+              if (!ws || ws.readyState !== 1) return;
+              for (const id of ids) {
+                ws.send(`42["m",{"route":"match:${id}"}]`);
+              }
+            }, batch).catch(() => {});
+            await new Promise<void>((r) => setTimeout(r, 1000));
+          }
           await new Promise<void>((r) => setTimeout(r, 2000));
           const betsAfter = Object.keys(resolveWsStateRoot(wsState).bets ?? {}).length;
           this.log(`WS live subscription done: bets ${betsBefore} → ${betsAfter}`);
