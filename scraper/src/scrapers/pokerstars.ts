@@ -561,13 +561,15 @@ export class PokerStarsScraper extends BaseScraper {
       // sends a page-navigation Accept header and no X-Requested-With, which Akamai flags as a bot.
       let capturedData: PSPageData | null = null;
 
+      // XHR listener: if the React app fires browse-in-play within 15s it will be caught here.
+      // 15s is enough — React mounts and makes its XHR within seconds of domcontentloaded.
       const xhrPromise = (page as { waitForResponse(fn: (r: unknown) => boolean, opts: object): Promise<{ json(): Promise<unknown> }> })
         .waitForResponse(
           (r: unknown) => {
             const res = r as { url(): string; status(): number };
             return res.url().includes("/browse-in-play") && res.status() === 200;
           },
-          { timeout: 45_000 },
+          { timeout: 15_000 },
         ).then(async (r) => {
           const raw = await r.json().catch(() => null);
           capturedData = (raw as { data?: PSPageData } | null)?.data ?? null;
@@ -576,21 +578,14 @@ export class PokerStarsScraper extends BaseScraper {
       await (page as { goto(u: string, o?: object): Promise<unknown> })
         .goto("https://www.pokerstars.es/sports/in-play/", {
           waitUntil: "domcontentloaded",
-          timeout: 35_000,
+          timeout: 25_000,
         }).catch(() => null);
-
-      await xhrPromise;
 
       const ctxCookies = await ctx.cookies(SPORTS_HOME_URL).catch(() => [] as { name: string; value: string }[]);
       const pwCookies = ctxCookies.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join("; ");
 
-      if (capturedData) {
-        this.log("PS Playwright: browse-in-play OK ✓ (in-play page XHR)");
-        return { data: capturedData, pwCookies };
-      }
-
-      // Approach B: fetch() from within the page's JS context — carries Akamai cookies,
-      // correct TLS fingerprint, and looks identical to a same-origin XHR.
+      // Approach B: fetch() from within the page's JS context — runs immediately after
+      // domcontentloaded while the page is still live (before Akamai can redirect it).
       try {
         const evalResult = await (page as { evaluate(fn: (u: string) => Promise<{ status: number; data: unknown }>, u: string): Promise<{ status: number; data: unknown }> })
           .evaluate(async (url: string) => {
@@ -614,6 +609,13 @@ export class PokerStarsScraper extends BaseScraper {
         this.log(`PS Playwright: browse-in-play status=${evalResult.status} (page.evaluate)`);
       } catch (evalErr) {
         this.log(`PS Playwright: page.evaluate error: ${evalErr}`);
+      }
+
+      // Also wait for the XHR listener (in case it fires slightly after domcontentloaded)
+      await xhrPromise;
+      if (capturedData) {
+        this.log("PS Playwright: browse-in-play OK ✓ (in-play page XHR)");
+        return { data: capturedData, pwCookies };
       }
 
       return { data: null, pwCookies };
