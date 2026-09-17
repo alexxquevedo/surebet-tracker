@@ -273,10 +273,10 @@ function parseNgsResponse(
     for (const event of comp.events ?? []) {
       if (!event.active || !event.displayed || event.settled || event.status !== "A") continue;
 
-      // WH uses U+2212 MINUS SIGN as team separator; normalize to "v"
-      const rawName = event.name.replace(/−/g, "v");
-      const parts = rawName.split(" v ").map(p => p.trim()).filter(Boolean);
-      const eventName = parts.length >= 2 ? parts.join(" v ") : rawName.trim();
+      // WH uses U+208B SUBSCRIPT MINUS as team separator (e.g. "Kalamata ₋ Larissa").
+      // Replace it and other Unicode dashes with " v " so splitTeams can split correctly.
+      const rawName = event.name.replace(/[₋−–—]/g, " v ").replace(/\s+/g, " ").trim();
+      const eventName = rawName;
       if (!eventName) continue;
 
       // Skip virtual/fantasy events: WH runs simulcast games where team names carry

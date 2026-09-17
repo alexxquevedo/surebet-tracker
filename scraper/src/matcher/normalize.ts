@@ -411,7 +411,7 @@ export function normalizeTeam(name: string): string {
 }
 
 // Splits "Team A vs Team B" or "Team A - Team B" into [teamA, teamB]
-const SEPARATORS = /\s+(?:vs\.?|v\.?|-|@)\s+/i;
+const SEPARATORS = /\s+(?:vs\.?|v\.?|[-₋−–—]|@)\s+/i;
 
 function splitTeams(eventName: string): string[] {
   const parts = eventName.split(SEPARATORS);
