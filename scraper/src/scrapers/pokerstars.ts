@@ -43,14 +43,10 @@ const SPORTS_HOME_URL  = "https://www.pokerstars.es/sports/";
 const BROWSE_INPLAY_URL = "https://www.pokerstars.es/sports/web/browse-in-play/";
 const EVENT_PAGE_URL   = "https://www.pokerstars.es/sports/web/event-page/";
 
-// Sport-specific prematch pages still used as SSR fallback
-const SPORT_PAGES = [
-  "https://www.pokerstars.es/sports/football/",
-  "https://www.pokerstars.es/sports/tennis/",
-  "https://www.pokerstars.es/sports/basketball/",
-  "https://www.pokerstars.es/sports/ice-hockey/",
-  "https://www.pokerstars.es/sports/american-football/",
-  "https://www.pokerstars.es/sports/baseball/",
+// SSR pages: homepage uses 'isp-sports-widget-home-page'; in-play uses 'isp-sports-widget-in-play-events'.
+// Sport-specific pages (football/, tennis/, …) have neither key — they contribute 0 events.
+const SSR_PAGES = [
+  "https://www.pokerstars.es/sports/in-play/",
 ];
 
 const CACHE_TTL_MS = 600_000; // 10 min — Playwright needed, reduce frequency
@@ -250,8 +246,16 @@ export class PokerStarsScraper extends BaseScraper {
   // ── SSR widget fallback ─────────────────────────────────────────────────
 
   private extractWidget(html: string): PSPageData | null {
-    const WIDGET_KEY = "'isp-sports-widget-home-page'";
-    const idx = html.indexOf(WIDGET_KEY);
+    // Try all known widget keys in priority order
+    const WIDGET_KEYS = [
+      "'isp-sports-widget-home-page'",
+      "'isp-sports-widget-in-play-events'",
+    ];
+    let idx = -1;
+    for (const key of WIDGET_KEYS) {
+      idx = html.indexOf(key);
+      if (idx >= 0) break;
+    }
     if (idx < 0) return null;
     const assignIdx = html.indexOf("|| {}, {", idx);
     if (assignIdx < 0) return null;
@@ -711,8 +715,8 @@ export class PokerStarsScraper extends BaseScraper {
         if (data) allEvents.push(...this.parsePageData(data, seen));
       }
 
-      // Also fetch individual sport pages
-      const htmlResults = await Promise.all(SPORT_PAGES.map(url => this.fetchPage(url, proxyUrl)));
+      // Also fetch SSR pages (in-play etc.)
+      const htmlResults = await Promise.all(SSR_PAGES.map(url => this.fetchPage(url, proxyUrl)));
       for (const html of htmlResults) {
         if (!html) continue;
         const data = this.extractWidget(html);
