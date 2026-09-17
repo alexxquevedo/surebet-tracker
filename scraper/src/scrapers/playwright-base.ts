@@ -311,7 +311,7 @@ class Semaphore {
   }
 }
 
-export const pageSemaphore = new Semaphore(3); // 3 concurrent Playwright pages — WH+pokerstars+daznbet can run simultaneously
+export const pageSemaphore = new Semaphore(6); // 6 slots — winamax×2 + daznbet + betsson + pokerstars + 888sport/bwin/sportium
 
 /** Log current page URL + title — call when a scraper finds 0 events to diagnose wrong URL / redirect */
 export async function logPageState(page: Page, scraperName: string, apiCalls?: string[]): Promise<void> {

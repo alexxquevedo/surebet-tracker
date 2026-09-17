@@ -193,6 +193,17 @@ function mockEvents(scraperName: string, isLive: boolean): ScrapedEvent[] {
   }];
 }
 
+// ─── In-memory event URL cache ───────────────────────────────────────────────
+// Keyed by "bookmaker::eventKey" → direct event deep-link URL.
+// Populated each scan cycle from scraped events; used to enrich ArbLeg.url.
+const eventUrlCache = new Map<string, string>();
+
+function cacheEventUrls(events: ScrapedEvent[]): void {
+  for (const e of events) {
+    if (e.url) eventUrlCache.set(`${e.bookmaker}::${e.eventKey}`, e.url);
+  }
+}
+
 // ─── Arb deduplication (in-memory) ───────────────────────────────────────────
 // Prevents re-saving and re-notifying the same logical arb every 30s cycle.
 // Keyed by a fingerprint of (type, eventName, market, legs). Expires after ARB_DEDUP_MS.
@@ -327,6 +338,7 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
         market: row.market,
         byBook: new Map(),
         byBookScrapedAt: new Map(),
+        byBookUrl: new Map(),
       });
     } else {
       const existing = groupMap.get(key)!;
@@ -346,6 +358,8 @@ async function loadGroupedMarkets(liveOnly?: boolean): Promise<GroupedMarket[]> 
     const group = groupMap.get(key)!;
     group.byBook.set(row.bookmaker, row.outcomes as unknown as MarketOutcomes);
     group.byBookScrapedAt.set(row.bookmaker, row.scrapedAt.getTime());
+    const cachedUrl = eventUrlCache.get(`${row.bookmaker}::${row.eventKey}`);
+    if (cachedUrl) group.byBookUrl.set(row.bookmaker, cachedUrl);
   }
 
   // Only markets with at least 2 bookmakers have arb potential
@@ -426,11 +440,13 @@ class ProxySemaphore {
 }
 const proxySemaphore = new ProxySemaphore(3);
 
-// Axios-based scrapers that route through the SOCKS5 proxy — throttled by proxySemaphore
+// Axios-based scrapers that route through the SOCKS5 proxy — throttled by proxySemaphore.
+// Playwright-only scrapers (888sport) must NOT be listed here — they use pageSemaphore,
+// not the proxy tunnel, and competing for these 3 slots causes semaphore deadlocks.
 const PROXY_THROTTLED_AXIOS = new Set([
   "williamhill", "betsson",
   // Kambi B2B — each instance serializes its sports internally, so 1 connection at a time per scraper
-  "leovegas", "888sport", "unibet", "kirolbet",
+  "leovegas", "unibet", "kirolbet",
   // Altenar
   "luckia", "casino-gran-madrid", "tonybet",
   "retabet",
@@ -458,13 +474,14 @@ async function pollCycle(isLive: boolean): Promise<void> {
   const SCRAPER_TIMEOUT_MS = isLive ? 60 * 1000 : 10 * 60 * 1000; // 60s live, 10min prematch
   // Browser-based scrapers (Playwright) block the pageSemaphore and always return 0 live events
   // Kambi CDN (eu-offering.kambicdn.org) blocks our IP at TCP level — skip until new proxy
-  // 888sport migrated from Kambi to Spectate — now has its own Playwright scraper, not blocked
   // Altenar also blocked. Retabet blocked by Akamai.
   const KAMBI_BLOCKED = new Set(["leovegas", "unibet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
   const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
-  const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "bet365", "sportium", "marathonbet"]); // never produce prematch events, block the cycle for full timeout
+  // bet365 removed from skipInPrematch — ROUTER_PROXY_URL gives it a valid Spanish IP via Digi SIM.
+  // It uses its own pageSemaphore slot and runs in prematch cycles (5min cadence) only.
+  const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "sportium", "marathonbet"]);
   const scrapeResults = await Promise.allSettled(
     scrapers.filter(s => {
       if (!isScraperEnabled(s.name)) {
@@ -481,7 +498,11 @@ async function pollCycle(isLive: boolean): Promise<void> {
       return true;
     }).map(async (s) => {
       try {
-        const scraperTimeout = s.name === "daznbet" && isLive ? 220 * 1000 : SCRAPER_TIMEOUT_MS;
+        const scraperTimeout =
+          s.name === "daznbet" && isLive ? 220 * 1000 :
+          s.name === "winamax" && isLive ? 120 * 1000 : // goto can take 55s + WS 12s + subscription + scroll
+          s.name === "pokerstars" && isLive ? 240 * 1000 : // Playwright Akamai bypass: semaphore wait (up to 120s) + browse-in-play (~40s)
+          SCRAPER_TIMEOUT_MS;
         const timeoutPromise = new Promise<ScrapedEvent[]>((_, reject) =>
           setTimeout(() => reject(new Error(`Scraper timeout: ${s.name} exceeded ${scraperTimeout}ms`)), scraperTimeout)
         );
@@ -568,7 +589,8 @@ async function pollCycle(isLive: boolean): Promise<void> {
     logger.warn("spike_filter.pending", { ...spikeStats, held: allEvents.length - filteredEvents.length });
   }
 
-  // 3. Persist confirmed odds to DB
+  // 3. Cache event URLs (in-memory, no DB required) then persist odds
+  cacheEventUrls(filteredEvents);
   await saveOdds(filteredEvents);
   console.log(`[orchestrator] ${label}: saved ${filteredEvents.length} events (${allEvents.length - filteredEvents.length} held for spike confirmation)`);
 
