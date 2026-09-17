@@ -550,26 +550,68 @@ export class PokerStarsScraper extends BaseScraper {
   ): Promise<{ data: PSPageData | null; pwCookies: string }> {
     const { page, ctx } = await browserManager.newPage(proxy, "pokerstars", 120_000);
     try {
-      // Step 1: Load homepage so Akamai Bot Manager can run and set _abck cookie.
-      // Use "load" so the initial scripts finish (images/CSS already blocked by newPage).
+      // Approach A: intercept the browse-in-play XHR that fires when PS loads /sports/in-play/.
+      // Navigating to the in-play UI page is indistinguishable from a real user; the PS React app
+      // calls browse-in-play automatically. Akamai Bot Manager runs on the page before the XHR fires.
+      // Direct navigation to the API URL (previous approach) was blocked because the browser
+      // sends a page-navigation Accept header and no X-Requested-With, which Akamai flags as a bot.
+      let capturedData: PSPageData | null = null;
+
+      const xhrPromise = (page as { waitForResponse(fn: (r: unknown) => boolean, opts: object): Promise<{ json(): Promise<unknown> }> })
+        .waitForResponse(
+          (r: unknown) => {
+            const res = r as { url(): string; status(): number };
+            return res.url().includes("/browse-in-play") && res.status() === 200;
+          },
+          { timeout: 45_000 },
+        ).then(async (r) => {
+          const raw = await r.json().catch(() => null);
+          capturedData = (raw as { data?: PSPageData } | null)?.data ?? null;
+        }).catch(() => null);
+
       await (page as { goto(u: string, o?: object): Promise<unknown> })
-        .goto(SPORTS_HOME_URL, { waitUntil: "load", timeout: 25_000 }).catch(() => null);
+        .goto("https://www.pokerstars.es/sports/in-play/", {
+          waitUntil: "domcontentloaded",
+          timeout: 35_000,
+        }).catch(() => null);
 
-      // Step 2: Navigate directly to browse-in-play API — the browser now carries
-      // valid Akamai session cookies and has the correct TLS/browser fingerprint.
-      const resp = await (page as { goto(u: string, o?: object): Promise<{ status(): number; json(): Promise<unknown> } | null> })
-        .goto(BROWSE_INPLAY_URL, { waitUntil: "commit", timeout: 15_000 }).catch(() => null);
+      await xhrPromise;
 
-      // Extract all cookies from the browser context (includes Akamai _abck, bm_sv)
       const ctxCookies = await ctx.cookies(SPORTS_HOME_URL).catch(() => [] as { name: string; value: string }[]);
       const pwCookies = ctxCookies.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join("; ");
 
-      if (resp?.status() === 200) {
-        const raw = await resp.json().catch(() => null);
-        this.log("PS Playwright: browse-in-play OK ✓");
-        return { data: (raw as { data?: PSPageData } | null)?.data ?? null, pwCookies };
+      if (capturedData) {
+        this.log("PS Playwright: browse-in-play OK ✓ (in-play page XHR)");
+        return { data: capturedData, pwCookies };
       }
-      this.log(`PS Playwright: browse-in-play status=${resp?.status() ?? "null"}`);
+
+      // Approach B: fetch() from within the page's JS context — carries Akamai cookies,
+      // correct TLS fingerprint, and looks identical to a same-origin XHR.
+      try {
+        const evalResult = await (page as { evaluate(fn: (u: string) => Promise<{ status: number; data: unknown }>, u: string): Promise<{ status: number; data: unknown }> })
+          .evaluate(async (url: string) => {
+            const resp = await fetch(url, {
+              headers: {
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "es-ES,es;q=0.9",
+                "X-Requested-With": "XMLHttpRequest",
+              },
+              credentials: "include",
+            });
+            if (!resp.ok) return { status: resp.status, data: null };
+            const data = await resp.json();
+            return { status: resp.status, data };
+          }, BROWSE_INPLAY_URL);
+
+        if (evalResult.data) {
+          this.log("PS Playwright: browse-in-play OK ✓ (page.evaluate fetch)");
+          return { data: (evalResult.data as { data?: PSPageData }).data ?? null, pwCookies };
+        }
+        this.log(`PS Playwright: browse-in-play status=${evalResult.status} (page.evaluate)`);
+      } catch (evalErr) {
+        this.log(`PS Playwright: page.evaluate error: ${evalErr}`);
+      }
+
       return { data: null, pwCookies };
     } finally {
       await (page as { close(): Promise<void> }).close().catch(() => {});
