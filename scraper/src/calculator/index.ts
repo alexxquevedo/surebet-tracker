@@ -52,6 +52,13 @@ function normalizeOutcomeName(name: string): string {
   if (/^x$/i.test(t) || /^empate$/i.test(t) || /^nul[ae]?$/i.test(t) || /^draw$/i.test(t)) {
     return "Draw";
   }
+  // btts: Sí/Si/Oui/Yes/Ja → "Yes"; No/Non → "No"
+  if (/^(s[íi]|oui|yes|ja)$/i.test(t)) return "Yes";
+  if (/^(non?)$/i.test(t)) return "No";
+  // double_chance: normalize French "N" (Nul=Draw) to "X"
+  if (/^1[nx]$/i.test(t)) return "1X";
+  if (/^[nx]2$/i.test(t)) return "X2";
+  if (/^12$/i.test(t)) return "12";
   // Apply the same pipeline as normalizeTeam: diacritics + language aliases + suffix strip.
   // This ensures "Filipinas" == "Philippines", "Pays-Bas" == "Netherlands", etc.
   return normalizeTeam(t);
@@ -64,7 +71,8 @@ function normalizeOutcomeName(name: string): string {
  * If sum of implied probs < 1 → surebet exists.
  */
 export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
-  if (market.market !== "h2h" && market.market !== "handicap") return null;
+  const H2H_LIKE = new Set(["h2h", "handicap", "btts", "double_chance"]);
+  if (!H2H_LIKE.has(market.market)) return null;
 
   // Live h2h odds above this threshold are almost certainly stale/suspended prices
   const MAX_LIVE_H2H_ODDS = 12.0;

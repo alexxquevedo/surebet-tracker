@@ -208,7 +208,7 @@ function cacheEventUrls(events: ScrapedEvent[]): void {
 // Prevents re-saving and re-notifying the same logical arb every 30s cycle.
 // Keyed by a fingerprint of (type, eventName, market, legs). Expires after ARB_DEDUP_MS.
 const arbDedup = new Map<string, number>();
-const ARB_DEDUP_MS = 10 * 60 * 1000;
+const ARB_DEDUP_MS = 4 * 60 * 1000; // 4-minute cooldown per unique arb fingerprint
 
 function arbFingerprint(arb: DetectedArb): string {
   const legs = arb.legs.map((l) => `${l.bookmaker}:${l.selection}`).sort().join("|");
@@ -454,6 +454,44 @@ const PROXY_THROTTLED_AXIOS = new Set([
   "jokerbet", "paston",
 ]);
 
+// ─── Streaming arb detection ─────────────────────────────────────────────────
+// Called by each scraper immediately after saving its events to DB.
+// Loads the current DB snapshot, detects arbs, deduplicates, and fires per-arb.
+// Safe under concurrent calls because the dedup check+set is fully synchronous.
+async function detectAndNotify(isLive: boolean, source: string): Promise<void> {
+  const markets = await loadGroupedMarkets(isLive);
+  const arbs = findArbs(markets, config.scanner.minProfitPct);
+  if (!arbs.length) return;
+
+  const now = Date.now();
+  for (const [fp, ts] of arbDedup) {
+    if (now - ts > ARB_DEDUP_MS) arbDedup.delete(fp);
+  }
+  // Synchronous dedup filter — no await between has() and set(), so concurrent
+  // detectAndNotify calls cannot race on the same fingerprint.
+  const newArbs = arbs.filter((arb) => {
+    const fp = arbFingerprint(arb);
+    if (arbDedup.has(fp)) return false;
+    arbDedup.set(fp, now);
+    return true;
+  });
+
+  if (!newArbs.length) return;
+  console.log(`[orchestrator] streaming ${newArbs.length} new arb(s) after ${source}`);
+
+  const detectedAt = Date.now();
+  for (const arb of newArbs) {
+    try {
+      const dbId = await saveDetectedArb(arb);
+      notifyArbs([{ dbId, arb, detectedAt }]).catch((err) =>
+        console.warn(`[orchestrator] Notify error for ${arb.eventName}:`, err?.message),
+      );
+    } catch (err: any) {
+      console.warn(`[orchestrator] Failed to save arb for ${arb.eventName}:`, err?.message);
+    }
+  }
+}
+
 // ─── Main poll cycle ──────────────────────────────────────────────────────────
 
 async function pollCycle(isLive: boolean): Promise<void> {
@@ -513,8 +551,18 @@ async function pollCycle(isLive: boolean): Promise<void> {
             : (isLive ? s.scrapeLive() : s.scrapePrematch());
         const events = await Promise.race([scrapePromise, timeoutPromise]);
         healthUpdate(s.name, isLive, events.length);
-        // Reset exponential backoff counter on success
-        if (events.length > 0) resetScraperCooldown(s.name);
+        if (events.length > 0) {
+          resetScraperCooldown(s.name);
+          // Streaming: save this scraper's events immediately, then fire detection.
+          // detectAndNotify is non-blocking (fire-and-forget) so it never delays
+          // other scrapers that are still running in parallel.
+          const filtered = filterSpikes(events);
+          cacheEventUrls(filtered);
+          await saveOdds(filtered);
+          detectAndNotify(isLive, s.name).catch((err) =>
+            console.warn(`[orchestrator] Streaming detect error (${s.name}):`, err?.message)
+          );
+        }
         return { name: s.name, events };
       } catch (err) {
         healthUpdate(s.name, isLive, 0);
@@ -582,55 +630,10 @@ async function pollCycle(isLive: boolean): Promise<void> {
     }
   }
 
-  // 2. Spike filter — hold back anomalous odds for one cycle before saving
-  const filteredEvents = filterSpikes(allEvents);
+  // Spike stats are accumulated per-scraper in the streaming callbacks above.
   const spikeStats = getSpikeFilterStats();
   if (spikeStats.pendingCount > 0) {
-    logger.warn("spike_filter.pending", { ...spikeStats, held: allEvents.length - filteredEvents.length });
-  }
-
-  // 3. Cache event URLs (in-memory, no DB required) then persist odds
-  cacheEventUrls(filteredEvents);
-  await saveOdds(filteredEvents);
-  console.log(`[orchestrator] ${label}: saved ${filteredEvents.length} events (${allEvents.length - filteredEvents.length} held for spike confirmation)`);
-
-  // 4. Load grouped markets and detect arbs
-  const markets = await loadGroupedMarkets(isLive);
-  const arbs = findArbs(markets, config.scanner.minProfitPct);
-
-  if (!arbs.length) {
-    console.log(`[orchestrator] ${label}: no arbs found`);
-    return;
-  }
-
-  // Deduplicate: prune expired entries then filter out recently-seen arbs
-  const now = Date.now();
-  for (const [fp, ts] of arbDedup) {
-    if (now - ts > ARB_DEDUP_MS) arbDedup.delete(fp);
-  }
-  const newArbs = arbs.filter((arb) => {
-    const fp = arbFingerprint(arb);
-    if (arbDedup.has(fp)) return false;
-    arbDedup.set(fp, now);
-    return true;
-  });
-
-  console.log(`[orchestrator] ${label}: found ${arbs.length} arbs! (${newArbs.length} new)`);
-
-  if (!newArbs.length) return;
-
-  // 4. Save new arbs to DB and notify immediately per-arb (streaming/realtime)
-  const detectedAt = Date.now();
-  for (const arb of newArbs) {
-    try {
-      const dbId = await saveDetectedArb(arb);
-      // Fire-and-forget: each arb notified as soon as saved, never blocks the scan loop
-      notifyArbs([{ dbId, arb, detectedAt }]).catch((err) =>
-        console.warn(`[orchestrator] Notify error for ${arb.eventName}:`, err?.message),
-      );
-    } catch (err: any) {
-      console.warn(`[orchestrator] Failed to save arb for ${arb.eventName}:`, err?.message);
-    }
+    logger.warn("spike_filter.pending", spikeStats);
   }
 }
 

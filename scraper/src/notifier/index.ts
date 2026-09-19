@@ -126,6 +126,7 @@ const MARKET_LABEL: Record<string, string> = {
   red_cards: "Tarjetas Rojas",
   cards: "Tarjetas Totales",
   btts: "Ambos Marcan",
+  double_chance: "Doble Oportunidad",
   shots: "Tiros a Puerta",
   games: "Juegos",
   sets: "Sets",
