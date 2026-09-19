@@ -196,6 +196,78 @@ EXTRA_SCRAPERS: dict[str, dict] = {
 BOOKMAKER_NAMES:  dict[str, str]       = {k: v["name"]   for k, v in BOOKMAKERS.items()}
 BOOKMAKER_URLS:   dict[str, str]       = {k: v["url"]    for k, v in BOOKMAKERS.items() if v["url"]}
 BOOKMAKER_REGION: dict[str, str]       = {k: v["region"] for k, v in BOOKMAKERS.items()}
+
+# URLs específicas por deporte — fallback a BOOKMAKER_URLS si sport no está mapeado
+BOOKMAKER_SPORT_URLS: dict[str, dict[str, str]] = {
+    "winamax": {
+        "FOOTBALL":         "https://www.winamax.es/apostar/futbol",
+        "TENNIS":           "https://www.winamax.es/apostar/tenis",
+        "BASKETBALL":       "https://www.winamax.es/apostar/baloncesto",
+        "AMERICANFOOTBALL": "https://www.winamax.es/apostar/futbol-americano",
+        "ICEHOCKEY":        "https://www.winamax.es/apostar/hockey-hielo",
+        "BASEBALL":         "https://www.winamax.es/apostar/beisbol",
+    },
+    "codere": {
+        "FOOTBALL":         "https://www.codere.es/apuestas-deportivas/futbol",
+        "TENNIS":           "https://www.codere.es/apuestas-deportivas/tenis",
+        "BASKETBALL":       "https://www.codere.es/apuestas-deportivas/baloncesto",
+        "AMERICANFOOTBALL": "https://www.codere.es/apuestas-deportivas/futbol-americano",
+        "ICEHOCKEY":        "https://www.codere.es/apuestas-deportivas/hockey-hielo",
+        "BASEBALL":         "https://www.codere.es/apuestas-deportivas/beisbol",
+    },
+    "williamhill": {
+        "FOOTBALL":         "https://sports.williamhill.es/betting/en-gb/football",
+        "TENNIS":           "https://sports.williamhill.es/betting/en-gb/tennis",
+        "BASKETBALL":       "https://sports.williamhill.es/betting/en-gb/basketball",
+        "AMERICANFOOTBALL": "https://sports.williamhill.es/betting/en-gb/american-football",
+        "ICEHOCKEY":        "https://sports.williamhill.es/betting/en-gb/ice-hockey",
+        "BASEBALL":         "https://sports.williamhill.es/betting/en-gb/baseball",
+    },
+    "betfair": {
+        "FOOTBALL":         "https://www.betfair.es/sport/football",
+        "TENNIS":           "https://www.betfair.es/sport/tennis",
+        "BASKETBALL":       "https://www.betfair.es/sport/basketball",
+        "AMERICANFOOTBALL": "https://www.betfair.es/sport/american-football",
+        "ICEHOCKEY":        "https://www.betfair.es/sport/ice-hockey",
+        "BASEBALL":         "https://www.betfair.es/sport/baseball",
+    },
+    "bet365": {
+        "FOOTBALL":         "https://www.bet365.es/en/sports/football",
+        "TENNIS":           "https://www.bet365.es/en/sports/tennis",
+        "BASKETBALL":       "https://www.bet365.es/en/sports/basketball",
+        "AMERICANFOOTBALL": "https://www.bet365.es/en/sports/american-football",
+        "ICEHOCKEY":        "https://www.bet365.es/en/sports/ice-hockey",
+        "BASEBALL":         "https://www.bet365.es/en/sports/baseball",
+    },
+    "pokerstars": {
+        "FOOTBALL":         "https://www.pokerstars.es/sports/football/",
+        "TENNIS":           "https://www.pokerstars.es/sports/tennis/",
+        "BASKETBALL":       "https://www.pokerstars.es/sports/basketball/",
+        "AMERICANFOOTBALL": "https://www.pokerstars.es/sports/american-football/",
+        "ICEHOCKEY":        "https://www.pokerstars.es/sports/ice-hockey/",
+        "BASEBALL":         "https://www.pokerstars.es/sports/baseball/",
+    },
+    "bwin": {
+        "FOOTBALL":         "https://www.bwin.es/es/sports/football/",
+        "TENNIS":           "https://www.bwin.es/es/sports/tennis/",
+        "BASKETBALL":       "https://www.bwin.es/es/sports/basketball/",
+        "AMERICANFOOTBALL": "https://www.bwin.es/es/sports/american-football/",
+        "ICEHOCKEY":        "https://www.bwin.es/es/sports/ice-hockey/",
+        "BASEBALL":         "https://www.bwin.es/es/sports/baseball/",
+    },
+    "retabet": {
+        "FOOTBALL":         "https://www.retabet.es/es/sports/Futbol/",
+        "TENNIS":           "https://www.retabet.es/es/sports/Tenis/",
+        "BASKETBALL":       "https://www.retabet.es/es/sports/Baloncesto/",
+        "AMERICANFOOTBALL": "https://www.retabet.es/es/sports/Futbol-Americano/",
+        "ICEHOCKEY":        "https://www.retabet.es/es/sports/Hockey-Hielo/",
+        "BASEBALL":         "https://www.retabet.es/es/sports/Beisbol/",
+    },
+}
+
+def get_bk_url(bookmaker_key: str, sport_key: str) -> str:
+    sport_map = BOOKMAKER_SPORT_URLS.get(bookmaker_key, {})
+    return sport_map.get(sport_key, BOOKMAKER_URLS.get(bookmaker_key, ""))
 SCRAPER_DISPLAY:  dict[str, tuple]     = {
     **{k: (v["emoji"], v["name"], v["status"]) for k, v in BOOKMAKERS.items()},
     **{k: (v["emoji"], v["name"], v["status"]) for k, v in EXTRA_SCRAPERS.items()},
@@ -1701,7 +1773,9 @@ def construir_mensaje_surebet(event, ap, sport_key, live, stake=100.0):
     except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
     def _leg_line(l):
         region_tag = f" [{l['region']}]" if l.get("region") else ""
-        return (f"📕 {l['bookmaker']}{region_tag} 📍 {formatear_outcome(l)} "
+        bk_url = get_bk_url(l.get("bookmaker_key", ""), sport_key)
+        bk_name = f"[{l['bookmaker']}]({bk_url})" if bk_url else l['bookmaker']
+        return (f"📕 {bk_name}{region_tag} 📍 {formatear_outcome(l)} "
                 f"[{get_market_label(l.get('market',''), sport_key)}] "
                 f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n")
     lineas   = "".join(_leg_line(l) for l in ap["legs"])
@@ -1722,11 +1796,12 @@ def construir_mensaje_middle(event, ap, sport_key, live, stake=100.0):
         dt_mad = datetime.fromisoformat(event["commence_time"].replace("Z","")).replace(tzinfo=timezone.utc).astimezone(_TZ_MAD)
         fecha_str = dt_mad.strftime("%d/%m %H:%M")
     except (ValueError, KeyError, AttributeError): fecha_str = "??/??"
-    lineas = "".join([
-        f"📕 {l['bookmaker']} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
-        f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n"
-        for l in ap["legs"]
-    ])
+    def _mleg(l):
+        bk_url = get_bk_url(l.get("bookmaker_key", ""), sport_key)
+        bk_name = f"[{l['bookmaker']}]({bk_url})" if bk_url else l['bookmaker']
+        return (f"📕 {bk_name} 📍 {formatear_outcome(l)} [{get_market_label(l.get('market',''), sport_key)}] "
+                f"🎲 @{l['odd']} 💰 €{redondear_stake(stake * l['stake_pct'] / 100)}\n")
+    lineas = "".join(_mleg(l) for l in ap["legs"])
     peor = ap['profit_base']
     peor_txt = f"⚠️ Peor caso: {peor:+.2f}%" if peor < 0 else f"✅ Mín. garantizado: {peor:+.2f}%"
     timestamp = local_now().strftime("%H:%M:%S")
@@ -1834,22 +1909,14 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                             "ts":         local_now().isoformat(),
                             "time":       event.get("commence_time", ""),
                         }
-                        # Botones fila 1: ✅/❌ | Fila 2: links directos a casas (no cuentan contra el límite 4096)
-                        link_btns = [
-                            InlineKeyboardButton(f"🔗 {leg['bookmaker']}", url=BOOKMAKER_URLS[leg["bookmaker_key"]])
-                            for leg in ap.get("legs", [])
-                            if leg.get("bookmaker_key", "") in BOOKMAKER_URLS
-                        ]
                         kb_rows = [[
                             InlineKeyboardButton("✅ Hecha",    callback_data=f"AH_{uid}_{alert_id}"),
                             InlineKeyboardButton("❌ No hecha", callback_data=f"ANH_{uid}_{alert_id}"),
                         ]]
-                        if link_btns:
-                            kb_rows.append(link_btns[:4])  # máx 4 botones por fila
                         kb = InlineKeyboardMarkup(kb_rows)
                     try:
                         if kb:
-                            fut = await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], reply_markup=kb)
+                            fut = await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], reply_markup=kb, parse_mode="Markdown")
                             if asyncio.isfuture(fut):
                                 try:
                                     sent = await asyncio.wait_for(asyncio.shield(fut), timeout=10.0)
@@ -1889,7 +1956,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
                                     alerta_cache[cache_key]["msg_id"] = fut.message_id
                                     _save_alerts_cache()
                         else:
-                            await tg_send(app.bot, uid, mensaje, _profit=ap["profit"])
+                            await tg_send(app.bot, uid, mensaje, _profit=ap["profit"], parse_mode="Markdown")
                         last_surebet[uid] = ap
                         # ── Contador diario (persistente) ───────
                         hoy = datetime.now().date()
