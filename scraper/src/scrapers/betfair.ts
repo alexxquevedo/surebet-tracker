@@ -26,6 +26,16 @@ const EVENT_TYPE_IDS: Partial<Record<Sport, string>> = {
 // Betfair market types for H2H
 const MARKET_TYPES = ["MATCH_ODDS"];
 
+// Additional market types for tennis/basketball totals
+// Betfair reuses TOTAL_GOALS across sports (tennis total games, basketball total points)
+const TOTALS_MARKET_TYPES = ["TOTAL_GOALS"];
+
+// Maps sport to the internal totals market key
+const SPORT_TOTALS_KEY: Partial<Record<Sport, string>> = {
+  TENNIS: "games",
+  BASKETBALL: "match_points",
+};
+
 // Canonical NFL player prop stat names (matched against Betfair market names)
 const NFL_PROP_STATS: Array<[RegExp, string]> = [
   [/\bsacks?\b/i, "sacks"],
@@ -251,6 +261,62 @@ export class BetfairScraper extends BaseScraper {
 
   // ─── Parsing ─────────────────────────────────────────────────────────────
 
+  // Parses TOTAL_GOALS markets for tennis (games) and basketball (match_points)
+  private parseTotalsMarkets(markets: BetfairMarket[], sport: Sport, isLive: boolean): ScrapedEvent[] {
+    const totalsKey = SPORT_TOTALS_KEY[sport];
+    if (!totalsKey) return [];
+
+    const byEvent = new Map<string, ScrapedEvent>();
+
+    for (const m of markets) {
+      if (!m.event || !m.runners?.length) continue;
+
+      const eventName = m.event.name;
+      const startTime = m.event.openDate ? new Date(m.event.openDate) : undefined;
+      const eventKey = buildEventKey(sport, eventName, startTime);
+
+      // Group Over/Under runners by line value
+      const lineMap = new Map<number, { over: number; under: number }>();
+      for (const r of m.runners) {
+        const rName = (r.runnerName ?? "").toLowerCase();
+        const odds = r.ex?.availableToBack?.[0]?.price;
+        if (!odds || odds < 1.01) continue;
+        const lm = rName.match(/(\d+\.?\d*)/);
+        if (!lm) continue;
+        const line = parseFloat(lm[1]);
+        if (!lineMap.has(line)) lineMap.set(line, { over: 0, under: 0 });
+        const entry = lineMap.get(line)!;
+        if (/\bover\b/i.test(rName)) entry.over = odds;
+        else if (/\bunder\b/i.test(rName)) entry.under = odds;
+      }
+
+      const lines: TotalsLine[] = [];
+      for (const [line, { over, under }] of lineMap) {
+        if (over && under) lines.push({ line, over, under });
+      }
+      if (!lines.length) continue;
+
+      const existing = byEvent.get(eventKey);
+      if (existing) {
+        (existing.outcomes as TotalsLine[]).push(...lines);
+      } else {
+        byEvent.set(eventKey, {
+          bookmaker: "betfair",
+          sport,
+          eventKey,
+          eventName,
+          league: m.competition?.name,
+          startTime,
+          isLive,
+          market: totalsKey,
+          outcomes: lines,
+        });
+      }
+    }
+
+    return [...byEvent.values()];
+  }
+
   private parseMarkets(markets: BetfairMarket[], sport: Sport, isLive: boolean): ScrapedEvent[] {
     const events: ScrapedEvent[] = [];
 
@@ -331,6 +397,15 @@ export class BetfairScraper extends BaseScraper {
       } catch (err) {
         this.warn(`Error scraping live ${sport}`, err);
       }
+      // Fetch totals (O/U) markets for tennis and basketball
+      if (sport === "TENNIS" || sport === "BASKETBALL") {
+        try {
+          const totalsMarkets = await this.getMarkets(id, true, TOTALS_MARKET_TYPES);
+          all.push(...this.parseTotalsMarkets(totalsMarkets, sport, true));
+        } catch (err) {
+          this.warn(`Error scraping live totals for ${sport}`, err);
+        }
+      }
     }
     this.log(`Live: scraped ${all.length} events`);
     return all;
@@ -354,6 +429,15 @@ export class BetfairScraper extends BaseScraper {
         all.push(...this.parseMarkets(markets, sport, false));
       } catch (err) {
         this.warn(`Error scraping prematch ${sport}`, err);
+      }
+      // Fetch totals (O/U) markets for tennis and basketball
+      if (sport === "TENNIS" || sport === "BASKETBALL") {
+        try {
+          const totalsMarkets = await this.getMarkets(id, false, TOTALS_MARKET_TYPES);
+          all.push(...this.parseTotalsMarkets(totalsMarkets, sport, false));
+        } catch (err) {
+          this.warn(`Error scraping prematch totals for ${sport}`, err);
+        }
       }
     }
 

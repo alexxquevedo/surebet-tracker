@@ -356,6 +356,12 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bacademico\s+de\s+viseu\b/gi, "academico viseu"],       // PT: de -> dropped
   [/\bsporting\s+de\s+braga\b/gi, "braga"],                  // PT: Sporting de Braga -> braga
   [/\bfutebol\s+clube\s+de\b/gi, ""],                        // PT: "Futebol Clube de" prefix strip
+  // ── Basketball club name variants ────────────────────────────────────────
+  [/\bse\s+melbourne\b/gi, "south east melbourne"],  // NBL: SE Melbourne Phoenix → south east melbourne
+  [/\bs\s*23\b/gi, "sub 23"],         // Youth basketball: S23, S 23 → sub 23
+  [/\bsub\s*-?\s*23\b/gi, "sub 23"], // Sub-23, Sub23 → sub 23 (canonicalize)
+  [/\bu\s*23\b/gi, "sub 23"],         // U23, U 23 → sub 23 (under-23 notation)
+
   // ── Handball ──────────────────────────────────────────────────────────────
   [/\bmagdebourg\b/gi, "magdeburg"],         // FR: Magdebourg -> magdeburg
   [/\bhanovre\b/gi, "hannover"],             // FR: Hanovre -> hannover
@@ -398,6 +404,19 @@ const CITY_NORMALIZATIONS: Array<[RegExp, string]> = [
 export function normalizeTeam(name: string): string {
   let s = stripDiacritics(name).toLowerCase();
   s = s.replace(/\([^)]*\)/g, ' '); // strip annotations in parentheses (e.g. pitcher names)
+
+  // Tennis doubles: "Heliovaara H / Niklas Salminen P" → take last token of each player section
+  // "/" separates two partners in a doubles pair (inside one "team" after splitTeams)
+  if (s.includes('/')) {
+    const players = s.split('/').map(p => p.trim()).filter(Boolean);
+    if (players.length >= 2) {
+      s = players.map(p => {
+        const tokens = p.trim().split(/\s+/);
+        return tokens[tokens.length - 1] || p.trim();
+      }).join(' ');
+    }
+  }
+
   // Normalize language city variants
   for (const [re, replacement] of CITY_NORMALIZATIONS) {
     s = s.replace(re, replacement);
