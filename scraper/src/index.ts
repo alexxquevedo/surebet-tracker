@@ -619,20 +619,19 @@ async function pollCycle(isLive: boolean): Promise<void> {
 
   if (!newArbs.length) return;
 
-  // 4. Save new arbs to DB (sequential to avoid exhausting the connection pool)
+  // 4. Save new arbs to DB and notify immediately per-arb (streaming/realtime)
   const detectedAt = Date.now();
-  const savedArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }> = [];
   for (const arb of newArbs) {
     try {
       const dbId = await saveDetectedArb(arb);
-      savedArbs.push({ dbId, arb, detectedAt });
+      // Fire-and-forget: each arb notified as soon as saved, never blocks the scan loop
+      notifyArbs([{ dbId, arb, detectedAt }]).catch((err) =>
+        console.warn(`[orchestrator] Notify error for ${arb.eventName}:`, err?.message),
+      );
     } catch (err: any) {
       console.warn(`[orchestrator] Failed to save arb for ${arb.eventName}:`, err?.message);
     }
   }
-
-  // 5. Notify subscribers
-  await notifyArbs(savedArbs);
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

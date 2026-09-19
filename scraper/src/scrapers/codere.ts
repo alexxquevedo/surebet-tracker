@@ -32,10 +32,11 @@ const SPORT_NODEIDS: Partial<Record<Sport, string>> = {
 
 // Secondary market gametypes per sport (semicolon-separated IDs for NavigationService)
 // Verified 2026-08-23 via sweep: 54=corners O/U, 59=corners par/impar, 62=cards O/U,
-// 77=red card, 133/134=team corners O/U, 4=handicap, 18=goals O/U, 31=BTTS, 12/24/27=half goals
+// 77=red card, 133/134=team corners O/U (EXCLUDED — can't be matched against total-corners from other books),
+// 4=handicap, 18=goals O/U, 31=BTTS, 12/24/27=half goals
 // The API ignores unknown IDs, so passing the full set to all sports is safe —
 // each sport only returns the markets that exist for it.
-const ALL_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813";
+const ALL_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;1812;1813";
 const SPORT_GAMETYPES: Partial<Record<Sport, string>> = {
   FOOTBALL:         ALL_SECONDARY_GAMETYPES,
   TENNIS:           ALL_SECONDARY_GAMETYPES,
@@ -46,7 +47,7 @@ const SPORT_GAMETYPES: Partial<Record<Sport, string>> = {
 };
 
 // Live secondary gametypes (same IDs work on live endpoint)
-const LIVE_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;133;134;1812;1813";
+const LIVE_SECONDARY_GAMETYPES = "4;5;12;14;15;18;24;27;31;54;59;62;77;1812;1813";
 
 const SPORT_HANDLES: Partial<Record<Sport, string>> = {
   FOOTBALL:         "soccer",
@@ -105,10 +106,24 @@ const PLAYER_PROP_STATS: Array<[RegExp, string]> = [
   [/\brebound[s]?\b/i,                           "REB"],
   [/\bassist[s]?\b/i,                            "AST"],
   [/3-?pointer[s]?|\bthree[s]?\b/i,              "3PT"],
+  // ── American football (before soccer to avoid "pases" ambiguity) ──
+  [/pases?\s*completados?|passing\s*completions?|\bcompletions?\b/i, "pass_completions"],
+  [/pases?\s*intentados?|pass(?:ing)?\s*attempts?/i,                 "pass_attempts"],
+  [/intercepciones?(?:\s+(?:de\s+pase?|defensivas?))?|interceptions?\s*(?:pass|throw)?/i, "pass_int"],
+  [/field[\s_-]?goals?|goles?\s+de\s+campo/i,                        "FG"],
+  [/primeros?\s+downs?|first[\s_]?downs?/i,                           "first_downs"],
+  [/acarreos?\b|rush(?:ing)?\s+attempts?/i,                           "rush_att"],
+  [/sacks?\b/i,                                                        "sacks"],
+  [/yardas?\s*(?:de\s*pase|pasantes?|aéreas?)/i,                      "pass_yds"],
+  [/yardas?\s*(?:terrestres?|corridas?)/i,                             "rush_yds"],
+  [/recepci[oó]n\s+m[aá]s\s+larga|yardas?\s+de\s+recepci[oó]n\s+m[aá]x|longest?\s*receiv/i, "rec_yds_long"],
+  [/yardas?\s*(?:de\s*recepci[oó]n|recibidas?)/i,                     "rec_yds"],
+  [/recepciones?|receptions?/i,                                        "REC"],
+  [/touchdowns?|tds?/i,                                                "TD"],
   // ── Football (soccer) ──
   [/goles?\s*(?:en\s*cualquier\s*momento|del\s*jugador)?/i, "goals"],
   [/disparos?\s*(?:a\s*puerta|totales?)?/i,      "shots"],
-  [/pases?\s*(?:totales?|completados?)?/i,       "passes"],
+  [/pases?\s*(?:totales?)?/i,                    "passes"],
   [/regates?\s*(?:completados?)?/i,              "dribbles"],
   [/duelos?\s*(?:ganados?|a[eé]reos?)?/i,        "duels"],
   [/toques?\s*(?:al\s*bal[oó]n)?/i,              "touches"],
@@ -124,12 +139,6 @@ const PLAYER_PROP_STATS: Array<[RegExp, string]> = [
   [/ponches?|strikeouts?/i,                      "K"],
   [/\bhits?\b/i,                                 "H"],
   [/carreras?\s*(?:impulsadas?)?|rbis?/i,        "RBI"],
-  // ── American football ──
-  [/yardas?\s*(?:de\s*pase|pasantes?|aéreas?)/i, "pass_yds"],
-  [/yardas?\s*(?:terrestres?|corridas?)/i,       "rush_yds"],
-  [/yardas?\s*(?:de\s*recepci[oó]n|recibidas?)/i, "rec_yds"],
-  [/recepciones?|receptions?/i,                  "REC"],
-  [/touchdowns?|tds?/i,                          "TD"],
   // ── Ice hockey ──
   [/disparos?\s*(?:al\s*arco|a\s*puerta)\s*hockey/i, "sog"],
   [/puntos?\s*hockey|hockey\s*puntos?/i,         "hockey_pts"],
@@ -191,7 +200,16 @@ function parsePlayerPropOutcomes(results: any[], player: string, stat: string): 
 
 const ES_MARKET_MAP: Array<[RegExp, string]> = [
   [/resultado\s*(final)?|ganador\s*del\s*partido|match\s*result|1\s*x\s*2/i, "h2h"],
+  [/doble\s+oportunidad|double\s+chance/i, "double_chance"],
+  [/h[aá]ndicap\s+asi[aá]tico|asian\s*handicap|run\s+line/i, "asian_handicap"],
   [/h[aá]ndicap(?:\s+asi[aá]tico)?|handicap/i, "handicap"],
+  // Basketball quarter/half totals
+  [/1er?\s+cuarto|primer\s+cuarto|1st\s+quarter/i, "q1_points"],
+  [/2[oº]?\s+cuarto|segundo\s+cuarto|2nd\s+quarter/i, "q2_points"],
+  [/3er?\s+cuarto|tercer\s+cuarto|3rd\s+quarter/i, "q3_points"],
+  [/4[oº]?\s+cuarto|cuarto\s+cuarto|4th\s+quarter/i, "q4_points"],
+  [/(?:1[aª]|primer[ao])\s*(?:mitad|parte)[^a-z]*puntos?|puntos?[^a-z]*(?:1[aª]|primer[ao])\s*(?:mitad|parte)/i, "h1_points"],
+  [/(?:2[aª]|segund[ao])\s*(?:mitad|parte)[^a-z]*puntos?|puntos?[^a-z]*(?:2[aª]|segund[ao])\s*(?:mitad|parte)/i, "h2_points"],
   // 1ª/Primera Parte goles — handles "1ª Parte - Total Goles" and "1ª Parte - Más/Menos Total Goles"
   [/(?:primer[ao]|1[aªº°])\s*(?:mitad|parte).*goles?|goles?.*(?:primer[ao]|1[aªº°])\s*(?:mitad|parte)|ht\s*goals?/i, "h1_goals"],
   [/(?:segund[ao]|2[aªº°])\s*(?:mitad|parte).*goles?|goles?.*(?:segund[ao]|2[aªº°])\s*(?:mitad|parte)|2h\s*goals?/i, "h2_goals"],
@@ -204,6 +222,17 @@ const ES_MARKET_MAP: Array<[RegExp, string]> = [
   [/tarjetas?\s+rojas?|red\s+cards?|\btar[jg]eta\s+roja\b/i, "red_cards"],
   [/tarjetas?\s+totales?|total\s+(?:de\s+)?tarjetas?|total\s+tarjetas?\s+m[aá]s/i, "cards"],
   [/disparos?\s+(?:a\s+puerta|totales?)|tiros?\s+(?:a\s+puerta|totales?)/i, "shots"],
+  // Tennis set winners (before generic games/sets)
+  [/ganador\s+(?:del\s+)?(?:1er?|primer)\s*set/i, "s1_h2h"],
+  [/ganador\s+(?:del\s+)?(?:2[oº°]?|segundo)\s*set/i, "s2_h2h"],
+  [/ganador\s+(?:del\s+)?(?:3er?|tercer)\s*set/i, "s3_h2h"],
+  // Per-set game O/U (before generic games)
+  [/(?:1er?|primer)\s*set[^a-z]*juegos?|juegos?[^a-z]*(?:1er?|primer)\s*set/i, "s1_games"],
+  [/(?:2[oº°]?|segundo)\s*set[^a-z]*juegos?|juegos?[^a-z]*(?:2[oº°]?|segundo)\s*set/i, "s2_games"],
+  [/(?:3er?|tercer)\s*set[^a-z]*juegos?|juegos?[^a-z]*(?:3er?|tercer)\s*set/i, "s3_games"],
+  // Tie-break
+  [/tie[\s-]?break/i, "tie_break"],
+  // Generic match totals
   [/total\s+(?:de\s+)?juegos?|juegos?\s+totales?/i, "games"],
   [/total\s+(?:de\s+)?sets?|sets?\s+totales?/i, "sets"],
   [/\baces?\b/i, "aces"],
@@ -212,6 +241,10 @@ const ES_MARKET_MAP: Array<[RegExp, string]> = [
   // Baseball
   [/jonrones?|home\s*runs?/i, "home_runs"],
   [/total\s+(?:de\s+)?carreras?|carreras?\s+totales?|\bcarreras?\b/i, "runs"],
+  // Baseball F5 (primeras 5 entradas)
+  [/(?:primeras?\s*5|5\s*primeras?)\s*entradas?.*(?:ganador|resultado)|ganador.*(?:primeras?\s*5|5\s*primeras?)\s*entradas?/i, "h1_h2h"],
+  [/(?:primeras?\s*5|5\s*primeras?)\s*entradas?.*h[aá]ndicap|h[aá]ndicap.*(?:primeras?\s*5|5\s*primeras?)\s*entradas?/i, "h1_handicap"],
+  [/(?:primeras?\s*5|5\s*primeras?)\s*entradas?.*(?:carreras?|total|runs?)|(?:carreras?|total|runs?).*(?:primeras?\s*5|5\s*primeras?)\s*entradas?/i, "h1_runs"],
   // Rugby
   [/ensayos?\s+totales?|total\s+(?:de\s+)?ensayos?|\bensayos?\b/i, "tries"],
   // American football
@@ -284,6 +317,13 @@ function processCodereGame(
   const cat = classifyCodereGame(gameName);
   if (!cat || cat === "h2h") return null;
 
+  // Skip per-team markets (e.g. "Total Córners Más/Menos Betis", "Total Goles Más/Menos Getafe").
+  // When a market name has "Más/Menos" followed by a letter, it's team-specific and can't be
+  // matched against a full-match total from another bookmaker. Total-match markets never have
+  // a team-name suffix; only numbers/spaces follow "Más/Menos" there (those are in outcomes, not the name).
+  const TEAM_MARKET_CATS = new Set(["corners", "goals", "h1_goals", "h2_goals", "cards", "yellow_cards", "shots", "match_points"]);
+  if (TEAM_MARKET_CATS.has(cat) && /m[aá]s\s*\/\s*menos\s+[a-záéíóúñA-ZÁÉÍÓÚÑ]/i.test(gameName)) return null;
+
   if (cat === "handicap") {
     const outcomes = parseCodereHandicap(results);
     if (outcomes.length < 2) return null;
@@ -292,6 +332,13 @@ function processCodereGame(
 
   // Binary yes/no markets (btts, red_cards): use H2HOutcome with Sí/No labels
   if (cat === "btts" || cat === "red_cards") {
+    const outcomes = parseCodereHandicap(results);
+    if (outcomes.length < 2) return null;
+    return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: cat, outcomes };
+  }
+
+  // H2H secondary markets: tennis set winners, tie-break, F5 baseball winner
+  if (cat === "s1_h2h" || cat === "s2_h2h" || cat === "s3_h2h" || cat === "tie_break" || cat === "h1_h2h") {
     const outcomes = parseCodereHandicap(results);
     if (outcomes.length < 2) return null;
     return { bookmaker, sport, eventKey, eventName, league: league || undefined, startTime, isLive, market: cat, outcomes };
@@ -405,15 +452,15 @@ export class CodereScraper extends BaseScraper {
         const nid = String(h.NodeId ?? "");
         if (nid && !seenNodeIds.has(nid)) { seenNodeIds.add(nid); leaguesToFetch.push(h); }
       }
-      // Supplement with country leagues until we have up to 15
+      // Supplement with country leagues — sweep all countries/leagues for full coverage
       const countries: any[] = menuData?.countries ?? [];
-      for (const country of countries.slice(0, 20)) {
-        for (const league of (country.Leagues ?? []).slice(0, 6)) {
+      for (const country of countries.slice(0, 80)) {
+        for (const league of (country.Leagues ?? []).slice(0, 15)) {
           const nid = String(league.NodeId ?? "");
           if (nid && !seenNodeIds.has(nid)) { seenNodeIds.add(nid); leaguesToFetch.push(league); }
-          if (leaguesToFetch.length >= 40) break;
+          if (leaguesToFetch.length >= 200) break;
         }
-        if (leaguesToFetch.length >= 40) break;
+        if (leaguesToFetch.length >= 200) break;
       }
 
       if (!leaguesToFetch.length) {

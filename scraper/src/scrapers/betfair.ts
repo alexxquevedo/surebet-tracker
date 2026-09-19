@@ -11,7 +11,7 @@
 import axios, { AxiosInstance } from "axios";
 import { config } from "../config";
 import { buildEventKey } from "../matcher/normalize";
-import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine } from "../types";
+import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine, PlayerPropLine } from "../types";
 import { BaseScraper } from "./base";
 import { createProxiedAxios } from "./proxy-helper";
 
@@ -20,10 +20,70 @@ const EVENT_TYPE_IDS: Partial<Record<Sport, string>> = {
   FOOTBALL: "1",
   TENNIS: "2",
   BASKETBALL: "7522",
+  AMERICANFOOTBALL: "6423",
 };
 
-// Betfair market types we care about
+// Betfair market types for H2H
 const MARKET_TYPES = ["MATCH_ODDS"];
+
+// Canonical NFL player prop stat names (matched against Betfair market names)
+const NFL_PROP_STATS: Array<[RegExp, string]> = [
+  [/\bsacks?\b/i, "sacks"],
+  [/\breceiving\s+long(?:est)?\b/i, "rec_yds_long"],
+  [/\bpass(?:ing)?\s+yards?\b/i, "pass_yds"],
+  [/\brush(?:ing)?\s+yards?\b/i, "rush_yds"],
+  [/\breceiv(?:ing)?\s+yards?\b/i, "rec_yds"],
+  [/\btouchdowns?\b/i, "TD"],
+  [/\breceptions?\b|\bcatches?\b/i, "REC"],
+  [/\bcompletions?\b/i, "pass_completions"],
+  [/\bfirst\s+downs?\b/i, "first_downs"],
+  [/\bfield\s+goals?\b/i, "FG"],
+  [/\binterceptions?\b/i, "pass_int"],
+];
+
+// Parse a Betfair market (name + runners) into a PlayerPropLine for NFL player props.
+// Betfair market name format: "[Full Name] [Stat]" or "[Full Name] - [Total Stat]"
+// Runners: "Over 0.5" / "Under 0.5" (back odds only)
+function parseNFLPlayerPropMarket(
+  marketName: string,
+  runners: BetfairRunner[],
+): { player: string; stat: string; line: number; over: number; under: number } | null {
+  let stat: string | null = null;
+  let statMatchIndex = -1;
+  for (const [re, s] of NFL_PROP_STATS) {
+    const m = marketName.match(re);
+    if (m && m.index !== undefined) { stat = s; statMatchIndex = m.index; break; }
+  }
+  if (!stat || statMatchIndex < 0) return null;
+
+  // Player name = everything before the stat keyword
+  const player = marketName
+    .slice(0, statMatchIndex)
+    .replace(/\s*[-–—]\s*$/, "")
+    .replace(/\s+total\s*$/i, "")
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+
+  if (player.length < 3) return null;
+
+  // Extract line + odds from runners ("Over 0.5", "Under 0.5")
+  let over = 0, under = 0, line = 0;
+  for (const r of runners) {
+    const rName = (r.runnerName ?? "").toLowerCase();
+    const odds = r.ex?.availableToBack?.[0]?.price;
+    if (!odds || odds < 1.01) continue;
+    const lm = rName.match(/(\d+\.?\d*)/);
+    if (!lm) continue;
+    const l = parseFloat(lm[1]);
+    if (/\bover\b/.test(rName)) { over = odds; line = l; }
+    else if (/\bunder\b/.test(rName)) { under = odds; }
+  }
+
+  if (!over || !under || !line) return null;
+  return { player, stat, line, over, under };
+}
 
 interface BetfairRunner {
   selectionId: number;
@@ -46,14 +106,19 @@ interface BetfairMarket {
 
 export class BetfairScraper extends BaseScraper {
   readonly name = "betfair";
+  // AMERICANFOOTBALL only in prematch (NFL rarely live in European hours)
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL"];
 
   private sessionToken: string | null = null;
   private sessionExpiry: number = 0;
 
   private betApi: AxiosInstance;
-  private loginPromise: Promise<void> | null = null; // mutex for concurrent login calls
+  private loginPromise: Promise<void> | null = null;
   private permanentlyDisabled = false;
+  // Slot-based rate limiter: each callApi atomically reserves the next available slot.
+  // Prevents DSC-0018 even when live + prematch cycles run concurrently.
+  private _nextAllowedCallAt = 0;
+  private readonly _callMinGapMs = 500;
 
   constructor() {
     super();
@@ -116,6 +181,17 @@ export class BetfairScraper extends BaseScraper {
 
   private async callApi<T>(method: string, params: object): Promise<T> {
     await this.ensureSession();
+    // Atomic slot reservation — prevents race condition when live+prematch run concurrently
+    const now = Date.now();
+    if (now >= this._nextAllowedCallAt) {
+      this._nextAllowedCallAt = now + this._callMinGapMs;
+    } else {
+      const mySlot = this._nextAllowedCallAt;
+      this._nextAllowedCallAt += this._callMinGapMs;
+      const waitMs = mySlot - Date.now();
+      if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+    }
+
     const body = [{ jsonrpc: "2.0", method: `SportsAPING/v1.0/${method}`, params, id: 1 }];
 
     const res = await this.betApi.post("", body, {
@@ -132,38 +208,45 @@ export class BetfairScraper extends BaseScraper {
   private async getMarkets(
     eventTypeId: string,
     inPlayOnly: boolean,
+    marketTypeCodes?: string[],
   ): Promise<BetfairMarket[]> {
+    const filter: Record<string, unknown> = { eventTypeIds: [eventTypeId], inPlayOnly };
+    if (marketTypeCodes) filter.marketTypeCodes = marketTypeCodes;
+
     const catalogues = await this.callApi<BetfairMarket[]>("listMarketCatalogue", {
-      filter: {
-        eventTypeIds: [eventTypeId],
-        marketTypeCodes: MARKET_TYPES,
-        inPlayOnly,
-      },
+      filter,
       marketProjection: ["EVENT", "EVENT_TYPE", "COMPETITION", "MARKET_NAME", "RUNNER_DESCRIPTION"],
-      maxResults: 200,
+      maxResults: marketTypeCodes ? 200 : 500,
     });
 
     if (!catalogues.length) return [];
 
-    // Fetch odds for all market IDs at once
-    const marketIds = catalogues.map((m) => m.marketId);
-    const books = await this.callApi<Array<{ marketId: string; runners: BetfairRunner[] }>>(
-      "listMarketBook",
-      {
-        marketIds,
-        priceProjection: {
-          priceData: ["EX_BEST_OFFERS"],
-          exBestOffersOverrides: { bestPricesDepth: 1 },
+    // Chunk into ≤200 per listMarketBook call (API limit)
+    const all: BetfairMarket[] = [];
+    const CHUNK = 200;
+    for (let i = 0; i < catalogues.length; i += CHUNK) {
+      const chunk = catalogues.slice(i, i + CHUNK);
+      const books = await this.callApi<Array<{ marketId: string; runners: Array<{ selectionId: number; ex: BetfairRunner["ex"] }> }>>(
+        "listMarketBook",
+        {
+          marketIds: chunk.map((m) => m.marketId),
+          priceProjection: {
+            priceData: ["EX_BEST_OFFERS"],
+            exBestOffersOverrides: { bestPricesDepth: 1 },
+          },
         },
-      },
-    );
-
-    // Merge runners into catalogue
-    const booksById = new Map(books.map((b) => [b.marketId, b.runners]));
-    return catalogues.map((m) => ({
-      ...m,
-      runners: booksById.get(m.marketId) ?? [],
-    }));
+      );
+      // Merge by selectionId: catalogue has runnerName, book has ex (odds)
+      const exById = new Map(books.map((b) => [b.marketId, new Map(b.runners.map((r) => [r.selectionId, r.ex]))]));
+      for (const m of chunk) {
+        const exMap = exById.get(m.marketId);
+        all.push({
+          ...m,
+          runners: (m.runners ?? []).map((r) => ({ ...r, ex: exMap?.get(r.selectionId) })),
+        });
+      }
+    }
+    return all;
   }
 
   // ─── Parsing ─────────────────────────────────────────────────────────────
@@ -178,8 +261,8 @@ export class BetfairScraper extends BaseScraper {
       const startTime = m.event.openDate ? new Date(m.event.openDate) : undefined;
       const eventKey = buildEventKey(sport, eventName, startTime);
 
-      // Market type determines outcomes shape
       if (m.marketName?.includes("Match Odds") || m.marketType === "MATCH_ODDS") {
+        // ── H2H ──
         const outcomes: H2HOutcome[] = m.runners
           .map((r) => {
             const bestBack = r.ex?.availableToBack?.[0]?.price;
@@ -201,36 +284,27 @@ export class BetfairScraper extends BaseScraper {
             outcomes,
           });
         }
-      } else if (m.marketType?.startsWith("OVER_UNDER")) {
-        // e.g. OVER_UNDER_25 → line = 2.5
-        const lineStr = m.marketType.replace("OVER_UNDER_", "");
-        const line = parseInt(lineStr) / 10;
+      } else if (sport === "AMERICANFOOTBALL") {
+        // ── NFL player props ──
+        const prop = parseNFLPlayerPropMarket(m.marketName, m.runners);
+        if (!prop) continue;
 
-        const overRunner = m.runners.find((r) => r.runnerName.toLowerCase().includes("over"));
-        const underRunner = m.runners.find((r) => r.runnerName.toLowerCase().includes("under"));
-        const overOdds = overRunner?.ex?.availableToBack?.[0]?.price;
-        const underOdds = underRunner?.ex?.availableToBack?.[0]?.price;
-
-        if (overOdds && underOdds) {
-          const existing = events.find(
-            (e) => e.eventKey === eventKey && e.market === "totals",
-          );
-          const newLine: TotalsLine = { line, over: overOdds, under: underOdds };
-          if (existing) {
-            (existing.outcomes as TotalsLine[]).push(newLine);
-          } else {
-            events.push({
-              bookmaker: "betfair",
-              sport,
-              eventKey,
-              eventName,
-              league: m.competition?.name,
-              startTime,
-              isLive,
-              market: "totals",
-              outcomes: [newLine],
-            });
-          }
+        const propLine: PlayerPropLine = { player: prop.player, stat: prop.stat, line: prop.line, over: prop.over, under: prop.under };
+        const existing = events.find((e) => e.eventKey === eventKey && e.market === "player_props");
+        if (existing) {
+          (existing.outcomes as PlayerPropLine[]).push(propLine);
+        } else {
+          events.push({
+            bookmaker: "betfair",
+            sport,
+            eventKey,
+            eventName,
+            league: m.competition?.name,
+            startTime,
+            isLive,
+            market: "player_props",
+            outcomes: [propLine],
+          });
         }
       }
     }
@@ -249,8 +323,10 @@ export class BetfairScraper extends BaseScraper {
 
     const all: ScrapedEvent[] = [];
     for (const sport of this.sports) {
+      const id = EVENT_TYPE_IDS[sport];
+      if (!id) continue;
       try {
-        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport]!, true);
+        const markets = await this.getMarkets(id, true, MARKET_TYPES);
         all.push(...this.parseMarkets(markets, sport, true));
       } catch (err) {
         this.warn(`Error scraping live ${sport}`, err);
@@ -268,14 +344,29 @@ export class BetfairScraper extends BaseScraper {
     }
 
     const all: ScrapedEvent[] = [];
+
+    // H2H for all sports
     for (const sport of this.sports) {
+      const id = EVENT_TYPE_IDS[sport];
+      if (!id) continue;
       try {
-        const markets = await this.getMarkets(EVENT_TYPE_IDS[sport]!, false);
+        const markets = await this.getMarkets(id, false, MARKET_TYPES);
         all.push(...this.parseMarkets(markets, sport, false));
       } catch (err) {
         this.warn(`Error scraping prematch ${sport}`, err);
       }
     }
+
+    // NFL player props: fetch all market types (no filter) then parse non-MATCH_ODDS
+    try {
+      const nflId = EVENT_TYPE_IDS.AMERICANFOOTBALL!;
+      const allNfl = await this.getMarkets(nflId, false);
+      const propOnly = allNfl.filter((m) => m.marketType !== "MATCH_ODDS" && !m.marketName?.includes("Match Odds"));
+      all.push(...this.parseMarkets(propOnly, "AMERICANFOOTBALL", false));
+    } catch (err) {
+      this.warn("Error scraping NFL player props", err);
+    }
+
     this.log(`Prematch: scraped ${all.length} events`);
     return all;
   }

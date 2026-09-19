@@ -1,10 +1,10 @@
 ﻿/**
- * Winamax France — Playwright XHR interception scraper.
+ * Winamax España — Playwright XHR interception scraper.
  *
  * Winamax uses an SPA that handles routing client-side. Server-side navigation
- * to sport URLs (e.g. /paris-sportifs/football) triggers a server redirect
- * back to /paris-sportifs/. Solution: load the SPA once, then click sport
- * navigation links in the DOM to trigger client-side routing + XHR data loading.
+ * to sport URLs triggers a server redirect back to /apuestas-deportivas/.
+ * Solution: load the SPA once, then click sport navigation links in the DOM
+ * to trigger client-side routing + XHR data loading.
  *
  * Winamax blocks page.request.get() (WAF → 403/404).
  */
@@ -15,28 +15,26 @@ import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine, PlayerPropLine } from "../types";
 import type { Page } from "playwright";
 
-const BASE_FR = "https://www.winamax.fr";
+const BASE_ES = "https://www.winamax.es";
 
-// Confirmed from WS state sport dump (2026-08-23):
-// 1=Football, 2=Basketball, 3=Baseball, 4=Hockey sur glace, 5=Tennis,
-// 6=Handball, 9=Golf, 10=Boxe, 11=Automobile, 12=Rugby à XV
-// VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not in WS dump (not offered or off-season)
+// WS sport IDs for winamax.es — verified from WS dump (update if logs show different mapping).
+// Live page log line "WS sports: N=Sport..." reveals the actual IDs on each deploy.
 const SPORT_IDS: Partial<Record<Sport, number>> = {
   FOOTBALL:         1,
   TENNIS:           5,
   BASKETBALL:       2,
   BASEBALL:         3,
   ICEHOCKEY:        4,
-  AMERICANFOOTBALL: 18,
+  AMERICANFOOTBALL: 16,
 };
 
 const SPORT_HREF_PATTERNS: Partial<Record<Sport, string[]>> = {
-  FOOTBALL:         ["/paris-sportifs/sports/1", "/paris-sportifs/sports/1/"],
-  TENNIS:           ["/paris-sportifs/sports/5", "/paris-sportifs/sports/5/"],
-  BASKETBALL:       ["/paris-sportifs/sports/2", "/paris-sportifs/sports/2/"],
-  BASEBALL:         ["/paris-sportifs/sports/3", "/paris-sportifs/sports/3/"],
-  ICEHOCKEY:        ["/paris-sportifs/sports/4", "/paris-sportifs/sports/4/"],
-  AMERICANFOOTBALL: ["/paris-sportifs/sports/18", "/paris-sportifs/sports/18/"],
+  FOOTBALL:         ["/apuestas-deportivas/sports/1", "/apuestas-deportivas/sports/1/"],
+  TENNIS:           ["/apuestas-deportivas/sports/5", "/apuestas-deportivas/sports/5/"],
+  BASKETBALL:       ["/apuestas-deportivas/sports/2", "/apuestas-deportivas/sports/2/"],
+  BASEBALL:         ["/apuestas-deportivas/sports/3", "/apuestas-deportivas/sports/3/"],
+  ICEHOCKEY:        ["/apuestas-deportivas/sports/4", "/apuestas-deportivas/sports/4/"],
+  AMERICANFOOTBALL: ["/apuestas-deportivas/sports/16", "/apuestas-deportivas/sports/16/"],
 };
 
 // Fallback text-based click labels (French site)
@@ -183,43 +181,87 @@ function resolveWsStateRoot(state: Record<string, any>): Record<string, any> {
 
 // Maps French bet titles to canonical market keys
 const MARKET_CAT_MAP: Array<[RegExp, string]> = [
-  // ── Handicap (must come before goals to avoid "buts handicap" matching goals) ──
-  [/handicap|hándicap|spread/i,                                                     "handicap"],
+  // ── H2H secondary (binary/ternary: btts, double chance) ──
+  [/les\s+deux\s+[eé]quipes?\s+marquent?|ambos?\s+(?:equipos?\s+)?(?:anotan?|marcan?)|both\s+teams?\s+score|\bbtts\b/i, "btts"],
+  [/double\s+chance|doble\s+(?:oportunidad|chance)/i,                         "double_chance"],
+  // ── Handicap ──
+  [/h[aá]ndicap\s+asi[aá]tico|asian\s+handicap|handicap\s+asiatique/i,       "asian_handicap"],
+  [/handicap|hándicap|spread/i,                                               "handicap"],
   // ── Corners ──
-  [/corners?|coups?\s+de\s+coin/i,                                                 "corners"],
+  [/córneres?|corners?|coups?\s+de\s+coin/i,                                  "corners"],
   // ── Cards (specific first, generic fallback last) ──
-  [/cartons?\s+jaunes?/i,                                                           "yellow_cards"],
-  [/cartons?\s+rouges?/i,                                                           "red_cards"],
-  [/cartons?\s+totaux|total\s+cartons?|nombre\s+de\s+cartons?|\bcartons?\b/i,       "cards"],
-  // ── Shots on goal / tirs ──
-  [/tirs?\s+(?:cadr[eé]s?|au\s+but|totaux)|nombre\s+de\s+tirs?/i,                  "shots"],
+  [/tarjetas?\s+amarillas?|cartons?\s+jaunes?/i,                              "yellow_cards"],
+  [/tarjetas?\s+rojas?|cartons?\s+rouges?/i,                                  "red_cards"],
+  [/tarjetas?\s+(?:totales?|del\s+partido)|total\s+tarjetas?|cartons?\s+totaux|total\s+cartons?|\btarjetas?\b|\bcartons?\b/i, "cards"],
+  // ── Shots on goal ──
+  [/tiros?\s+(?:a\s+puerta|totales?)|remates?\s+(?:a\s+puerta|totales?)|tirs?\s+(?:au\s+but|totaux)/i, "shots"],
   // ── Half goals ──
-  [/(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)|mi[\s-]?temps\s*[-:]\s*nombre|mi[\s-]?temps/i, "h1_goals"],
-  [/(?:2[eè]me?|deuxi[eè]me?)\s*mi[\s-]?temps/i,                                  "h2_goals"],
+  [/primer\s+(?:tiempo|per[ií]odo)|primera\s+(?:mitad|parte)|(?:1[eè]re?|premi[eè]re?)\s*mi[\s-]?temps|mi[\s-]?temps\s+(?:1|premi[eè]re?)|mi[\s-]?temps\s*[-:]\s*nombre|mi[\s-]?temps/i, "h1_goals"],
+  [/segundo\s+(?:tiempo|per[ií]odo)|segunda\s+(?:mitad|parte)|(?:2[eè]me?|deuxi[eè]me?)\s*mi[\s-]?temps/i, "h2_goals"],
+  // ── Basketball quarter/half totals (gated by BASKETBALL_ONLY_CATS) ──
+  [/primer\s+cuarto|1[eè]r?\s*quart(?:-?temps)?|1st\s+quarter/i,  "q1_points"],
+  [/segundo\s+cuarto|2[eè]m?e?\s*quart(?:-?temps)?|2nd\s+quarter/i, "q2_points"],
+  [/tercer\s+cuarto|3[eè]m?e?\s*quart(?:-?temps)?|3rd\s+quarter/i, "q3_points"],
+  [/cuarto\s+cuarto|4[eè]m?e?\s*quart(?:-?temps)?|4th\s+quarter/i, "q4_points"],
+  [/primera?\s+mitad(?:\s+puntos)?|1[eè]re?\s*mi-?temps(?:\s+points?)?|half(?:time)?\s+points?|puntos?\s+1[aª]\s*(?:mitad|parte)/i, "h1_points"],
+  [/segunda\s+mitad(?:\s+puntos)?|2[eè]m?e?\s*mi-?temps(?:\s+points?)?|puntos?\s+2[aª]\s*(?:mitad|parte)/i, "h2_points"],
   // ── Goals (full match) ──
-  [/nombre\s+de\s+buts?|total\s+buts?|\bbuts?\b/i,                                 "goals"],
+  [/\bgoles?|total\s+(?:de\s+)?goles?|n\u00famero\s+de\s+goles?|nombre\s+de\s+buts?|total\s+buts?|\bbuts?\b/i, "goals"],
   // ── Tennis / Padel ──
   [/\baces?\b/i,                                                                    "aces"],
-  [/double[s]?\s*faute[s]?/i,                                                      "double_faults"],
-  [/nombre\s+de\s+jeux|total\s+jeux|\bjeux\b/i,                                    "games"],
-  [/nombre\s+de\s+sets?|total\s+sets?|\bsets?\b/i,                                 "sets"],
+  [/dobles?\s*faltas?|doubles?\s*fautes?/i,                                   "double_faults"],
+  // Set winners (must come BEFORE generic "games"/"sets" patterns)
+  [/gagnant\s+du\s+(?:1er?|premier)\s*set|ganador\s+del\s+(?:1er?|primer)\s*set/i,  "s1_h2h"],
+  [/gagnant\s+du\s+(?:2[e\u00e8]m?e?|deuxi[e\u00e8]me?)\s*set|ganador\s+del\s+(?:2[o\u00ba]?|segundo)\s*set/i, "s2_h2h"],
+  [/gagnant\s+du\s+(?:3[e\u00e8]m?e?|troisi[e\u00e8]me?)\s*set|ganador\s+del\s+(?:3er?|tercer)\s*set/i, "s3_h2h"],
+  // Per-set game O/U (before generic "games")
+  [/(?:1er?|premier)\s*set[^a-z]*(?:juegos?|jeux)|set\s*[-\s]*1\b[^a-z]*(?:juegos?|jeux)/i, "s1_games"],
+  [/(?:2[e\u00e8]m?e?|deuxi[e\u00e8]me?|segundo)\s*set[^a-z]*(?:juegos?|jeux)|set\s*[-\s]*2\b[^a-z]*(?:juegos?|jeux)/i, "s2_games"],
+  [/(?:3[e\u00e8]m?e?|troisi[e\u00e8]me?|tercer)\s*set[^a-z]*(?:juegos?|jeux)|set\s*[-\s]*3\b[^a-z]*(?:juegos?|jeux)/i, "s3_games"],
+  // Tie-break
+  [/tie[\s-]?break/i,                                                          "tie_break"],
+  // Generic match totals
+  [/juegos?|n\u00famero\s+de\s+juegos?|nombre\s+de\s+jeux|\bjeux\b/i,          "games"],
+  [/n\u00famero\s+de\s+sets?|total\s+(?:de\s+)?sets?|\bsets?\b/i,              "sets"],
   // ── Basketball (non-player totals) ──
-  [/nombre\s+de\s+points?|total\s+points?|points?\s+(?:du|dans\s+le)\s+match/i,    "match_points"],
+  // ── Basketball quarter/period extra variants (Q1–Q4, period) ──
+  [/\bQ1\b|quart[-\s]?1\b|1[eè]re?\s+p[eé]riode|1st\s+period/i,  "q1_points"],
+  [/\bQ2\b|quart[-\s]?2\b|2[eè]m?e?\s+p[eé]riode|2nd\s+period/i, "q2_points"],
+  [/\bQ3\b|quart[-\s]?3\b|3[eè]m?e?\s+p[eé]riode|3rd\s+period/i, "q3_points"],
+  [/\bQ4\b|quart[-\s]?4\b|4[eè]m?e?\s+p[eé]riode|4th\s+period/i, "q4_points"],  [/puntos?\s+(?:del\s+partido|totales?)|total\s+(?:de\s+)?puntos?|n\u00famero\s+de\s+puntos?|nombre\s+(?:total\s+)?de\s+points?|total\s+des\s+points?|total\s+points?/i, "match_points"],
   // ── Baseball ──
-  [/nombre\s+de\s+home\s+runs?|home\s+runs?\s+totaux|home\s+runs?/i,               "home_runs"],
-  [/nombre\s+de\s+runs?|total\s+runs?|runs?\s+tota|\bruns?\b/i,                    "runs"],
+  [/jonrones?\s+totales?|total\s+jonrones?|home\s+runs?\s+totales?|home\s+runs?/i, "home_runs"],
+  [/carreras?\s+totales?|total\s+carreras?|n\u00famero\s+de\s+carreras?|total\s+runs?|\bruns?\b/i, "runs"],
   // ── Rugby / American Football ──
-  [/nombre\s+d[e']?essais?|total\s+essais?|\bessais?\b/i,                           "tries"],
-  [/nombre\s+de\s+touchdowns?|touchdowns?\s+totaux|total\s+touchdowns?/i,           "touchdowns"],
+  [/ensayos?\s+totales?|total\s+ensayos?|nombre\s+d[e']?essais?|\bessais?\b/i, "tries"],
+  [/touchdowns?\s+totales?|total\s+touchdowns?/i,                             "touchdowns"],
+  // ── Baseball F5 (primeras 5 entradas / 5 premières manches) ──
+  [/5\s*(?:premi[eè]res?\s+)?manches?.*(?:vainqueur|winner|ganador)|(?:vainqueur|winner|ganador).*5\s*(?:premi[eè]res?\s+)?manches?|f5\s+(?:winner|moneyline)|primeras?\s*5\s*entradas?.*ganador|ganador.*primeras?\s*5\s*entradas?/i, "h1_h2h"],
+  [/5\s*(?:premi[eè]res?\s+)?manches?.*h[aá]ndicap|h[aá]ndicap.*5\s*(?:premi[eè]res?\s+)?manches?|f5\s+h[aá]ndicap|primeras?\s*5\s*entradas?.*h[aá]ndicap/i, "h1_handicap"],
+  [/5\s*(?:premi[eè]res?\s+)?manches?.*(?:carreras?|runs?|total)|(?:carreras?|runs?|total).*5\s*(?:premi[eè]res?\s+)?manches?|f5\s+(?:carreras?|runs?|total)|primeras?\s*5\s*entradas?.*(?:carreras?|total)/i, "h1_runs"],
   // ── Ice Hockey ──
   [/nombre\s+de\s+(?:tirs?|lancers?)|tirs?\s+hockey|but[s]?\s+(?:encaiss[eé]s?|marqu[eé]s?)/i, "shots"],
 ];
 
-const TENNIS_ONLY_CATS = new Set(["aces", "double_faults", "games", "sets"]);
+const TENNIS_ONLY_CATS = new Set([
+  "aces", "double_faults", "games", "sets",
+  "s1_h2h", "s2_h2h", "s3_h2h",
+  "s1_games", "s2_games", "s3_games",
+  "tie_break",
+]);
+// Quarter/half point markets apply to basketball AND American football (NFL)
+const QUARTER_SPORTS = new Set(["BASKETBALL", "AMERICANFOOTBALL"]);
+const QUARTER_POINT_CATS = new Set(["q1_points", "q2_points", "q3_points", "q4_points", "h1_points", "h2_points"]);
+// h1_goals/h2_goals must not match for basketball or NFL — those halftime markets should be h1_points/h2_points
+const GOALS_HALF_EXCLUDED_SPORTS = new Set(["BASKETBALL", "AMERICANFOOTBALL"]);
 
 function classifyBetTitle(title: string, sport: string): string | null {
   for (const [re, cat] of MARKET_CAT_MAP) {
     if (TENNIS_ONLY_CATS.has(cat) && sport !== "TENNIS") continue;
+    if (QUARTER_POINT_CATS.has(cat) && !QUARTER_SPORTS.has(sport)) continue;
+    if (cat === "h1_goals" || cat === "h2_goals") {
+      if (GOALS_HALF_EXCLUDED_SPORTS.has(sport)) continue;
+    }
     if (re.test(title)) return cat;
   }
   return null;
@@ -260,6 +302,27 @@ function parseOverUnderOutcomes(
     .map(([line, { over, under }]) => ({ line, over, under }));
 }
 
+// Simple H2H parser for set winners, tie-break, F5 winner — label=name, no handicap number needed
+function parseSimpleH2HOutcomes(
+  outcomeIds: (number | string)[],
+  odds: Record<string, any>,
+  outcomesMeta: Record<string, any>,
+): H2HOutcome[] {
+  const out: H2HOutcome[] = [];
+  for (const oId of outcomeIds) {
+    const rawOdds = odds[String(oId)];
+    if (rawOdds == null) continue;
+    const oOdds = Number(rawOdds);
+    if (oOdds < 1.01) continue;
+    const name: string = outcomesMeta[String(oId)]?.label ?? String(oId);
+    if (!name) continue;
+    out.push({ name, odds: oOdds });
+  }
+  return out;
+}
+
+const H2H_SECONDARY_CATS = new Set(["s1_h2h", "s2_h2h", "s3_h2h", "tie_break", "h1_h2h", "btts", "double_chance"]);
+
 function parseHandicapOutcomes(
   outcomeIds: (number | string)[],
   odds: Record<string, any>,
@@ -277,9 +340,9 @@ function parseHandicapOutcomes(
     const hcapMatch = label.match(/([+-]\s*\d+[.,]?\d*)/);
     if (!hcapMatch) continue;
     const hcap = hcapMatch[1].replace(/\s/, "").replace(",", ".");
-    const isHome = /[eé]quipe\s*1|\bteam\s*1\b|\(1\)|\bhome\b/i.test(label)
+    const isHome = /equipo\s*1|\blocal\b|[eé]quipe\s*1|\bteam\s*1\b|\(1\)|\bhome\b/i.test(label)
       || (homeName.length > 3 && label.toLowerCase().includes(homeName.slice(0, 4).toLowerCase()));
-    const isAway = /[eé]quipe\s*2|\bteam\s*2\b|\(2\)|\baway\b/i.test(label)
+    const isAway = /equipo\s*2|\bvisitante\b|[eé]quipe\s*2|\bteam\s*2\b|\(2\)|\baway\b/i.test(label)
       || (awayName.length > 3 && label.toLowerCase().includes(awayName.slice(0, 4).toLowerCase()));
     if (isHome) out.push({ name: `Home (${hcap})`, odds: oOdds });
     else if (isAway) out.push({ name: `Away (${hcap})`, odds: oOdds });
@@ -289,24 +352,29 @@ function parseHandicapOutcomes(
 
 // ─── Player prop parsing ──────────────────────────────────────────────────────
 
-// Winamax FR bet titles for player props (French labels)
+// Winamax ES player prop patterns — Spanish primary, French/English fallbacks
 const PROP_STAT_MAP: Array<[RegExp, string]> = [
   // ── Basketball (specific combos first) ──
-  [/pra\b|points?\s*\+?\s*rebonds?\s*\+?\s*passes?/i,  "PRA"],
-  [/passes?\s+d[ée]cisives?/i,                          "AST"],
-  [/paniers?\s+[àa]\s+3\s+points?/i,                   "3PT"],
-  [/rebonds?/i,                                          "REB"],
-  [/points?\s+marqu[ée]s?|points?\s*\(NBA\)|points?\s+NBA/i, "PTS"],
+  [/triple[-\s]?double/i,                                       "TRIPLE_DOUBLE"],
+  [/double[-\s]?double/i,                                       "DOUBLE_DOUBLE"],
+  [/pra\b|points?\s*\+?\s*rebonds?\s*\+?\s*passes?/i,           "PRA"],
+  [/asistencias?|passes?\s+d[ée]cisives?/i,                     "AST"],
+  [/triples?|canastas?\s+de\s+3|paniers?\s+[àa]\s+3\s+points?/i, "3PT"],
+  [/robos?|ballons?\s+vol[eé]s?|steals?/i,                      "STL"],
+  [/tapones?|\bcontres?\b|blocks?/i,                             "BLK"],
+  [/p[eé]rdidas?(?:\s+de\s+bal[oó]n)?|pertes?\s+de\s+balle?|turnovers?/i, "TOV"],
+  [/rebotes?|rebonds?/i,                                          "REB"],
+  [/puntos?\s+(?:anotados?|marcados?)|points?\s+marqu[ée]s?|points?\s*\(NBA\)|points?\s+NBA/i, "PTS"],
   // ── Football (soccer) ──
-  [/tirs?\s+(?:cadr[eé]s?|au\s+but)|tirs?\s+totaux/i,  "shots"],
-  [/\bbuts?\s*(?:marqu[eé]s?|du\s+joueur)?|\bbuteur/i,  "goals"],
-  [/passes?\s+(?:totales?|cl[ée]s?|d[eé]cisives?)/i,   "passes"],
-  [/cartons?\s*(?:du\s*joueur|jaunes?)?/i,              "player_cards"],
+  [/tiros?\s+(?:a\s+puerta|totales?)|remates?\s+(?:a\s+puerta|totales?)|tirs?\s+(?:cadr[eé]s?|au\s+but)|tirs?\s+totaux/i, "shots"],
+  [/\bgoles?\s*(?:marcados?|del\s+jugador)?|\bbuts?\s*(?:marqu[eé]s?|du\s+joueur)?|\bbuteur/i, "goals"],
+  [/pases?\s+(?:totales?|clave|claves?)|passes?\s+(?:totales?|cl[ée]s?|d[eé]cisives?)/i, "passes"],
+  [/tarjetas?(?:\s+del\s+jugador)?|cartons?(?:\s+du\s*joueur)?/i, "player_cards"],
   [/d[ée]gagements?|t[aê]tes?/i,                        "duels"],
   // ── Tennis ──
   [/\baces?\b/i,                                        "aces"],
-  [/doubles?\s*fautes?/i,                               "double_faults"],
-  [/jeux?\s+(?:gagn[eé]s?|remport[eé]s?)?/i,           "games_won"],
+  [/dobles?\s*faltas?|doubles?\s*fautes?/i,            "double_faults"],
+  [/juegos?\s+(?:ganados?)?|jeux?\s+(?:gagn[eé]s?|remport[eé]s?)?/i, "games_won"],
   [/sets?\s+(?:gagn[eé]s?|remport[eé]s?)?/i,           "sets_won"],
   // ── Baseball ──
   [/home\s+runs?|jonrones?/i,                           "HR"],
@@ -319,6 +387,13 @@ const PROP_STAT_MAP: Array<[RegExp, string]> = [
   [/yardas?\s+(?:de\s+passe|passantes?|a[eé]riennes?)/i, "pass_yds"],
   [/yardas?\s+(?:terrestres?|au\s+sol|courues?)/i,       "rush_yds"],
   [/yardas?\s+(?:de\s+r[eé]ception|re[çc]ues?)/i,       "rec_yds"],
+  [/pases?\s+completados?|passes?\s+complet[eé]es?|\bcompletions?\b/i, "pass_completions"],
+  [/pases?\s+intentados?|passes?\s+tent[eé]es?|pass(?:ing)?\s+attempts?/i, "pass_attempts"],
+  [/intercepciones?(?:\s+(?:de\s+pase?|defensivas?))?|interceptions?\s*(?:de\s+passe?|pass|throw)?/i, "pass_int"],
+  [/field[\s_-]?goals?|goles?\s+de\s+campo/i,           "FG"],
+  [/primeros?\s+downs?|first[\s_]?downs?/i,              "first_downs"],
+  [/acarreos?|\bcorridas?\b|rush(?:ing)?\s+attempts?/i,  "rush_att"],
+  [/sacks?\b/i,                                          "sacks"],
   [/r[eé]ceptions?/i,                                    "REC"],
   [/touchdowns?/i,                                       "TD"],
   // ── Ice hockey ──
@@ -357,6 +432,11 @@ function parsePlayerPropBet(
   const statPart   = betTitle.slice(dashIdx + 3).trim();
   const stat = parsePropStat(statPart);
   if (!stat || !playerName) return null;
+
+  // Reject halftime/period tokens — "1ª mitad", "2ª mitad", "1er tiempo", "primera mitad" etc.
+  // These are halftime goal markets, not player props; let them fall through to h1_goals/h2_goals.
+  const TIME_PERIOD = /^(?:\d+[aAªoOº°]\.?\s*(?:mitad|parte|tiempo|half|cuarto|periodo)|primer(?:a)?\s*(?:mitad|parte|tiempo|half)|segund(?:a)?\s*(?:mitad|parte|tiempo|half)|tercer(?:a)?|1st\s+half|2nd\s+half|ht\b|q[1-4]\b)/i;
+  if (TIME_PERIOD.test(playerName)) return null;
 
   let line: number | null = null;
   let overOdds  = 0;
@@ -411,8 +491,8 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   // Log sport ID mapping from root.sports (first time only)
   if (root.sports && typeof root.sports === "object") {
     const sportsInfo = Object.entries(root.sports as Record<string, any>)
-      .slice(0, 10)
-      .map(([id, s]: [string, any]) => `${id}=${s?.name ?? s?.sportName ?? "?"}`)
+      .slice(0, 15)
+      .map(([id, s]: [string, any]) => `${id}=${s?.sportName ?? s?.name ?? s?.label ?? "?"}`)
       .join(", ");
     logger(`WS sports: ${sportsInfo}`);
   }
@@ -421,7 +501,10 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
   for (const [, match] of Object.entries(matches)) {
     if (!match || typeof match !== "object") continue;
     if (match.sportId !== targetSportId) continue;
-    // Accept multiple live status variants (Winamax has changed this field over time)
+    // For live scrape: accept ALL matches on the live page — Winamax sends some sports
+    // (e.g. tennis) with status "PREMATCH" even when actually in-play. Since we explicitly
+    // navigate to /apuestas-deportivas/live, every match in the WS state is live by definition.
+    // For prematch: exclude confirmed-live matches to avoid duplicating live data.
     const matchIsLive = match.status === "LIVE"
       || match.status === "IN_PLAY"
       || match.status === "LIVE_EVENT"
@@ -431,8 +514,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       || match.is_live === true
       || match.match_status === 1
       || match.isLive === true;
-    if (isLive && !matchIsLive) continue;
-    if (!isLive && matchIsLive) continue; // excluye live; acepta PREMATCH/NotStarted/SCHEDULED/etc.
+    if (!isLive && matchIsLive) continue; // prematch: skip known-live matches
     if (match.available === false || match.available === 0) continue;
 
     const title: string = match.title ?? "";
@@ -476,10 +558,16 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
       ?? tournaments[String(tournamentId)]?.title
       ?? "";
 
+    const matchId = String(match.matchId ?? match.id ?? "");
+    const sportNum = SPORT_IDS[sport];
+    const winUrl = (sportNum != null && tournamentId && matchId)
+      ? `https://www.winamax.es/apuestas-deportivas/sports/${sportNum}/${tournamentId}/${matchId}/`
+      : undefined;
+
     if (h2h.length >= 2) {
       events.push({
         bookmaker: "winamax", sport, eventKey, eventName: title,
-        league, isLive, market: "h2h", outcomes: h2h, startTime,
+        league, isLive, market: "h2h", outcomes: h2h, startTime, url: winUrl,
       });
     }
 
@@ -489,8 +577,6 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     // NOTE: Match route subscriptions (42["m",{"route":"match:ID"}]) push CURRENT live prices
     // before parseWinamaxWsState is called, so wsState.bets already has up-to-date odds
     // for both live and prematch games by this point.
-
-    const matchId = String(match.matchId ?? match.id ?? "");
     const secondaryBetIds = new Set<string>([
       ...((match.bets ?? match.betIds ?? []) as (number | string)[]).map(String),
       ...(matchId ? betsByMatch.get(matchId) ?? [] : []),
@@ -553,6 +639,12 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
           if (!marketAcc.has("handicap")) marketAcc.set("handicap", []);
           (marketAcc.get("handicap") as H2HOutcome[]).push(...hOuts);
         }
+      } else if (H2H_SECONDARY_CATS.has(cat)) {
+        const hOuts = parseSimpleH2HOutcomes(b.outcomes, odds, outcomesMeta);
+        if (hOuts.length >= 2) {
+          if (!marketAcc.has(cat)) marketAcc.set(cat, []);
+          (marketAcc.get(cat) as H2HOutcome[]).push(...hOuts);
+        }
       } else {
         const debugTag: string | undefined = undefined;
         let lines = parseOverUnderOutcomes(b.outcomes, odds, outcomesMeta, debugTag);
@@ -603,7 +695,7 @@ function parseWinamaxWsState(state: Record<string, any>, sport: Sport, isLive: b
     for (const [mkt, outs] of marketAcc) {
       events.push({
         bookmaker: "winamax", sport, eventKey, eventName: title,
-        league, isLive, market: mkt, outcomes: outs,
+        league, isLive, market: mkt, outcomes: outs, url: winUrl,
       });
     }
 
@@ -669,13 +761,13 @@ async function autoScrollForSecondaryMarkets(
 
 export class WinamaxScraper extends BaseScraper {
   readonly name = "winamax";
-  // Confirmed IDs: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5, Handball=6, Rugby à XV=12
-  // VOLLEYBALL/AMERICANFOOTBALL/RUGBYLEAGUE: not offered on Winamax FR (or off-season)
+  // Confirmed IDs from WS: Football=1, Basketball=2, Baseball=3, IceHockey=4, Tennis=5, Handball=6, AmericanFootball=16, Specials=18
+  // NOTE: ID 18 = Especiales (Specials), not American Football. AmericanFootball is ID 16.
   readonly sports: Sport[] = ["FOOTBALL", "TENNIS", "BASKETBALL", "BASEBALL", "ICEHOCKEY", "AMERICANFOOTBALL"];
 
   // One page load per cycle: WS sends ALL sports data at once.
-  // Live: load /paris-sportifs/live → WS sends all live matches.
-  // Prematch: try /paris-sportifs/sports/1 (football, biggest prematch catalogue);
+  // Live: load /apuestas-deportivas/live → WS sends all live matches.
+  // Prematch: try /apuestas-deportivas/sports/1 (football, biggest prematch catalogue);
   //           if it times out fall back to homepage which still gets WS prematch data.
   private async scrapePage(isLive: boolean): Promise<ScrapedEvent[]> {
     const { page, ctx } = await browserManager.newPage();
@@ -741,15 +833,15 @@ export class WinamaxScraper extends BaseScraper {
 
     const events: ScrapedEvent[] = [];
     try {
-      // Live: /paris-sportifs/live has WS data for ALL live sports in one shot.
+      // Live: /apuestas-deportivas/live has WS data for ALL live sports in one shot.
       // Prematch: try Football page (biggest catalogue, WS sends all prematch too).
       const targetUrl = isLive
-        ? `${BASE_FR}/paris-sportifs/live`
-        : `${BASE_FR}/paris-sportifs/sports/${SPORT_IDS.FOOTBALL}`;
+        ? `${BASE_ES}/apuestas-deportivas/live`
+        : `${BASE_ES}/apuestas-deportivas/sports/${SPORT_IDS.FOOTBALL}`;
 
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 55_000 }).catch(async (e: any) => {
         this.warn(`Goto ${targetUrl} failed (${e?.message?.slice(0, 60)}) — falling back to homepage`);
-        await page.goto(`${BASE_FR}/paris-sportifs`, { waitUntil: "domcontentloaded", timeout: 40_000 });
+        await page.goto(`${BASE_ES}/apuestas-deportivas`, { waitUntil: "domcontentloaded", timeout: 40_000 });
       });
       await dismissCookies(page);
       const waitResult = await waitForWsOrRest(page, wsState, wsMessages, captured, 12_000);
@@ -764,14 +856,20 @@ export class WinamaxScraper extends BaseScraper {
       // BATCH=20, 1000ms between batches, 2000ms final: ~5s for 40 matches (vs 10.5s old BATCH=10).
       const wsRoot = resolveWsStateRoot(wsState);
       if (waitResult === "ws_data") {
-        const matchIds = Object.values(wsRoot.matches ?? {})
+        const allLiveIds = Object.values(wsRoot.matches ?? {})
           .filter((m: any) => m && typeof m === "object")
           .map((m: any) => String(m.matchId ?? m.id ?? ""))
           .filter(Boolean);
 
+        // Cap at 200: 200 matches × 500ms/batch = 5s, well within the 60s orchestrator timeout.
+        // With 468+ live matches the old 24s subscription loop regularly exceeded 60s.
+        const MAX_LIVE_SUBS = 200;
+        const matchIds = allLiveIds.slice(0, MAX_LIVE_SUBS);
+
         if (matchIds.length > 0) {
           const betsBefore = Object.keys(wsRoot.bets ?? {}).length;
-          this.log(`WS live subscription: ${matchIds.length} matches`);
+          const cappedNote = allLiveIds.length > MAX_LIVE_SUBS ? ` (capped from ${allLiveIds.length})` : "";
+          this.log(`WS live subscription: ${matchIds.length} matches${cappedNote}`);
           const BATCH = 20;
           for (let i = 0; i < matchIds.length; i += BATCH) {
             const batch = matchIds.slice(i, i + BATCH);
@@ -782,13 +880,16 @@ export class WinamaxScraper extends BaseScraper {
                 ws.send(`42["m",{"route":"match:${id}"}]`);
               }
             }, batch).catch(() => {});
-            await new Promise<void>((r) => setTimeout(r, 1000));
+            await new Promise<void>((r) => setTimeout(r, 500));
           }
-          await new Promise<void>((r) => setTimeout(r, 2000));
+          await new Promise<void>((r) => setTimeout(r, 1000));
           const betsAfter = Object.keys(resolveWsStateRoot(wsState).bets ?? {}).length;
           this.log(`WS live subscription done: bets ${betsBefore} → ${betsAfter}`);
         }
       }
+
+      // Scroll to trigger SPA lazy-loading of secondary market WS subscriptions
+      await autoScrollForSecondaryMarkets(page, wsState, (msg) => this.log(msg), 4, 800, 800);
 
       const wsStateKeys = Object.keys(wsState);
       const wsUrls = wsMessages.length > 0
@@ -920,14 +1021,14 @@ export class WinamaxScraper extends BaseScraper {
       // is more aggressively Cloudflare-gated than other sport pages.
       // Use the SPA homepage which loads football data by default.
       const url = sport === "FOOTBALL"
-        ? `${BASE_FR}/paris-sportifs`
-        : `${BASE_FR}/paris-sportifs/sports/${SPORT_IDS[sport]}`;
+        ? `${BASE_ES}/apuestas-deportivas`
+        : `${BASE_ES}/apuestas-deportivas/sports/${SPORT_IDS[sport]}`;
       let gotoFailed = false;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 55_000 }).catch(async (e: any) => {
         this.warn(`Prematch ${sport} goto failed (${e?.message?.slice(0, 60)}) — retrying sports/1`);
         gotoFailed = true;
         if (sport === "FOOTBALL") {
-          await page.goto(`${BASE_FR}/paris-sportifs/sports/${SPORT_IDS.FOOTBALL}`, {
+          await page.goto(`${BASE_ES}/apuestas-deportivas/sports/${SPORT_IDS.FOOTBALL}`, {
             waitUntil: "domcontentloaded", timeout: 30_000,
           }).catch((e2: any) => {
             this.warn(`Prematch ${sport} retry also failed (${e2?.message?.slice(0, 50)}) — skip`);
@@ -983,6 +1084,9 @@ export class WinamaxScraper extends BaseScraper {
           this.log(`WS prematch ${sport} subscription done: bets ${betsBefore}(null=${nullBefore}) → ${betsAfter}(null=${nullAfter})`);
         }
       }
+
+      // Scroll to trigger SPA lazy-loading of secondary prematch markets
+      await autoScrollForSecondaryMarkets(page, wsState, (msg) => this.log(msg), 5, 800, 1200);
 
       const wsStateKeys = Object.keys(wsState);
       if (wsStateKeys.length > 0) {

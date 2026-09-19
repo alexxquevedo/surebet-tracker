@@ -52,6 +52,7 @@ export interface ScrapedEvent {
   // "h2h" | "totals" | "handicap" | "player_props" | "corners" | "goals" | "yellow_cards" | ...
   market: string;
   outcomes: MarketOutcomes;
+  url?: string;       // direct deep-link to the event on the bookmaker's site
 }
 
 // ─── Arb detection results ────────────────────────────────────────────────────
@@ -115,4 +116,6 @@ export interface GroupedMarket {
   byBook: Map<string, MarketOutcomes>;
   /** Unix ms per bookmaker — when those odds were scraped; populated by loadGroupedMarkets */
   byBookScrapedAt: Map<string, number>;
+  /** Direct event deep-link per bookmaker — populated from in-memory URL cache */
+  byBookUrl: Map<string, string>;
 }

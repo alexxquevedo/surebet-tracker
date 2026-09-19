@@ -65,17 +65,42 @@ export function createProxiedAxios(
     return cfg;
   });
 
-  // Feed 403/429 into IP rotator; report success to reset block counter
+  // Direct-connection fallback instance (no proxy) — used only when the SOCKS5 tunnel rejects.
+  const directInstance = axios.create({ ...base });
+
+  // Feed 403/429 into IP rotator; report success to reset block counter.
+  // On SOCKS5 rejection (HostUnreachable/TTLExpired/timeout) retry once via direct connection.
   instance.interceptors.response.use(
     (res) => {
       reportSuccess(scraperName);
       return res;
     },
-    (err) => {
+    async (err) => {
       const status: number = err?.response?.status ?? 0;
       if (status === 403 || status === 429) {
         logger.warn("scraper.blocked", { bookmaker: scraperName, httpStatus: status });
         void reportBlock(scraperName, status);
+        throw err;
+      }
+      const msg: string = err?.message ?? "";
+      const isSocksError =
+        /socks.*reject|HostUnreachable|TTLExpired|Proxy connection timed out/i.test(msg) ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "EHOSTUNREACH";
+      if (isSocksError && err?.config && !err.config.__directFallback) {
+        logger.warn("scraper.proxy_fallback", { bookmaker: scraperName, reason: msg.slice(0, 80) });
+        const cfg = { ...err.config, __directFallback: true, httpAgent: undefined, httpsAgent: undefined, proxy: false };
+        try {
+          return await directInstance.request(cfg);
+        } catch (directErr: any) {
+          // Both SOCKS5 and direct failed — count as IP block only when it's a
+          // connection error (CDN IP block, timeout), not a broken endpoint (ENOTFOUND)
+          const directMsg = String(directErr?.message ?? "");
+          if (!/ENOTFOUND|ENOENT|getaddrinfo/.test(directMsg)) {
+            void reportBlock(scraperName, 0);
+          }
+          throw directErr;
+        }
       }
       throw err;
     },

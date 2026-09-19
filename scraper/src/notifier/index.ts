@@ -38,6 +38,66 @@ async function sendMessage(
   }
 }
 
+// ─── Bookmaker base URLs + sport-section deep links ──────────────────────────
+
+const BOOKMAKER_URLS: Record<string, string> = {
+  winamax: "https://www.winamax.es",
+  codere: "https://www.codere.es",
+  retabet: "https://www.retabet.es",
+  bet365: "https://www.bet365.es",
+  sportium: "https://apuestas.sportium.es",
+  bwin: "https://www.bwin.es",
+  williamhill: "https://sports.williamhill.es",
+  betsson: "https://www.betsson.es",
+  marathonbet: "https://www.marathonbet.es",
+  daznbet: "https://www.daznbet.es",
+  pokerstars: "https://www.pokerstars.es",
+  leovegas: "https://www.leovegas.es",
+  "888sport": "https://www.888sport.es",
+  luckia: "https://apuestas.luckia.es",
+  betfair: "https://www.betfair.es",
+  tonybet: "https://www.tonybet.es",
+  kirolbet: "https://www.kirolbet.es",
+  "casino-gran-madrid": "https://www.casinogranmadrid.es/apuestas",
+  betway: "https://www.betway.es",
+  betano: "https://www.betano.es",
+  jokerbet: "https://www.jokerbet.es",
+  paston: "https://www.paston.es",
+};
+
+const BOOKMAKER_SPORT_PATHS: Record<string, Record<string, string>> = {
+  winamax:              { FOOTBALL: "/apuestas-deportivas/sports/0", TENNIS: "/apuestas-deportivas/sports/1", BASKETBALL: "/apuestas-deportivas/sports/2", BASEBALL: "/apuestas-deportivas/sports/3", ICEHOCKEY: "/apuestas-deportivas/sports/4", HOCKEY: "/apuestas-deportivas/sports/4", AMERICANFOOTBALL: "/apuestas-deportivas/sports/13" },
+  codere:               { FOOTBALL: "/#/futbol", TENNIS: "/#/tenis", BASKETBALL: "/#/baloncesto", ICEHOCKEY: "/#/hockey-hielo", BASEBALL: "/#/beisbol", HOCKEY: "/#/hockey-hielo", AMERICANFOOTBALL: "/#/futbol-americano" },
+  betfair:              { FOOTBALL: "/sport/football", TENNIS: "/sport/tennis", BASKETBALL: "/sport/basketball", ICEHOCKEY: "/sport/ice-hockey", BASEBALL: "/sport/baseball", HOCKEY: "/sport/ice-hockey", AMERICANFOOTBALL: "/sport/american-football" },
+  bet365:               { FOOTBALL: "/sport/football", TENNIS: "/sport/tennis", BASKETBALL: "/sport/basketball", ICEHOCKEY: "/sport/ice-hockey", BASEBALL: "/sport/baseball", HOCKEY: "/sport/ice-hockey", AMERICANFOOTBALL: "/sport/american-football" },
+  bwin:                 { FOOTBALL: "/sports/football-5", TENNIS: "/sports/tennis-2", BASKETBALL: "/sports/basketball-7", ICEHOCKEY: "/sports/ice-hockey-23", BASEBALL: "/sports/baseball-9", HOCKEY: "/sports/ice-hockey-23", AMERICANFOOTBALL: "/sports/american-football-11" },
+  williamhill:          { FOOTBALL: "/football", TENNIS: "/tennis", BASKETBALL: "/basketball", ICEHOCKEY: "/ice-hockey", BASEBALL: "/baseball", HOCKEY: "/ice-hockey", AMERICANFOOTBALL: "/american-football" },
+  betsson:              { FOOTBALL: "/es/deportes/futbol", TENNIS: "/es/deportes/tenis", BASKETBALL: "/es/deportes/baloncesto", ICEHOCKEY: "/es/deportes/hockey-hielo", BASEBALL: "/es/deportes/beisbol", HOCKEY: "/es/deportes/hockey-hielo", AMERICANFOOTBALL: "/es/deportes/futbol-americano" },
+  pokerstars:           { FOOTBALL: "/sports/football", TENNIS: "/sports/tennis", BASKETBALL: "/sports/basketball", ICEHOCKEY: "/sports/ice-hockey", BASEBALL: "/sports/baseball", AMERICANFOOTBALL: "/sports/american-football", HOCKEY: "/sports/ice-hockey" },
+  marathonbet:          { FOOTBALL: "/football/", TENNIS: "/tennis/", BASKETBALL: "/basketball/", ICEHOCKEY: "/ice-hockey/", BASEBALL: "/baseball/", AMERICANFOOTBALL: "/american-football/", HOCKEY: "/ice-hockey/" },
+  daznbet:              { FOOTBALL: "/es/sports/futbol", TENNIS: "/es/sports/tenis", BASKETBALL: "/es/sports/baloncesto", ICEHOCKEY: "/es/sports/hockey-hielo", BASEBALL: "/es/sports/beisbol", HOCKEY: "/es/sports/hockey-hielo", AMERICANFOOTBALL: "/es/sports/futbol-americano" },
+  leovegas:             { FOOTBALL: "/sports/football/", TENNIS: "/sports/tennis/", BASKETBALL: "/sports/basketball/", ICEHOCKEY: "/sports/ice-hockey/", BASEBALL: "/sports/baseball/", HOCKEY: "/sports/ice-hockey/", AMERICANFOOTBALL: "/sports/american-football/" },
+  "888sport":           { FOOTBALL: "/football/", TENNIS: "/tennis/", BASKETBALL: "/basketball/", ICEHOCKEY: "/ice-hockey/", BASEBALL: "/baseball/", HOCKEY: "/ice-hockey/", AMERICANFOOTBALL: "/american-football/" },
+  luckia:               { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  retabet:              { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  sportium:             { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  betway:               { FOOTBALL: "/sport/football", TENNIS: "/sport/tennis", BASKETBALL: "/sport/basketball", ICEHOCKEY: "/sport/ice-hockey", BASEBALL: "/sport/baseball", HOCKEY: "/sport/ice-hockey", AMERICANFOOTBALL: "/sport/american-football" },
+  betano:               { FOOTBALL: "/sports/football", TENNIS: "/sports/tennis", BASKETBALL: "/sports/basketball", ICEHOCKEY: "/sports/ice-hockey", BASEBALL: "/sports/baseball", HOCKEY: "/sports/ice-hockey", AMERICANFOOTBALL: "/sports/american-football" },
+  tonybet:              { FOOTBALL: "/sports/football", TENNIS: "/sports/tennis", BASKETBALL: "/sports/basketball", ICEHOCKEY: "/sports/ice-hockey", BASEBALL: "/sports/baseball", HOCKEY: "/sports/ice-hockey", AMERICANFOOTBALL: "/sports/american-football" },
+  "casino-gran-madrid": { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  kirolbet:             { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  jokerbet:             { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+  paston:               { FOOTBALL: "/deportes/futbol", TENNIS: "/deportes/tenis", BASKETBALL: "/deportes/baloncesto", ICEHOCKEY: "/deportes/hockey-hielo", BASEBALL: "/deportes/beisbol", HOCKEY: "/deportes/hockey-hielo", AMERICANFOOTBALL: "/deportes/futbol-americano" },
+};
+
+function resolveBookmakerDeepLink(bookmaker: string, sport: string, legUrl?: string): string | undefined {
+  if (legUrl) return legUrl;
+  const base = BOOKMAKER_URLS[bookmaker];
+  if (!base) return undefined;
+  const sportPath = BOOKMAKER_SPORT_PATHS[bookmaker]?.[sport] ?? "";
+  return base + sportPath;
+}
+
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
 const SPORT_EMOJI: Record<string, string> = {
@@ -72,14 +132,28 @@ const MARKET_LABEL: Record<string, string> = {
   aces: "Aces",
   double_faults: "Dobles Faltas",
   match_points: "Puntos",
+  q1_points: "Puntos Q1",
+  q2_points: "Puntos Q2",
+  q3_points: "Puntos Q3",
+  q4_points: "Puntos Q4",
+  h1_points: "Puntos 1ª Parte",
+  h2_points: "Puntos 2ª Parte",
   home_runs: "Jonrones",
   runs: "Carreras",
   tries: "Ensayos",
   touchdowns: "Touchdowns",
+  // Tennis per-set / tie-break
+  s1_h2h: "Ganador 1er Set",
+  s2_h2h: "Ganador 2do Set",
+  s3_h2h: "Ganador 3er Set",
+  s1_games: "Juegos Set 1",
+  s2_games: "Juegos Set 2",
+  s3_games: "Juegos Set 3",
+  tie_break: "Tie-Break",
 };
 
-// Sports where h2h draw is possible — filter out 2-leg surebets (draw not covered)
-const THREE_WAY_SPORTS = new Set(["FOOTBALL", "HOCKEY", "BASKETBALL"]);
+// Sports where h2h draw is possible (basketball never draws — excluded)
+const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY", "HOCKEY"]);
 
 function resolveMarketLabelBySport(market: string, sport: string): string {
   if (market === "h2h") {
@@ -89,6 +163,10 @@ function resolveMarketLabelBySport(market: string, sport: string): string {
   }
   if (market === "sets") return "Gana el set";
   if (market === "games") return "Gana el juego";
+  if (market === "s1_h2h") return "Ganador 1er Set";
+  if (market === "s2_h2h") return "Ganador 2do Set";
+  if (market === "s3_h2h") return "Ganador 3er Set";
+  if (market === "tie_break") return "¿Tie-Break?";
   return resolveMarketLabel(market);
 }
 
@@ -97,8 +175,12 @@ const MARKET_UNIT: Record<string, string> = {
   corners: "córners", yellow_cards: "amarillas", red_cards: "rojas", cards: "tarjetas",
   shots: "disparos a puerta", games: "juegos", sets: "sets",
   aces: "aces", double_faults: "dobles faltas", match_points: "puntos",
+  q1_points: "puntos (Q1)", q2_points: "puntos (Q2)",
+  q3_points: "puntos (Q3)", q4_points: "puntos (Q4)",
+  h1_points: "puntos (1ª parte)", h2_points: "puntos (2ª parte)",
   home_runs: "jonrones", runs: "carreras", tries: "ensayos", touchdowns: "touchdowns",
   totals: "puntos",
+  s1_games: "juegos (set 1)", s2_games: "juegos (set 2)", s3_games: "juegos (set 3)",
 };
 
 function translateMiddleSelection(selection: string, market: string): string {
@@ -110,15 +192,36 @@ function translateMiddleSelection(selection: string, market: string): string {
 }
 
 const STAT_LABEL: Record<string, string> = {
-  PRA: "puntos + asistencias + rebotes",
+  // Basketball
+  PRA: "puntos + asis. + rebotes",
   PTS: "puntos", REB: "rebotes", AST: "asistencias", "3PT": "triples",
-  shots: "tiros", goals: "goles", passes: "pases", tackles: "entradas",
+  STL: "robos", BLK: "tapones", TOV: "pérdidas",
+  DD: "doble-doble", DOUBLE_DOUBLE: "doble-doble", TRIPLE_DOUBLE: "triple-doble",
+  // Football (soccer) player props
+  shots: "tiros a puerta", goals: "goles", passes: "pases", tackles: "entradas",
+  dribbles: "regates", duels: "duelos", touches: "toques", player_cards: "tarjetas",
   corners_taken: "córners", cards: "tarjetas", aces: "aces",
   double_faults: "dobles faltas", first_serve_pct: "% primer saque",
-  games: "juegos", hits: "hits", runs_batted_in: "carreras impulsadas",
-  strikeouts: "ponches", home_runs: "jonrones", tries: "ensayos",
-  conversions: "conversiones", points: "puntos", rebounds: "rebotes",
-  assists: "asistencias",
+  // Tennis
+  games: "juegos", games_won: "juegos ganados", sets_won: "sets ganados",
+  // Baseball
+  HR: "jonrones", K: "ponches", H: "hits", RBI: "carreras impulsadas",
+  SB: "bases robadas", runs: "carreras",
+  hits: "hits", strikeouts: "ponches", home_runs: "jonrones",
+  runs_batted_in: "carreras impulsadas",
+  // American football
+  pass_yds: "yardas aéreas", rush_yds: "yardas terrestres",
+  rec_yds: "yardas de recepción", REC: "recepciones",
+  TD: "touchdowns", FG: "field goals",
+  pass_completions: "pases completados", pass_attempts: "intentos de pase",
+  pass_int: "intercepciones", first_downs: "primeros downs",
+  rush_att: "acarreos", sacks: "sacks",
+  // Ice hockey
+  sog: "tiros a puerta", hockey_pts: "puntos (hockey)",
+  // Rugby
+  tries: "ensayos", conversions: "conversiones",
+  // Generic fallbacks
+  points: "puntos", rebounds: "rebotes", assists: "asistencias",
 };
 
 function translateSelection(selection: string): string {
@@ -178,13 +281,6 @@ function formatStake(stakePercent: number, bankrollEur?: number): string {
   return pct;
 }
 
-function oddsAgeTag(scrapedAt?: number): string {
-  if (!scrapedAt) return "";
-  const sec = Math.round((Date.now() - scrapedAt) / 1000);
-  if (sec <= 0) return "";
-  const icon = sec <= 30 ? "✅" : sec <= 60 ? "⌛" : "⚠️";
-  return ` <i>${icon}${sec}s</i>`;
-}
 
 // ─── Message formatters ───────────────────────────────────────────────────────
 
@@ -203,9 +299,14 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
       const sel = /^(Over|Under)\s+[\d.]+$/i.test(l.selection)
         ? translateMiddleSelection(l.selection, baseMarket)
         : resolvePositionalSelection(translateSelection(l.selection), arb.eventName);
-      return `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${sel} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)}${oddsAgeTag(l.scrapedAt)} 💰 ${formatStake(l.stake, bankrollEur)}`;
+      const displayName = l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1);
+      const bkUrl = resolveBookmakerDeepLink(l.bookmaker, arb.sport, (l as any).url);
+      const bkLink = bkUrl ? `<a href="${bkUrl}">${displayName}</a>` : `<b>${displayName}</b>`;
+      return `📕 ${bkLink} 📍 ${sel} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`;
     })
     .join("\n");
+
+  const marketLine = `\n🎯 <i>Mercado: ${legMarketLabel}</i>`;
 
   return [
     `💵 <b>Beneficio: +${arb.profitPct.toFixed(2)}%</b>`,
@@ -213,7 +314,7 @@ function formatSurebet(arb: DetectedSurebet, bankrollEur?: number): string {
     "",
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`,
+    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}${marketLine}`,
     legs,
     ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
     formatSentAt(),
@@ -231,10 +332,15 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
   const leagueTag = arb.league && !/^tournament_/i.test(arb.league) ? ` (${arb.league})` : "";
   const legMarketLabel = resolveMarketLabelBySport(arb.market, arb.sport);
   const legs = arb.legs
-    .map((l) =>
-      `📕 <b>${l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1)}</b> 📍 ${translateMiddleSelection(l.selection, arb.market)} (${legMarketLabel}) 🎲 @${l.odds.toFixed(2)}${oddsAgeTag(l.scrapedAt)} 💰 ${formatStake(l.stake, bankrollEur)}`,
-    )
+    .map((l) => {
+      const displayName = l.bookmaker.charAt(0).toUpperCase() + l.bookmaker.slice(1);
+      const bkUrl = resolveBookmakerDeepLink(l.bookmaker, arb.sport, (l as any).url);
+      const bkLink = bkUrl ? `<a href="${bkUrl}">${displayName}</a>` : `<b>${displayName}</b>`;
+      return `📕 ${bkLink} 📍 ${translateMiddleSelection(l.selection, arb.market)} 🎲 @${l.odds.toFixed(2)} 💰 ${formatStake(l.stake, bankrollEur)}`;
+    })
     .join("\n");
+
+  const marketLine = `\n🎯 <i>Mercado: ${legMarketLabel}</i>`;
 
   return [
     `👑 <b>Valor Esperado: +${arb.profitPct.toFixed(2)}% - +${arb.maxProfitPct.toFixed(2)}%</b>`,
@@ -246,7 +352,7 @@ function formatMiddle(arb: DetectedMiddle, bankrollEur?: number): string {
     "",
     `${sportEmoji} ${sportLabel}`,
     datetimeLine,
-    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`,
+    `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}${marketLine}`,
     legs,
     ...(arb.isLive ? ["", "⚠️ <i>Verifica cuotas antes de apostar — mercados live cambian rápido</i>"] : []),
     formatSentAt(),
@@ -286,14 +392,18 @@ function formatGroupedArbs(arbs: DetectedArb[], bankrollEur?: number): string {
     const baseMarket = arb.market.match(/^(\w+)\s+O\/U/i)?.[1]?.toLowerCase() ?? arb.market;
     const legLines = arb.legs
       .map((leg) => {
-        const bookmaker = leg.bookmaker.charAt(0).toUpperCase() + leg.bookmaker.slice(1);
+        const displayName = leg.bookmaker.charAt(0).toUpperCase() + leg.bookmaker.slice(1);
+        const bkUrl = resolveBookmakerDeepLink(leg.bookmaker, arb.sport, (leg as any).url);
+        const bkLink = bkUrl ? `<a href="${bkUrl}">${displayName}</a>` : `<b>${displayName}</b>`;
         const sel = /^(Over|Under)\s+[\d.]+$/i.test(leg.selection)
           ? translateMiddleSelection(leg.selection, baseMarket)
           : resolvePositionalSelection(translateSelection(leg.selection), arb.eventName);
-        return `📕 ${bookmaker} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)}${oddsAgeTag(leg.scrapedAt)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
+        return `📕 ${bkLink} 📍 ${sel} 🎲 @${leg.odds.toFixed(2)} 💰 ${formatStake(leg.stake, bankrollEur)}`;
       })
       .join("\n");
-    lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}`, legLines);
+    const mktLabel = resolveMarketLabelBySport(arb.market, arb.sport);
+    const mktLine = `\n🎯 <i>Mercado: ${mktLabel}</i>`;
+    lines.push("", profitLine, `${sportEmoji} ${sportLabel}`, datetimeLine, `${tierMark}🏆 <b>${arb.eventName}</b>${leagueTag}${mktLine}`, legLines);
   }
 
   lines.push("", formatSentAt());
@@ -482,7 +592,11 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
     }
   }
 
-  // ── Draw-risk guard (football/icehockey h2h surebets don't cover draw) ───
+  // ── Max 2 legs: 3-way arbs (3 bookmakers) are operationally unviable ─────
+  if (arb.legs.length > 2) return false;
+
+  // ── Draw-risk guard: 2-leg h2h surebets in 3-way sports leave the draw uncovered.
+  // Blocked unconditionally unless the user explicitly opts out (blockDrawRisk: false).
   if (arb.type === "SUREBET" && arb.market === "h2h" && THREE_WAY_SPORTS.has(arb.sport)) {
     const blockDraw = sc.blockDrawRisk ?? old.block_draw_risk_surebets;
     if (blockDraw !== false) return false;
@@ -493,7 +607,7 @@ function matchesPrefs(arb: DetectedArb, subConfig: any): boolean {
 
 // ─── 4. Async notification queue (scanner never blocks on Telegram I/O) ──────
 
-type NotifyJob = Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>;
+type NotifyJob = Array<{ dbId: string; arb: DetectedArb; detectedAt?: number }>;
 
 const _queue: NotifyJob[] = [];
 let _processing = false;
@@ -511,10 +625,85 @@ async function _processQueue(): Promise<void> {
   }
 }
 
+async function logAllArbsToChannel(
+  arbs: Array<{ arb: DetectedArb }>,
+): Promise<void> {
+  const channelId = config.telegram.logChannelId;
+  if (!channelId || !arbs.length) return;
+  for (const { arb } of arbs) {
+    await sendMessage(channelId, formatArb(arb));
+  }
+}
+
+async function _sendToSub(
+  sub: CachedSub,
+  prioritized: Array<{ dbId: string; arb: DetectedArb }>,
+): Promise<number> {
+  const matching = prioritized.filter(({ arb }) => matchesPrefs(arb, sub.config));
+  if (!matching.length) return 0;
+
+  const deduped = matching.filter(({ arb }) => !isRateLimited(sub.telegramId, arb));
+  if (!deduped.length) return 0;
+
+  const bankrollEur: number | undefined = (sub.config as any)?.stake > 0
+    ? Number((sub.config as any).stake) : undefined;
+  const hasTracker = sub.plan === "PRO_TRACKER" || sub.plan === "ENTERPRISE";
+
+  // Group by event+type so same match = one message
+  const groups = new Map<string, Array<{ dbId: string; arb: DetectedArb }>>();
+  for (const item of deduped) {
+    const key = `${item.arb.sport}::${item.arb.eventName}::${item.arb.type}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(item);
+  }
+
+  let sent = 0;
+  for (const group of groups.values()) {
+    // Dedup via ArbNotification unique constraint (arbId + telegramId)
+    const toSend: Array<{ dbId: string; arb: DetectedArb }> = [];
+    for (const item of group) {
+      try {
+        await prisma.arbNotification.create({
+          data: { arbId: item.dbId, telegramId: sub.telegramId },
+        });
+        toSend.push(item);
+      } catch (err: any) {
+        if (err.code !== "P2002") throw err; // P2002 = already sent
+      }
+    }
+    if (!toSend.length) continue;
+
+    if (toSend.length === 1) {
+      const { dbId, arb } = toSend[0];
+      const trackingRow = hasTracker
+        ? [
+            { text: "✅ Hecha", callback_data: `SCAN_AH_${sub.telegramId}_${dbId}` },
+            { text: "❌ No hecha", callback_data: `SCAN_ANH_${sub.telegramId}_${dbId}` },
+          ]
+        : [];
+      const rows = [
+        ...(trackingRow.length ? [trackingRow] : []),
+      ];
+      const replyMarkup = rows.length ? { inline_keyboard: rows } : undefined;
+      await sendMessage(sub.telegramId, formatArb(arb, bankrollEur), replyMarkup);
+    } else {
+      // Multiple arbs same event: grouped message + bookmaker links
+      const groupArbs = toSend.map((i) => i.arb);
+      const groupMarkup = undefined;
+      await sendMessage(sub.telegramId, formatGroupedArbs(groupArbs, bankrollEur), groupMarkup);
+    }
+    sent += toSend.length;
+  }
+  return sent;
+}
+
 async function _dispatchBatch(
-  newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>,
+  newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt?: number }>,
 ): Promise<void> {
   if (!newArbs.length) return;
+
+  // Log to history channel without blocking subscriber delivery
+  logAllArbsToChannel(newArbs).catch((err) => console.warn("[notifier] log channel error:", err));
 
   // High-profit arbs first (smart queue)
   const prioritized = [...newArbs].sort((a, b) => b.arb.profitPct - a.arb.profitPct);
@@ -522,60 +711,20 @@ async function _dispatchBatch(
   const subscribers = await getCachedSubscribers();
   if (!subscribers.length) return;
 
-  let notified = 0;
+  // All subscribers in parallel — subscriber A's slow network doesn't delay subscriber B
+  const results = await Promise.allSettled(
+    subscribers.map((sub) =>
+      _sendToSub(sub, prioritized).catch((err) => {
+        console.warn(`[notifier] Error sending to ${sub.telegramId}:`, err?.message);
+        return 0;
+      }),
+    ),
+  );
 
-  for (const sub of subscribers) {
-    // ── Per-user filter ──────────────────────────────────────────────────────
-    const matching = prioritized.filter(({ arb }) => matchesPrefs(arb, sub.config));
-    if (!matching.length) continue;
-
-    // ── Rate limiting: skip events already alerted within 5 min ─────────────
-    const deduped = matching.filter(({ arb }) => !isRateLimited(sub.telegramId, arb));
-    if (!deduped.length) continue;
-
-    const bankrollEur: number | undefined = (sub.config as any)?.stake > 0
-      ? Number((sub.config as any).stake) : undefined;
-    const hasTracker = sub.plan === "PRO_TRACKER" || sub.plan === "ENTERPRISE";
-
-    // Group by event+type so same match = one message
-    const groups = new Map<string, Array<{ dbId: string; arb: DetectedArb }>>();
-    for (const item of deduped) {
-      const key = `${item.arb.sport}::${item.arb.eventName}::${item.arb.type}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(item);
-    }
-
-    for (const group of groups.values()) {
-      // Dedup via ArbNotification unique constraint (arbId + telegramId)
-      const toSend: Array<{ dbId: string; arb: DetectedArb }> = [];
-      for (const item of group) {
-        try {
-          await prisma.arbNotification.create({
-            data: { arbId: item.dbId, telegramId: sub.telegramId },
-          });
-          toSend.push(item);
-        } catch (err: any) {
-          if (err.code !== "P2002") throw err; // P2002 = already sent
-        }
-      }
-      if (!toSend.length) continue;
-
-      if (toSend.length === 1) {
-        const { dbId, arb } = toSend[0];
-        const replyMarkup = {
-          inline_keyboard: [[
-            ...(hasTracker ? [{ text: "✅ Hecha", callback_data: `SCAN_AH_${sub.telegramId}_${dbId}` }] : []),
-            { text: "❌ No hecha", callback_data: `SCAN_ANH_${sub.telegramId}_${dbId}` },
-          ]],
-        };
-        await sendMessage(sub.telegramId, formatArb(arb, bankrollEur), replyMarkup);
-      } else {
-        await sendMessage(sub.telegramId, formatGroupedArbs(toSend.map((i) => i.arb), bankrollEur));
-      }
-      notified += toSend.length;
-    }
-  }
-
+  const notified = results.reduce(
+    (sum, r) => sum + (r.status === "fulfilled" ? r.value : 0),
+    0,
+  );
   if (notified > 0) {
     console.log(`[notifier] Sent notifications for ${notified} arbs`);
   }
@@ -589,7 +738,7 @@ async function _dispatchBatch(
  * can start the next poll cycle without waiting for Telegram I/O.
  */
 export async function notifyArbs(
-  newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt: number }>,
+  newArbs: Array<{ dbId: string; arb: DetectedArb; detectedAt?: number }>,
 ): Promise<void> {
   if (!newArbs.length) return;
   _queue.push(newArbs);

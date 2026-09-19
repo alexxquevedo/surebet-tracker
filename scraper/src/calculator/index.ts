@@ -47,6 +47,7 @@ function distributeStakes(odds: number[]): number[] {
  * even when bookmakers encode it differently, enabling cross-bookmaker arb detection.
  */
 function normalizeOutcomeName(name: string): string {
+  if (name == null) return "";
   const t = name.trim();
   if (/^x$/i.test(t) || /^empate$/i.test(t) || /^nul[ae]?$/i.test(t) || /^draw$/i.test(t)) {
     return "Draw";
@@ -71,7 +72,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
   // Collect all unique selection names across all bookmakers (normalized)
   const allNames = new Set<string>();
   for (const outcomes of market.byBook.values()) {
-    if (isH2H(outcomes)) outcomes.forEach((o) => allNames.add(normalizeOutcomeName(o.name)));
+    if (isH2H(outcomes)) outcomes.filter((o) => o.name != null).forEach((o) => allNames.add(normalizeOutcomeName(o.name)));
   }
 
   // Normalize outcome names to positions using eventKey teams:
@@ -230,6 +231,7 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
     odds: s.odds,
     stake: stakes[i],
     scrapedAt: market.byBookScrapedAt.get(s.bookmaker),
+    url: market.byBookUrl?.get(s.bookmaker),
   }));
 
   return {
@@ -333,8 +335,8 @@ export function detectMiddles(market: GroupedMarket): DetectedMiddle[] {
       const middleProbability = approxMiddleProbability(overSide.line, underSide.line);
 
       const legs: ArbLeg[] = [
-        { bookmaker: overSide.bookmaker,  selection: `Over ${overSide.line}`,  odds: overOdds,  stake: parseFloat((s1 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(overSide.bookmaker) },
-        { bookmaker: underSide.bookmaker, selection: `Under ${underSide.line}`, odds: underOdds, stake: parseFloat((s2 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(underSide.bookmaker) },
+        { bookmaker: overSide.bookmaker,  selection: `Over ${overSide.line}`,  odds: overOdds,  stake: parseFloat((s1 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(overSide.bookmaker),  url: market.byBookUrl?.get(overSide.bookmaker) },
+        { bookmaker: underSide.bookmaker, selection: `Under ${underSide.line}`, odds: underOdds, stake: parseFloat((s2 * 100).toFixed(2)), scrapedAt: market.byBookScrapedAt.get(underSide.bookmaker), url: market.byBookUrl?.get(underSide.bookmaker) },
       ];
 
       middles.push({
@@ -390,6 +392,8 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
     }
   }
 
+  // Exchange vs bookmaker arbs on player props can legitimately reach 12-15%
+  const PROFIT_CAP = 15.0;
   const surebets: DetectedSurebet[] = [];
 
   for (const [key, { over, under }] of propMap) {
@@ -397,6 +401,11 @@ export function detectPlayerPropSurebets(market: GroupedMarket): DetectedSurebet
     const implied = 1 / over.odds + 1 / under.odds;
     if (implied >= 1.0) continue;
     const profitPct = parseFloat(((1 / implied - 1) * 100).toFixed(2));
+    if (profitPct > 20) continue; // silent: stale/suspended price
+    if (profitPct > PROFIT_CAP) {
+      console.warn(`[calculator] PropArb anomaly: ${market.eventKey} ${key} ${profitPct.toFixed(2)}% > ${PROFIT_CAP}% cap — discarded (${over.book}:Over@${over.odds} vs ${under.book}:Under@${under.odds})`);
+      continue;
+    }
     const [player, stat, lineStr] = key.split("::");
     const line = parseFloat(lineStr);
     const stakes = distributeStakes([over.odds, under.odds]);
@@ -444,12 +453,19 @@ export function detectOverUnderSurebets(market: GroupedMarket): DetectedSurebet[
     }
   }
 
+  const PROFIT_CAP = market.isLive ? 15.0 : 11.0;
   const surebets: DetectedSurebet[] = [];
   for (const [line, { over, under }] of lineMap) {
     if (!over || !under || over.book === under.book) continue;
     const implied = 1 / over.odds + 1 / under.odds;
     if (implied >= 1.0) continue;
     const profitPct = parseFloat(((1 / implied - 1) * 100).toFixed(2));
+    // Ghost-odds firewall: caps mirror the h2h detector thresholds
+    if (profitPct > 20) continue; // silent: clearly stale/suspended price
+    if (profitPct > PROFIT_CAP) {
+      console.warn(`[calculator] OU anomaly: ${market.eventKey} ${market.market} O/U ${line} ${profitPct.toFixed(2)}% > ${PROFIT_CAP}% cap — discarded (${over.book}:Over@${over.odds} vs ${under.book}:Under@${under.odds})`);
+      continue;
+    }
     const stakes = distributeStakes([over.odds, under.odds]);
     surebets.push({
       type: "SUREBET",

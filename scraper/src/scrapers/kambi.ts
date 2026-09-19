@@ -101,14 +101,41 @@ const CRITERION_TO_MARKET: Array<[RegExp, string]> = [
   [/RED_CARD/i,                                             "red_cards"],
   [/CARD/i,                                                 "cards"],
   [/SHOT/i,                                                 "shots"],
+  // Soccer/hockey halftime and period goals O/U — before generic OVER_UNDER
+  [/FIRST_HALF[_\s]GOALS?|GOALS?[_\s]FIRST_HALF|OVER_UNDER[_\s]FIRST_HALF|FIRST_HALF[_\s]OVER_UNDER/i, "h1_goals"],
+  [/SECOND_HALF[_\s]GOALS?|GOALS?[_\s]SECOND_HALF|OVER_UNDER[_\s]SECOND_HALF|SECOND_HALF[_\s]OVER_UNDER/i, "h2_goals"],
+  // Ice hockey periods
+  [/FIRST[_\s]PERIOD|PERIOD[_\s]1[_\s](?:OVER_UNDER|GOALS?)|OVER_UNDER[_\s]PERIOD[_\s]1/i,  "h1_goals"],
+  [/SECOND[_\s]PERIOD|PERIOD[_\s]2[_\s](?:OVER_UNDER|GOALS?)|OVER_UNDER[_\s]PERIOD[_\s]2/i, "h2_goals"],
   [/HALF_TIME/i,                                            "h1_goals"],
   [/ACE/i,                                                  "aces"],
   [/DOUBLE_FAULT/i,                                         "double_faults"],
+  // Set winners — must come BEFORE generic /SET/ so SET_1_WINNER → s1_h2h not "sets"
+  [/SET[_\s]?1[_\s]?(?:WINNER|RESULT)|WINNER[_\s]?(?:OF[_\s]?)?SET[_\s]?1/i, "s1_h2h"],
+  [/SET[_\s]?2[_\s]?(?:WINNER|RESULT)|WINNER[_\s]?(?:OF[_\s]?)?SET[_\s]?2/i, "s2_h2h"],
+  [/SET[_\s]?3[_\s]?(?:WINNER|RESULT)|WINNER[_\s]?(?:OF[_\s]?)?SET[_\s]?3/i, "s3_h2h"],
+  [/TIE[_\s]?BREAK/i,                                                           "tie_break"],
+  // F5 baseball
+  [/FIRST[_\s]?(?:FIVE|5)[_\s]?INNINGS?[_\s]?(?:WINNER|MONEYLINE)|5[_\s]?INNINGS?[_\s]?WINNER/i, "h1_h2h"],
+  [/FIRST[_\s]?(?:FIVE|5)[_\s]?INNINGS?[_\s]?(?:HANDICAP|SPREAD)|5[_\s]?INNINGS?[_\s]?HANDICAP/i, "h1_handicap"],
+  [/FIRST[_\s]?(?:FIVE|5)[_\s]?INNINGS?[_\s]?(?:RUNS?|TOTAL)|5[_\s]?INNINGS?[_\s]?(?:RUNS?|TOTAL)/i, "h1_runs"],
   [/GAME/i,                                                 "games"],
   [/SET/i,                                                  "sets"],
+  // Basketball quarter totals — before generic OVER_UNDER so they don't fall to "goals"
+  [/FIRST_QUARTER|Q1[_\s]OVER_UNDER|OVER_UNDER[_\s]Q1|QUARTER[_\s]?1[_\s](?:OVER_UNDER|TOTAL|POINTS)/i, "q1_points"],
+  [/SECOND_QUARTER|Q2[_\s]OVER_UNDER|OVER_UNDER[_\s]Q2|QUARTER[_\s]?2[_\s](?:OVER_UNDER|TOTAL|POINTS)/i, "q2_points"],
+  [/THIRD_QUARTER|Q3[_\s]OVER_UNDER|OVER_UNDER[_\s]Q3|QUARTER[_\s]?3[_\s](?:OVER_UNDER|TOTAL|POINTS)/i, "q3_points"],
+  [/FOURTH_QUARTER|Q4[_\s]OVER_UNDER|OVER_UNDER[_\s]Q4|QUARTER[_\s]?4[_\s](?:OVER_UNDER|TOTAL|POINTS)/i, "q4_points"],
+  // Basketball half totals (points) — before OVER_UNDER and HALF_TIME
+  [/FIRST_HALF[_\s]POINTS|POINTS[_\s]FIRST_HALF|HALF_TIME[_\s]POINTS|FIRST_HALF[_\s]TOTAL/i, "h1_points"],
+  [/SECOND_HALF[_\s]POINTS|POINTS[_\s]SECOND_HALF|SECOND_HALF[_\s]TOTAL/i, "h2_points"],
+  // Basketball/NFL total points — before generic OVER_UNDER to avoid → "goals"
+  [/OVER_UNDER.*POINT|POINT.*OVER_UNDER|TOTAL_POINTS/i,     "match_points"],
+  // Runs O/U must come before generic OVER_UNDER to avoid baseball runs → "goals"
+  [/OVER_UNDER.*RUN|RUN.*OVER_UNDER|RUN_LINE/i,             "runs"],
   [/OVER_UNDER|GOALS_OVER_UNDER/i,                          "goals"],
   [/POINTS/i,                                               "match_points"],
-  [/RUN/i,                                                  "runs"],
+  [/\bRUN\b/i,                                              "runs"],
   [/STRIKEOUT/i,                                            "strikeouts"],
   [/TOUCHDOWN/i,                                            "touchdowns"],
   [/SAVE/i,                                                 "goalie_saves"],
@@ -126,10 +153,23 @@ const LABEL_TO_MARKET: Array<[RegExp, string]> = [
   [/tarjetas?\s+rojas?/i,                                   "red_cards"],
   [/tarjetas?/i,                                            "cards"],
   [/disparos?|tiros?|shots?/i,                              "shots"],
+  // Basketball quarters/halves (by label) — before generic h1_goals to avoid mis-routing
+  [/primer\s+cuarto|1er?\s+cuarto|1st\s+quarter|\bq1\b/i,  "q1_points"],
+  [/segundo\s+cuarto|2[oº]?\s+cuarto|2nd\s+quarter|\bq2\b/i, "q2_points"],
+  [/tercer\s+cuarto|3er?\s+cuarto|3rd\s+quarter|\bq3\b/i,  "q3_points"],
+  [/cuarto\s+cuarto|4[oº]?\s+cuarto|4th\s+quarter|\bq4\b/i, "q4_points"],
+  [/primera?\s+mitad[^a-z]*puntos?|puntos?[^a-z]*primera?\s+mitad|1st\s+half\s+points?/i, "h1_points"],
+  [/segunda\s+mitad[^a-z]*puntos?|puntos?[^a-z]*segunda\s+mitad|2nd\s+half\s+points?/i,   "h2_points"],
+  [/total\s+puntos?|puntos?\s+totales?|match\s+points?/i,   "match_points"],
   [/primera\s+mitad|half[\s-]time|1ª\s*parte/i,             "h1_goals"],
   [/segunda\s+mitad|2nd\s+half|2ª\s*parte/i,                "h2_goals"],
   [/\baces?\b/i,                                            "aces"],
   [/dobles?\s+faltas?/i,                                    "double_faults"],
+  // Set winners — before generic "sets" to avoid mis-routing
+  [/set\s*[-\s]?\s*1\s*[-\s]?\s*(?:winner|ganador|gagnant)|(?:winner|ganador|gagnant).*set\s*1/i, "s1_h2h"],
+  [/set\s*[-\s]?\s*2\s*[-\s]?\s*(?:winner|ganador|gagnant)|(?:winner|ganador|gagnant).*set\s*2/i, "s2_h2h"],
+  [/set\s*[-\s]?\s*3\s*[-\s]?\s*(?:winner|ganador|gagnant)|(?:winner|ganador|gagnant).*set\s*3/i, "s3_h2h"],
+  [/tie[\s-]?break/i,                                       "tie_break"],
   [/\bjuegos?\b/i,                                          "games"],
   [/\bsets?\b/i,                                            "sets"],
   [/goles?\s+totales?|total\s+goles?|over\s*\/\s*under\s+goals?/i, "goals"],
@@ -142,6 +182,13 @@ const LABEL_TO_MARKET: Array<[RegExp, string]> = [
 function classifyBetOffer(offer: KambiBetOffer): string | null {
   const criterionType = offer.criterion?.type ?? "";
   const label = (offer.criterion?.label ?? offer.criterion?.englishLabel ?? offer.betOfferType?.name ?? "").toLowerCase();
+
+  // Skip per-team O/U markets (e.g. HOME_TEAM_CORNERS_TOTAL, AWAY_TEAM_GOALS).
+  // These can't be matched against full-match totals from other bookmakers.
+  if (/\b(?:HOME_TEAM|AWAY_TEAM|TEAM_[12])\b/i.test(criterionType)) return null;
+  // Also skip by label: "Córners del Betis", "Goles del equipo local" etc.
+  if (/m[aá]s\s*\/\s*menos\s+[a-záéíóúñ]/i.test(label) &&
+      /corner|gol|goal|card|tarjeta/i.test(label)) return null;
 
   for (const [re, market] of CRITERION_TO_MARKET) {
     if (re.test(criterionType)) return market;
@@ -234,8 +281,18 @@ function parseBetOffer(
   if (offer.suspended || offer.closed) return [];
   const outcomes = offer.outcomes ?? [];
 
-  // ── H2H-style markets (h2h / btts / double_chance / handicap) ─────────────
-  if (market === "h2h" || market === "btts" || market === "double_chance" || market === "handicap") {
+  // Basketball/NFL sport remap: halftime goals → halftime points; goals total → match points
+  // Criterion-based classification can't distinguish sport, so correct it here.
+  if (sport === "BASKETBALL" || sport === "AMERICANFOOTBALL") {
+    if (market === "h1_goals") market = "h1_points";
+    if (market === "h2_goals") market = "h2_points";
+    if (market === "goals")    market = "match_points";
+  }
+
+  // ── H2H-style markets (h2h / btts / double_chance / handicap / set winners / tie-break / F5) ──
+  if (market === "h2h" || market === "btts" || market === "double_chance" || market === "handicap"
+      || market === "s1_h2h" || market === "s2_h2h" || market === "s3_h2h"
+      || market === "tie_break" || market === "h1_h2h") {
     const h2h: H2HOutcome[] = outcomes.map(o => {
       const odds = kOdds(o.odds);
       if (odds < 1.01) return null;

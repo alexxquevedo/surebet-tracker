@@ -172,7 +172,8 @@ function parseCdsFixtures(data: any, sport: Sport, isLive: boolean): ScrapedEven
       else if (/h[aá]ndicap\s+asi[aá]tico|asian\s+handicap/i.test(mName))                            mKey = "asian_handicap";
       else if (/h[aá]ndicap|ventaja\s+europea/i.test(mName))                                          mKey = "handicap";
       else if (/resultado|ganador|résultat|vainqueur|1x2|match\s+result|match\s+winner/i.test(mName)) mKey = "h2h";
-      else if (/c[oó]rner|esquina/i.test(mName))                                                      mKey = "corners";
+      else if (/c[oó]rner|esquina/i.test(mName) &&
+               !/\b(?:home|away|local|visitante|equipo\s*[12])\b/i.test(mName))                      mKey = "corners";
       else if (/tarjeta|card|booking/i.test(mName))                                                   mKey = "cards";
       else if (/disparo|tiro|shot/i.test(mName))                                                      mKey = "shots";
       else if (/más\/menos|plus\/moins|over\/under|total/i.test(mName))                               mKey = "goals";
@@ -291,8 +292,8 @@ export class BwinScraper extends BaseScraper {
       const status = err?.response?.status;
       this.warn(`bwin.es proxy error: ${status ?? err?.message}`);
       if (status === 403) {
-        this.proxyBanUntil = Date.now() + 120 * 60 * 1000; // 2 hour ban
-        this.warn("bwin.es proxy 403 — IP baneada. Playwright desactivado 2h.");
+        this.proxyBanUntil = Date.now() + 35 * 60 * 1000; // 35 min — IP rotation usually completes within this window
+        this.warn("bwin.es proxy 403 — IP baneada. Playwright desactivado 35min.");
       }
       return null;
     }

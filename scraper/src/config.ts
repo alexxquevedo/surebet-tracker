@@ -13,6 +13,7 @@ export const config = {
   },
   telegram: {
     token: required("TELEGRAM_TOKEN"),
+    logChannelId: process.env.LOG_CHANNEL_ID ?? "",
   },
   betfair: {
     appKey: process.env.BETFAIR_APP_KEY ?? "",
@@ -60,7 +61,7 @@ export const config = {
     sport888:     process.env.SPORT888_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
   },
   scanner: {
-    minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0.5"),
+    minProfitPct: parseFloat(process.env.MIN_PROFIT_PCT ?? "0"),
     livePollMs: parseInt(process.env.LIVE_POLL_INTERVAL ?? "30") * 1000,
     prematchPollMs: parseInt(process.env.PREMATCH_POLL_INTERVAL ?? "300") * 1000,
     // Maximum age of odds used in live arb detection (3× the 30s poll cycle)
