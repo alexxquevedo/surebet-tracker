@@ -50,75 +50,125 @@ const SPORT_SLUGS: Partial<Record<Sport, string>> = {
 };
 
 // Per-sport market requests: each entry triggers one API call.
-// "Ganador del partido" returns all available markets for matching events (h2h + handicap + totals).
-// Football needs explicit additional calls for each market type.
+// For non-football sports, "Ganador del partido" returns handicap + totals in the same response.
+// Football requires explicit additional calls for each secondary market type.
 const SPORT_MARKET_REQUESTS: Partial<Record<Sport, Array<{ marketType: string; key: string }>>> = {
   FOOTBALL: [
-    { marketType: "Ganador del partido", key: "h2h" },
-    { marketType: "Doble oportunidad",   key: "double_chance" },
-    { marketType: "Ambos equipos marcador", key: "btts" },
-    { marketType: "Gol en ambos tiempos", key: "btts" },
+    { marketType: "Ganador del partido",      key: "h2h" },
+    { marketType: "Doble oportunidad",        key: "double_chance" },
+    { marketType: "Ambos equipos marcador",   key: "btts" },
+    { marketType: "Gol en ambos tiempos",     key: "btts" },
+    { marketType: "Total de goles",           key: "goals" },
+    { marketType: "Hándicap asiático",        key: "asian_handicap" },
+    { marketType: "Hándicap",                 key: "handicap" },
+    { marketType: "1er Tiempo - Total de goles", key: "h1_goals" },
+    { marketType: "2do Tiempo - Total de goles", key: "h2_goals" },
+    { marketType: "Tiros de esquina",         key: "corners" },
+    { marketType: "Tarjetas",                 key: "cards" },
   ],
   BASKETBALL: [
     { marketType: "Ganador del partido", key: "h2h" },
-    // also returns: Puntos con hándicap → handicap, Total de puntos → match_points
+    // NGS response also includes: handicap, match_points, quarter/half totals
   ],
   TENNIS: [
     { marketType: "Ganador del partido", key: "h2h" },
-    // also returns: any set/game markets bundled with matching events
+    // NGS response also includes: set winners (TSW1-3), per-set game totals (TS1G-3G), tie-break
   ],
   AMERICANFOOTBALL: [
     { marketType: "Ganador del partido", key: "h2h" },
-    // also returns: Hándicap → handicap, Total de puntos del partido → match_points
+    // NGS response also includes: handicap, match_points
   ],
   ICEHOCKEY: [
     { marketType: "Ganador del partido", key: "h2h" },
-    // also returns: Apuestas con Puck Line → handicap, Total de goles en el partido → goals
+    // NGS response also includes: handicap (puck line), goals
   ],
   BASEBALL: [
     { marketType: "Ganador del partido", key: "h2h" },
-    // also returns: Hándicap de carreras → handicap, Total de carreras → runs
+    // NGS response also includes: handicap (run line), runs
   ],
 };
 
 // Known sort codes → internal market keys
 const SORT_TO_KEY: Record<string, string> = {
-  MR:  "h2h",          // 3-way match result (football)
-  HH:  "h2h",          // 2-way head-to-head (basketball, tennis, etc.)
-  DC:  "double_chance",
-  TG:  "_totals",      // goals/points totals — resolved per sport
-  AH:  "asian_handicap",
-  MH:  "handicap",
-  WH:  "handicap",
-  HL:  "_totals",      // basketball high/low totals
-  BTS: "btts",
-  CRN: "corners",
-  YC:  "yellow_cards",
-  RC:  "red_cards",
+  // Match result
+  MR:    "h2h",          // 3-way match result (football)
+  HH:    "h2h",          // 2-way head-to-head (basketball, tennis, etc.)
+  DC:    "double_chance",
+  BTS:   "btts",
+  // Handicap
+  AH:    "asian_handicap",
+  MH:    "handicap",
+  WH:    "handicap",
+  // Totals — sport-specific key resolved by resolveKey()
+  TG:    "_totals",      // goals / points / games / runs (resolved per sport)
+  HL:    "_totals",      // basketball high/low totals
+  HHTG:  "h1_goals",    // football 1st-half total goals
+  H2TG:  "h2_goals",    // football 2nd-half total goals
+  // Corners / cards
+  CRN:   "corners",
+  ACRN:  "corners",      // alternative corners sort code
+  BK:    "cards",
+  YC:    "yellow_cards",
+  RC:    "red_cards",
+  // Tennis
+  TSW1:  "s1_h2h",      // set 1 winner
+  TSW2:  "s2_h2h",      // set 2 winner
+  TSW3:  "s3_h2h",      // set 3 winner
+  TS1G:  "s1_games",    // set 1 total games O/U
+  TS2G:  "s2_games",    // set 2 total games O/U
+  TS3G:  "s3_games",    // set 3 total games O/U
+  TNTB:  "tie_break",   // tie-break in match
+  // Basketball quarters / halves
+  BKQTR1: "q1_points",
+  BKQTR2: "q2_points",
+  BKQTR3: "q3_points",
+  BKQTR4: "q4_points",
+  BKH1TP: "h1_points",
+  BKH2TP: "h2_points",
 };
 
 // Detect market type from Spanish market name (for sort=-- markets with no sort code)
 function detectByName(name: string): string | null {
-  const n = name.toLowerCase();
   // Handicap variants (check specifics before generic "hándicap")
-  if (/puntos con h[áa]ndicap/i.test(name)) return "handicap";  // basketball
-  if (/h[áa]ndicap de carreras/i.test(name)) return "handicap"; // baseball run line
-  if (/puck line/i.test(name)) return "handicap";               // hockey
-  if (/\bh[áa]ndicap\b/i.test(name)) return "handicap";        // NFL / generic
+  if (/puntos con h[áa]ndicap/i.test(name)) return "handicap";     // basketball
+  if (/h[áa]ndicap de carreras/i.test(name)) return "handicap";    // baseball run line
+  if (/puck line/i.test(name)) return "handicap";                   // hockey
+  if (/h[áa]ndicap asi[áa]tico/i.test(name)) return "asian_handicap";
+  if (/\bh[áa]ndicap\b/i.test(name)) return "handicap";            // NFL / generic
+  // Half-time totals (before generic "total de goles")
+  if (/(?:primer[ao]?|1er?|1[aªº])\s*(?:tiempo|mitad|parte).*(?:total\s+(?:de\s+)?goles?|goles?\s+totales?)|(?:total\s+(?:de\s+)?goles?|goles?\s+totales?).*(?:primer[ao]?|1er?|1[aªº])\s*(?:tiempo|mitad|parte)/i.test(name)) return "h1_goals";
+  if (/(?:segundo?|2do?|2[aªº])\s*(?:tiempo|mitad|parte).*(?:total\s+(?:de\s+)?goles?|goles?\s+totales?)|(?:total\s+(?:de\s+)?goles?|goles?\s+totales?).*(?:segundo?|2do?|2[aªº])\s*(?:tiempo|mitad|parte)/i.test(name)) return "h2_goals";
   // Totals (specific before generic "total")
-  if (/total de puntos del partido/i.test(name)) return "_totals"; // NFL
-  if (/total de puntos/i.test(name)) return "_totals";           // basketball
-  if (/total de carreras/i.test(name)) return "_totals";         // baseball
+  if (/total de puntos del partido/i.test(name)) return "_totals";  // NFL
+  if (/total de puntos/i.test(name)) return "_totals";              // basketball
+  if (/total de carreras/i.test(name)) return "_totals";            // baseball
   if (/total de goles en el partido/i.test(name)) return "_totals"; // hockey (incl OT)
-  if (/total de goles/i.test(name)) return "_totals";            // football
-  if (/total de juegos/i.test(name)) return "_totals";           // tennis
-  if (/total de sets/i.test(name)) return "sets";                // tennis
+  if (/total de goles/i.test(name)) return "_totals";               // football
+  if (/total de juegos/i.test(name)) return "_totals";              // tennis
+  if (/total de sets/i.test(name)) return "sets";                   // tennis
+  // Tennis set winners
+  if (/ganador\s*(?:del\s*)?(?:1er?|primer)\s*set/i.test(name)) return "s1_h2h";
+  if (/ganador\s*(?:del\s*)?(?:2do?|segundo)\s*set/i.test(name)) return "s2_h2h";
+  if (/ganador\s*(?:del\s*)?(?:3er?|tercer)\s*set/i.test(name)) return "s3_h2h";
+  // Basketball quarters / halves
+  if (/(?:primer|1er?)\s*cuarto/i.test(name)) return "q1_points";
+  if (/(?:segundo|2do?)\s*cuarto/i.test(name)) return "q2_points";
+  if (/(?:tercer|3er?)\s*cuarto/i.test(name)) return "q3_points";
+  if (/(?:cuarto|4to?)\s*cuarto/i.test(name)) return "q4_points";
+  if (/(?:primer[ao]?|1er?|1[aªº])\s*mitad.*puntos?|puntos?.*(?:primer[ao]?|1er?|1[aªº])\s*mitad/i.test(name)) return "h1_points";
+  if (/(?:segundo?|2do?|2[aªº])\s*mitad.*puntos?|puntos?.*(?:segundo?|2do?|2[aªº])\s*mitad/i.test(name)) return "h2_points";
   // BTTS / other football markets
   if (/ambos equipos marcad/i.test(name)) return "btts";
   if (/ambos marcan/i.test(name)) return "btts";
   if (/doble oportunidad/i.test(name)) return "double_chance";
   return null;
 }
+
+// Markets that use H2HOutcome[] (binary/ternary winner with no numeric line)
+const BINARY_MARKET_KEYS = new Set([
+  "h2h", "double_chance", "btts",
+  "s1_h2h", "s2_h2h", "s3_h2h", "tie_break", "h1_h2h",
+]);
 
 function resolveKey(baseKey: string, sport: Sport): string {
   if (baseKey !== "_totals") return baseKey;
@@ -294,7 +344,13 @@ function parseNgsResponse(
 
         // Resolve market key: prefer sort code mapping, fall back to name detection
         const sortKey = SORT_TO_KEY[market.sort] ?? detectByName(market.name);
-        if (!sortKey) continue;  // Skip unrecognised markets
+        if (!sortKey) {
+          // Log unknown sort codes — helps discover new market codes (e.g. NBA quarters)
+          if (process.env.WH_DEBUG_MARKETS === "1") {
+            console.debug(`[wh-debug] unknown sort="${market.sort}" name="${market.name}" sport=${sport}`);
+          }
+          continue;
+        }
         const marketKey = resolveKey(sortKey, sport);
 
         // Filter out football "win by margin" markets that look like h2h but aren't
@@ -309,7 +365,7 @@ function parseNgsResponse(
         const toDecimal = (s: NgsSelection) =>
           parseFloat((s.currentPriceNum / s.currentPriceDen + 1).toFixed(4));
 
-        if (marketKey === "h2h" || marketKey === "double_chance" || marketKey === "btts") {
+        if (BINARY_MARKET_KEYS.has(marketKey)) {
           const outcomes: H2HOutcome[] = activeSels.map(s => ({
             name: s.name || (s.fbResult === "H" ? "1" : s.fbResult === "D" ? "X" : "2"),
             odds: toDecimal(s),
