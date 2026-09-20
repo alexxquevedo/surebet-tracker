@@ -153,8 +153,9 @@ const MARKET_LABEL: Record<string, string> = {
   tie_break: "Tie-Break",
 };
 
-// Sports where h2h draw is possible (basketball never draws — excluded)
-const THREE_WAY_SPORTS = new Set(["FOOTBALL", "ICEHOCKEY", "HOCKEY"]);
+// Only football h2h is genuinely 3-way (regular time draw possible).
+// Hockey h2h in Spanish books is money line (includes OT/SO winner = no draw).
+const THREE_WAY_SPORTS = new Set(["FOOTBALL"]);
 
 function resolveMarketLabelBySport(market: string, sport: string): string {
   if (market === "h2h") {
