@@ -408,7 +408,7 @@ async function sendAdminAlert(text: string): Promise<void> {
 // Track consecutive cycles where ALL scrapers return 0 events.
 // Proxy 402 heuristic: if working scrapers (Betsson, Winamax, Codere) still have events
 // but proxy-dependent ones return 0, that's a proxy issue — no alert needed.
-const WORKING_SCRAPERS = ["winamax", "codere"]; // never use proxy
+const WORKING_SCRAPERS = ["codere"]; // direct scrapers that don't need proxy
 let zeroCyclesLive = 0;
 let zeroCyclesPrematch = 0;
 // Rate-limit alerts: only send once per 30 min per mode to avoid spam

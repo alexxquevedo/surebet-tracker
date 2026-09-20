@@ -10,7 +10,7 @@
  */
 
 import { BaseScraper } from "./base";
-import { browserManager, dismissCookies, captureJsonRequests, logPageState } from "./playwright-base";
+import { browserManager, dismissCookies, captureJsonRequests, logPageState, getProxyForScraper } from "./playwright-base";
 import { buildEventKey } from "../matcher/normalize";
 import type { ScrapedEvent, Sport, H2HOutcome, TotalsLine, PlayerPropLine } from "../types";
 import type { Page } from "playwright";
@@ -964,7 +964,7 @@ export class WinamaxScraper extends BaseScraper {
 
   // Prematch: each sport's WS only sends that sport's data, so we load per-sport.
   private async scrapePrematchSport(sport: Sport): Promise<ScrapedEvent[]> {
-    const { page, ctx } = await browserManager.newPage();
+    const { page, ctx } = await browserManager.newPage(getProxyForScraper("winamax"), "winamax");
     const captured: Array<{ url: string; data: any }> = [];
     const wsState: Record<string, any> = {};
     const wsMessages: Array<{ url: string; payload: string }> = [];
