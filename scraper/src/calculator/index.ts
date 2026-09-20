@@ -233,9 +233,17 @@ export function detectSurebet(market: GroupedMarket): DetectedSurebet | null {
 
   const stakes = distributeStakes(bestPerSelection.map((s) => s.odds));
 
+  // When allMapped, s.name is a positional "1"/"X"/"2" — display the real team name instead
+  const posDisplay = new Map<string, string>([["X", "Draw"]]);
+  if (allMapped) {
+    const tc = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase());
+    if (teamA) posDisplay.set("1", tc(teamA));
+    if (teamB) posDisplay.set("2", tc(teamB));
+  }
+
   const legs: ArbLeg[] = bestPerSelection.map((s, i) => ({
     bookmaker: s.bookmaker,
-    selection: s.name,
+    selection: posDisplay.get(s.name) ?? s.name,
     odds: s.odds,
     stake: stakes[i],
     scrapedAt: market.byBookScrapedAt.get(s.bookmaker),
