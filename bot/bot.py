@@ -521,6 +521,9 @@ NOVEDADES_AVISOS = (
 )
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+# httpx logs every request URL at INFO — Telegram's include the bot token (getUpdates every 10 s)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -1975,16 +1978,28 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
     logger.info(f"Escaneo {'LIVE' if live else 'PRE'}: {total_surebets} surebets, {total_middles} middles")
     return total_surebets + total_middles
 
+_last_sin_creditos_log = datetime.min
+
+
+def _log_sin_creditos() -> None:
+    # Logged every 30 s before (≈2,900 lines a day); once an hour is enough.
+    global _last_sin_creditos_log
+    if datetime.now() - _last_sin_creditos_log >= timedelta(hours=1):
+        _last_sin_creditos_log = datetime.now()
+        logger.warning("Sin créditos de la API externa — escaneo propio del bot omitido "
+                       "(las alertas las envía el scanner). Aviso una vez por hora.")
+
+
 async def tarea_escaneo_prematch(context: ContextTypes.DEFAULT_TYPE):
     if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[prematch] Sin créditos API — escaneo omitido.")
+        _log_sin_creditos()
         return
     await escanear_y_alertar(context.application, live=False)
 
 async def tarea_escaneo_live(context: ContextTypes.DEFAULT_TYPE):
     global live_empty_streak
     if api_credits_remaining is not None and api_credits_remaining <= 0:
-        logger.warning("[live] Sin créditos API — escaneo omitido.")
+        _log_sin_creditos()
         return
     # Prune stale live deduplication entries (live games never last >3h)
     cutoff = datetime.now() - timedelta(hours=3)
