@@ -54,7 +54,6 @@ export const config = {
     betano:       process.env.BETANO_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
     altenar:      process.env.ALTENAR_PROXY_URL      ?? process.env.ROUTER_PROXY_URL ?? "",
     // New bookmakers — share the router proxy until dedicated proxies are configured
-    marathonbet:  process.env.MARATHONBET_PROXY_URL  ?? process.env.ROUTER_PROXY_URL ?? "",
     jokerbet:     process.env.JOKERBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
     paston:       process.env.PASTON_PROXY_URL       ?? process.env.ROUTER_PROXY_URL ?? "",
     kirolbet:     process.env.KIROLBET_PROXY_URL     ?? process.env.ROUTER_PROXY_URL ?? "",
@@ -81,7 +80,7 @@ export const BOOKMAKERS = [
   "leovegas", "888sport", "luckia", "retabet",
   "betway", "interwetten", "betano", "unibet", "tonybet", "casino-gran-madrid", "kirolbet",
   // New bookmakers added 2026-09-10
-  "marathonbet", "jokerbet", "paston",
+  "jokerbet", "paston",
 ] as const;
 
 export type BookmakerKey = (typeof BOOKMAKERS)[number];

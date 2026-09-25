@@ -20,6 +20,7 @@ export const createArbitrageSchema = z.object({
     'FOOTBALL','TENNIS','BASKETBALL','BASEBALL','HOCKEY',
     'CRICKET','RUGBY','GOLF','MMA','BOXING',
     'CYCLING','MOTORSPORT','ESPORTS','OTHER',
+    'HANDBALL','VOLLEYBALL','AMERICANFOOTBALL','TABLETENNIS',
   ]),
   competition: z.string().max(200).optional(),
   eventName: z.string().min(2, 'El nombre del evento es demasiado corto').max(300),

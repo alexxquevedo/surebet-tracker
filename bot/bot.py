@@ -81,7 +81,7 @@ DEFAULT_USER_CONFIG = {
         "soccer": True, "basketball": True,
         "tennis": True,
         "americanfootball_nfl": True, "icehockey_nhl": True,
-        "baseball_mlb": True,
+        "baseball_mlb": True, "tabletennis": True,
     },
     "bookmakers": {},  # se sobreescribe abajo con {k: True for k in BOOKMAKERS}
     "stake": 100.0,
@@ -136,14 +136,16 @@ SPORT_DISPLAY = {
     "americanfootball_nfl": ("🏈", "Fútbol Americano"),
     "icehockey_nhl":        ("🏒", "Hockey Hielo"),
     "baseball_mlb":         ("⚾", "Béisbol"),
+    "tabletennis":          ("🏓", "Tenis de mesa"),
 }
 SPORT_STATUS = {
-    "soccer":               "Winamax + Codere (scraper directo) + OddsAPI",
-    "basketball":           "OddsAPI (NBA/EuroLeague)",
-    "tennis":               "OddsAPI (ATP/WTA)",
-    "americanfootball_nfl": "OddsAPI — temporada oct-feb",
-    "icehockey_nhl":        "OddsAPI — temporada oct-jun",
-    "baseball_mlb":         "OddsAPI — temporada abr-oct",
+    "soccer":               "Scanner propio — todas las casas activas",
+    "basketball":           "Scanner propio — todas las casas activas",
+    "tennis":               "Scanner propio — todas las casas activas",
+    "americanfootball_nfl": "Scanner propio — todas las casas activas",
+    "icehockey_nhl":        "Scanner propio — todas las casas activas",
+    "baseball_mlb":         "Scanner propio — todas las casas activas",
+    "tabletennis":          "Scanner propio — bet365, Bwin, Winamax, Betsson, Betway, Codere, DaznBet, LeoVegas, PokerStars, Casino Gran Madrid",
 }
 
 LEAGUE_MAP = {
@@ -153,7 +155,11 @@ LEAGUE_MAP = {
     "americanfootball_nfl": "NFL",
     "icehockey_nhl":        "NHL",
     "baseball_mlb":         "MLB",
+    "tabletennis":          "Tenis de mesa",
 }
+# Deportes que solo cubre el scanner (sus alertas llegan por el notificador del scanner):
+# el escaneo antiguo del bot no los pide
+SCANNER_ONLY_SPORTS = {"tabletennis"}
 BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
 
 # ============================================================
@@ -163,27 +169,26 @@ BASKETBALL_API_KEYS   = ["basketball_nba", "basketball_euroleague"]
 BOOKMAKERS: dict[str, dict] = {
     "winamax":     {"name": "Winamax",      "emoji": "🃏", "url": "https://www.winamax.es",          "region": "ES",  "status": "✅ Funcionando",          "default": True},
     "codere":      {"name": "Codere",        "emoji": "🎰", "url": "https://www.codere.es",           "region": "ES",  "status": "✅ Funcionando",          "default": True},
-    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "🔄 SignalR",              "default": True},
-    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": "https://www.betfair.es",          "region": "INT", "status": "⏸ Sin credenciales API", "default": True},
-    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "⏸ Necesita proxy",        "default": True},
-    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "betsson":     {"name": "Betsson",       "emoji": "💚", "url": "https://www.betsson.es",          "region": "ES",  "status": "🔄 Playwright",           "default": True},
-    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "⏸ Necesita proxy",        "default": True},
-    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": "https://www.pokerstars.es",      "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": "https://www.888sport.es",        "region": "INT", "status": "⏸ Kambi — proxy ES",     "default": True},
-    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
+    "retabet":     {"name": "Retabet",       "emoji": "🔴", "url": "https://www.retabet.es",          "region": "ES",  "status": "⏸ Pendiente",              "default": True},
+    "betfair":     {"name": "Betfair",       "emoji": "💱", "url": "https://www.betfair.es",          "region": "INT", "status": "✅ Exchange (solo prematch)", "default": True},
+    "bet365":      {"name": "Bet365",        "emoji": "🏆", "url": "https://www.bet365.es",           "region": "INT", "status": "✅ Funcionando",        "default": True},
+    "sportium":    {"name": "Sportium",      "emoji": "⚽", "url": "https://apuestas.sportium.es",    "region": "ES",  "status": "⏸ En desarrollo",        "default": True},
+    "bwin":        {"name": "Bwin",          "emoji": "🎯", "url": "https://www.bwin.es",             "region": "ES",  "status": "✅ Funcionando",        "default": True},
+    "williamhill": {"name": "William Hill",  "emoji": "🎩", "url": "https://sports.williamhill.es",   "region": "ES",  "status": "⛔ Bloquea la IP del servidor",        "default": True},
+    "betsson":     {"name": "Betsson",       "emoji": "💚", "url": "https://www.betsson.es",          "region": "ES",  "status": "✅ Funcionando",           "default": True},
+    "daznbet":     {"name": "DaznBet",       "emoji": "📺", "url": "https://www.daznbet.es",          "region": "ES",  "status": "✅ Funcionando",        "default": True},
+    "pokerstars":  {"name": "PokerStars",    "emoji": "♠️", "url": "https://www.pokerstars.es",      "region": "INT", "status": "✅ Funcionando (pocos eventos)",     "default": True},
+    "leovegas":    {"name": "LeoVegas",      "emoji": "🦁", "url": "https://www.leovegas.es",         "region": "INT", "status": "✅ Funcionando",     "default": True},
+    "888sport":    {"name": "888sport",      "emoji": "8️⃣", "url": "https://www.888sport.es",        "region": "INT", "status": "⏸ Listo, falta memoria en el servidor",     "default": True},
+    "luckia":      {"name": "Luckia",        "emoji": "🍀", "url": "https://apuestas.luckia.es",      "region": "ES",  "status": "⏸ Pendiente",   "default": True},
     # ── Nuevas casas (proxy ES pendiente — Cudy LT500) ──────
-    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
-    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
-    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Altenar — proxy ES",   "default": True},
-    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "⏸ Altenar — proxy ES",   "default": True},
-    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⏸ Kambi — proxy ES",     "default": True},
-    "marathonbet":     {"name": "Marathonbet",        "emoji": "🏃", "url": "https://www.marathonbet.es",            "region": "INT", "status": "⏸ Necesita proxy ES",     "default": True},
-    "jokerbet":        {"name": "JokerBet",           "emoji": "🃏", "url": "https://www.jokerbet.es",              "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
-    "paston":          {"name": "Pastón",             "emoji": "🎰", "url": "https://www.paston.es",                "region": "ES",  "status": "⏸ Necesita proxy ES",     "default": True},
+    "betway":      {"name": "Betway",        "emoji": "🔵", "url": "https://www.betway.es",           "region": "INT", "status": "✅ Funcionando",     "default": True},
+    "betano":      {"name": "Betano",        "emoji": "🟠", "url": "https://www.betano.es",           "region": "ES",  "status": "⛔ Antibots",     "default": True},
+    "tonybet":          {"name": "TonyBet",            "emoji": "🎲", "url": "https://www.tonybet.es",               "region": "INT", "status": "⏸ Pendiente",   "default": True},
+    "casino-gran-madrid": {"name": "Casino Gran Madrid", "emoji": "🎰", "url": "https://www.casinogranmadrid.es/apuestas", "region": "ES",  "status": "✅ Funcionando",   "default": True},
+    "kirolbet":        {"name": "Kirolbet",           "emoji": "🏟️", "url": "https://www.kirolbet.es",              "region": "ES",  "status": "⛔ Bloquea la IP del servidor",     "default": True},
+    "jokerbet":        {"name": "JokerBet",           "emoji": "🃏", "url": "https://www.jokerbet.es",              "region": "ES",  "status": "⏸ Web cambiada",     "default": True},
+    "paston":          {"name": "Pastón",             "emoji": "🎰", "url": "https://www.paston.es",                "region": "ES",  "status": "⏸ Web cambiada",     "default": True},
 }
 
 # Scrapers internos que no son casas de usuario independientes
@@ -943,7 +948,13 @@ def dias_restantes(user_id):
     return max(0, (sub["expires"] - datetime.now()).days)
 
 def get_config(user_id):
-    if user_id in subscriptions: return subscriptions[user_id]["config"]
+    if user_id in subscriptions:
+        cfg = subscriptions[user_id]["config"]
+        sp = cfg.setdefault("sports", {})
+        # Deporte nuevo: activado si el usuario tenía todos los deportes marcados
+        if "tabletennis" not in sp:
+            sp["tabletennis"] = bool(sp) and all(bool(v) for v in sp.values())
+        return cfg
     return deepcopy(DEFAULT_USER_CONFIG)
 
 def get_creditos(user_id): return creditos.get(user_id, 0)
@@ -1337,6 +1348,7 @@ _VPS_SPORT_MAP = {
     "baseball_mlb":         "BASEBALL",
     "icehockey_nhl":        "ICEHOCKEY",
     "americanfootball_nfl": "AMERICANFOOTBALL",
+    "tabletennis":          "TABLETENNIS",
 }
 
 def _convert_vps_event_to_odds_api(ev: dict, sport_key: str) -> dict | None:
@@ -1823,7 +1835,7 @@ async def escanear_y_alertar(app, live=False, user_ids=None, tipos_override=None
         if not tiene_suscripcion(uid): continue
         cfg = get_config(uid)
         for sport, active in cfg["sports"].items():
-            if active and sport in SPORT_DISPLAY: all_sports.add(sport)
+            if active and sport in SPORT_DISPLAY and sport not in SCANNER_ONLY_SPORTS: all_sports.add(sport)
     # Filtrar deportes pausados globalmente por el admin
     _scanner_state = _load_scanner_state()
     all_sports -= set(_scanner_state.get("disabled_sports", []))
@@ -5567,7 +5579,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "time": "2026-06-10T22:00:00Z",
             "legs_sure": [
                 {"bookmaker": "Bet365",  "outcome": "Toronto", "odd": 2.15, "stake_pct": 49.0, "point": None, "description": ""},
-                {"bookmaker": "Marathonbet","outcome": "Boston","odd": 2.12, "stake_pct": 51.0, "point": None, "description": ""},
+                {"bookmaker": "Betsson",    "outcome": "Boston","odd": 2.12, "stake_pct": 51.0, "point": None, "description": ""},
             ],
             "legs_mid": [
                 {"bookmaker": "Bet365",  "outcome": "Over",  "odd": 1.91, "stake_pct": 50.0, "point": 5.5, "description": ""},
@@ -5584,7 +5596,7 @@ async def cmd_testalerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {"bookmaker": "Betfair", "outcome": "Dodgers", "odd": 2.12, "stake_pct": 51.0, "point": None, "description": ""},
             ],
             "legs_mid": [
-                {"bookmaker": "Marathonbet","outcome": "Over",  "odd": 1.90, "stake_pct": 50.0, "point": 8.5,  "description": ""},
+                {"bookmaker": "Betsson",    "outcome": "Over",  "odd": 1.90, "stake_pct": 50.0, "point": 8.5,  "description": ""},
                 {"bookmaker": "Betfair",    "outcome": "Under", "odd": 2.05, "stake_pct": 50.0, "point": 10.5, "description": ""},
             ],
             "profit_sure": 1.96, "profit_base": 0.9, "profit_max": 8.0, "prob_mid": 30.0,

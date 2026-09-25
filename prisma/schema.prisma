@@ -90,6 +90,10 @@ enum SportType {
   MOTORSPORT
   ESPORTS
   OTHER
+  HANDBALL
+  VOLLEYBALL
+  AMERICANFOOTBALL
+  TABLETENNIS
 }
 
 enum TransactionType {
@@ -895,7 +899,7 @@ model Notification {
 
 model ScannedOdds {
   id        String    @id @default(cuid())
-  bookmaker String    // "betfair" | "marathonbet" | "codere" | etc.
+  bookmaker String    // "betfair" | "codere" | "winamax" | etc.
   sport     SportType
   eventKey  String    // normalized key: "football:barcelona:realmadrid:2026-06-14"
   eventName String    // display: "Real Madrid vs Barcelona"

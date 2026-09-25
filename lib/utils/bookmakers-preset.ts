@@ -21,7 +21,6 @@ export const BOOKMAKER_PRESETS: BookmakerPreset[] = [
   { name: 'Betfair',      color: '#FFB81C', currency: 'EUR', country: 'GB', websiteUrl: 'https://www.betfair.es' },
   { name: 'Betsson',      color: '#E5001A', currency: 'EUR', country: 'MT', websiteUrl: 'https://www.betsson.es' },
   { name: 'LeoVegas',     color: '#F7A600', currency: 'EUR', country: 'SE', websiteUrl: 'https://www.leovegas.es' },
-  { name: 'Marathonbet',  color: '#002060', currency: 'EUR', country: 'CY', websiteUrl: 'https://www.marathonbet.es' },
   { name: 'William Hill', color: '#007AC1', currency: 'EUR', country: 'GB', websiteUrl: 'https://www.williamhill.es' },
   { name: '888sport',     color: '#F27421', currency: 'EUR', country: 'GI', websiteUrl: 'https://www.888sport.es' },
   { name: 'Codere',       color: '#E2001A', currency: 'EUR', country: 'ES', websiteUrl: 'https://www.codere.es'  },

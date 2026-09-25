@@ -23,6 +23,7 @@ const SPORT_LABELS: Record<string, string> = {
   HOCKEY: 'Hockey', BASEBALL: 'Béisbol', RUGBY: 'Rugby',
   CRICKET: 'Cricket', GOLF: 'Golf', MMA: 'MMA', BOXING: 'Boxeo',
   MOTORSPORT: 'Motor', ESPORTS: 'eSports', OTHER: 'Otro',
+  TABLETENNIS: 'Tenis de mesa', HANDBALL: 'Balonmano', VOLLEYBALL: 'Voleibol', AMERICANFOOTBALL: 'Fútbol americano',
 }
 
 /** Genera un título automático cuando el usuario no introduce uno. */
@@ -1312,7 +1313,7 @@ export async function createComboBetAction(formData: FormData): Promise<BetActio
                   eventName:   s.eventName || s.description || 'Selección',
                   selection:   s.description || 'Selección',
                   odds:        D(1),
-                  sport:       (s.sport || undefined) as 'FOOTBALL' | 'BASKETBALL' | 'TENNIS' | 'HOCKEY' | 'BASEBALL' | 'RUGBY' | 'CRICKET' | 'GOLF' | 'MMA' | 'BOXING' | 'CYCLING' | 'MOTORSPORT' | 'ESPORTS' | 'OTHER' | undefined,
+                  sport:       (s.sport || undefined) as 'FOOTBALL' | 'BASKETBALL' | 'TENNIS' | 'HOCKEY' | 'BASEBALL' | 'RUGBY' | 'CRICKET' | 'GOLF' | 'MMA' | 'BOXING' | 'CYCLING' | 'MOTORSPORT' | 'ESPORTS' | 'OTHER' | 'HANDBALL' | 'VOLLEYBALL' | 'AMERICANFOOTBALL' | 'TABLETENNIS' | undefined,
                   competition: s.competition || null,
                 })),
               },

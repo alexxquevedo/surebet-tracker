@@ -24,7 +24,6 @@ import type { ScrapedEvent, GroupedMarket, Sport, MarketOutcomes, H2HOutcome, De
 import { BaseScraper } from "./scrapers/base";
 import { isScraperEnabled } from "./scrapers/scraperState";
 import { BetfairScraper } from "./scrapers/betfair";
-// MarathonbetScraper: geo-blocked 451 from both VPS (FR) and Digi 4G ES proxy
 import { WinamaxScraper } from "./scrapers/winamax";
 import { BwinScraper } from "./scrapers/bwin";
 import { BetssonScraper } from "./scrapers/betsson";
@@ -515,11 +514,11 @@ async function pollCycle(isLive: boolean): Promise<void> {
   // Altenar also blocked. Retabet blocked by Akamai.
   const KAMBI_BLOCKED = new Set(["leovegas", "unibet"]);
   const ALTENAR_BLOCKED = new Set(["luckia", "casino-gran-madrid", "tonybet"]);
-  const skipInLive = new Set(["bet365", "sportium", "marathonbet", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
+  const skipInLive = new Set(["bet365", "sportium", "retabet", ...KAMBI_BLOCKED, ...ALTENAR_BLOCKED]);
   // Prematch scrapers that return 0 events but hold pageSemaphore, blocking DaznBet
   // bet365 removed from skipInPrematch — ROUTER_PROXY_URL gives it a valid Spanish IP via Digi SIM.
   // It uses its own pageSemaphore slot and runs in prematch cycles (5min cadence) only.
-  const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "sportium", "marathonbet"]);
+  const skipInPrematch = new Set([...KAMBI_BLOCKED, ...ALTENAR_BLOCKED, "retabet", "sportium"]);
   const scrapeResults = await Promise.allSettled(
     scrapers.filter(s => {
       if (!isScraperEnabled(s.name)) {

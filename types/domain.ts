@@ -58,6 +58,10 @@ export type SportType =
   | 'MOTORSPORT'
   | 'ESPORTS'
   | 'OTHER'
+  | 'HANDBALL'
+  | 'VOLLEYBALL'
+  | 'AMERICANFOOTBALL'
+  | 'TABLETENNIS'
 
 export type TransactionType =
   | 'INITIAL_DEPOSIT'
