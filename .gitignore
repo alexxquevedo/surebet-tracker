@@ -40,3 +40,7 @@ yarn-debug.log*
 # Misc
 .vercel
 .turbo
+
+# Python bytecode (a compiled bot.py carried the DB password into git)
+__pycache__/
+*.pyc
