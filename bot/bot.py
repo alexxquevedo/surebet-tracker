@@ -6216,8 +6216,12 @@ async def main():
     # Tareas periódicas
     app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
     app.job_queue.run_repeating(tarea_sync_desde_api,          interval=300,   first=60)  # 5min — activa pagos Stripe
-    app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
-    app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
+    # Las alertas automáticas las manda SOLO el escáner: un único flujo, igual en el canal de
+    # historial y en los chats. El escaneo propio del bot (API externa + su propio cálculo)
+    # mandaba alertas que nunca pasaban por el canal; queda apagado salvo BOT_LEGACY_SCAN=1.
+    if os.environ.get("BOT_LEGACY_SCAN") == "1":
+        app.job_queue.run_repeating(tarea_escaneo_prematch,    interval=BOT_CONFIG["scan_prematch_interval"], first=20)
+        app.job_queue.run_repeating(tarea_escaneo_live,        interval=BOT_CONFIG["scan_live_interval"],     first=10)
     app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
     app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
