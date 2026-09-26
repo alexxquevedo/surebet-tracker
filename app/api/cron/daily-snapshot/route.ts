@@ -47,9 +47,11 @@ export async function GET(req: NextRequest) {
         cumWithdrawn,
         balances,
         inPlay,
-        dailyByType,
+        // Same order as the queries below: todayInflows/todayOutflows/dailyByType were shifted by one,
+        // so the EOD balance used the wrong sums and the per-type loop iterated an aggregate object
         todayInflows,
         todayOutflows,
+        dailyByType,
       ] = await Promise.all([
         // placed yesterday
         prisma.betRecord.aggregate({

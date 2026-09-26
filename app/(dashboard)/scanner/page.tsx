@@ -26,6 +26,15 @@ const SPORT_LABELS: Record<string, string> = {
   OTHER:      'Otros',
 }
 
+/** Scanner book id → the book's name ("casino-gran-madrid" showed as is) */
+const BOOK_NAMES: Record<string, string> = {
+  bet365: 'Bet365', winamax: 'Winamax', codere: 'Codere', bwin: 'Bwin', williamhill: 'William Hill',
+  betsson: 'Betsson', daznbet: 'DaznBet', pokerstars: 'PokerStars', leovegas: 'LeoVegas', '888sport': '888sport',
+  betway: 'Betway', 'casino-gran-madrid': 'Casino Gran Madrid', betfair: 'Betfair', betfair_exchange: 'Betfair Exchange',
+  sportium: 'Sportium', retabet: 'Retabet', luckia: 'Luckia', betano: 'Betano', tonybet: 'TonyBet',
+  kirolbet: 'Kirolbet', jokerbet: 'JokerBet', paston: 'Pastón',
+}
+
 function timeAgo(date: Date): string {
   const diffMs = Date.now() - date.getTime()
   const mins   = Math.floor(diffMs / 60_000)
@@ -134,7 +143,7 @@ export default async function ScannerPage() {
                           key={leg.id}
                           className="inline-flex items-center gap-1 text-[11px] rounded-md bg-muted px-2 py-0.5"
                         >
-                          <span className="font-medium">{leg.bookmaker}</span>
+                          <span className="font-medium">{BOOK_NAMES[leg.bookmaker] ?? leg.bookmaker}</span>
                           <span className="text-muted-foreground">·</span>
                           <span className="tabular-nums">{leg.odds.toFixed(2)}</span>
                           {leg.selection && (

@@ -63,7 +63,8 @@ describe('calculateOptimalStakes', () => {
     const returnA = stakes[0]! * odds[0]!
     const returnB = stakes[1]! * odds[1]!
 
-    expect(Math.abs(returnA - returnB)).toBeLessThan(0.01)
+    // Stakes are rounded to cents, so each return can move by half a cent times its odds
+    expect(Math.abs(returnA - returnB)).toBeLessThanOrEqual(0.005 * (odds[0]! + odds[1]!))
   })
 
   it('stakes sum to totalBankroll within rounding tolerance', () => {

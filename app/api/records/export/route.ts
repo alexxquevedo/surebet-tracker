@@ -5,6 +5,7 @@ import { type Prisma } from '@prisma/client'
 import ExcelJS from 'exceljs'
 import { sendCsvExportEmail } from '@/lib/services/email'
 import { fromZonedTime } from 'date-fns-tz'
+import { SPORTS } from '@/lib/utils/constants'
 
 const STATUS_LABEL: Record<string, string> = {
   PLACED:      'En juego',
@@ -15,19 +16,8 @@ const STATUS_LABEL: Record<string, string> = {
   PARTIAL_WIN: 'Parcial',
 }
 
-const SPORT_LABEL: Record<string, string> = {
-  FOOTBALL:   'Fútbol',
-  BASKETBALL: 'Baloncesto',
-  TENNIS:     'Tenis',
-  HOCKEY:     'Hockey',
-  BASEBALL:   'Béisbol',
-  RUGBY:      'Rugby',
-  MMA:        'MMA',
-  BOXING:     'Boxeo',
-  MOTORSPORT: 'Motorsport',
-  ESPORTS:    'eSports',
-  OTHER:      'Otro',
-}
+// Every sport of SportType (table tennis, handball, volleyball… came out as the raw enum name)
+const SPORT_LABEL: Record<string, string> = Object.fromEntries(SPORTS.map((s) => [s.value, s.label]))
 
 const TYPE_LABEL: Record<string, string> = {
   ARBITRAGE: 'Surebet',

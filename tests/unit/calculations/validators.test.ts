@@ -41,7 +41,8 @@ describe('validateOdds', () => {
 
   it('includes fieldName in error message when provided', () => {
     const result = validateOdds(0, 'Casa 1')
-    expect(result.errors[0]).toContain('Casa 1')
+    // Errors are { field, code, message }: the field carries the name
+    expect(result.errors[0]?.field).toBe('Casa 1')
   })
 })
 

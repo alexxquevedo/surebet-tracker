@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db/client'
+import { SPORTS } from '@/lib/utils/constants'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -133,19 +134,8 @@ export async function getStatsData(userId: string, dateFrom?: Date): Promise<Sta
     .filter((d) => d.count > 0)
 
   // ── Por deporte ───────────────────────────────────────────────────────────
-  const SPORT_LABEL: Record<string, string> = {
-    FOOTBALL:   'Fútbol',
-    BASKETBALL: 'Baloncesto',
-    TENNIS:     'Tenis',
-    HOCKEY:     'Hockey',
-    BASEBALL:   'Béisbol',
-    RUGBY:      'Rugby',
-    MMA:        'MMA',
-    BOXING:     'Boxeo',
-    MOTORSPORT: 'Motorsport',
-    ESPORTS:    'eSports',
-    OTHER:      'Otro',
-  }
+  // Every sport of SportType (table tennis, handball, volleyball… came out as the raw enum name)
+  const SPORT_LABEL: Record<string, string> = Object.fromEntries(SPORTS.map((s) => [s.value, s.label]))
 
   const bySportGroup = groupBy(settled, (r) => r.sport ?? 'OTHER')
   const bySport: CategoryStat[] = Object.entries(bySportGroup)
