@@ -36,6 +36,25 @@ except Exception:
 # ============================================================
 # CONFIGURACIÓN PRINCIPAL
 # ============================================================
+def _load_local_env() -> None:
+    """Loads bot/.env (KEY=VALUE lines) for the variables not already set. The scanner DB URL, with
+    its password, used to be written in this file and ended up in git; it now lives in bot/.env."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+_load_local_env()
+
+
 def _require_env(key: str) -> str:
     val = os.environ.get(key)
     if not val:
@@ -3809,7 +3828,15 @@ async def mostrar_correccion_selector(query, context, p, flow):
 
 # ── Scanner SCAN_AH_ / SCAN_ANH_ — Hecha / No hecha desde el nuevo scanner ──
 
-SCANNER_DIRECT_URL = "postgresql://postgres.xqyvgursuilukvskrlps:4-jbfd9eiaCNVdR@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+# Scanner DB (detected_arbs, arb_notifications): SCANNER_DATABASE_URL in bot/.env — never in git
+SCANNER_DIRECT_URL = os.environ.get("SCANNER_DATABASE_URL", "")
+
+def _scanner_book_name(book: str) -> str:
+    """Scanner id → the name users give their bookmaker accounts on the web ("casino-gran-madrid" →
+    "Casino Gran Madrid"): the web finds the account by name and created a duplicate otherwise."""
+    if book == "betfair_exchange":
+        return "Betfair"
+    return BOOKMAKERS.get(book, {}).get("name", book)
 
 async def _fetch_scanner_arb(arb_id: str) -> dict | None:
     """Fetches arb + legs from detected_arbs / detected_arb_legs via asyncpg."""
@@ -3822,13 +3849,13 @@ async def _fetch_scanner_arb(arb_id: str) -> dict | None:
         logging.info(f"[scanner_arb] fetching arb_id={arb_id!r}")
         conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
         arb = await conn.fetchrow(
-            "SELECT id, type, sport, is_live, event_name, market, profit_pct, detected_at "
-            "FROM detected_arbs WHERE id = $1", arb_id)
+            'SELECT id, type, sport, "isLive" AS is_live, "eventName" AS event_name, market, '
+            '"profitPct" AS profit_pct, "detectedAt" AS detected_at FROM detected_arbs WHERE id = $1', arb_id)
         if not arb:
             logging.warning(f"[scanner_arb] no row found for arb_id={arb_id!r}")
             return None
         legs = await conn.fetch(
-            "SELECT bookmaker, selection, odds, stake FROM detected_arb_legs WHERE arb_id = $1 ORDER BY id", arb_id)
+            'SELECT bookmaker, selection, odds, stake FROM detected_arb_legs WHERE "arbId" = $1 ORDER BY id', arb_id)
         return {
             "type":       arb["type"],
             "sport":      arb["sport"],
@@ -3837,7 +3864,7 @@ async def _fetch_scanner_arb(arb_id: str) -> dict | None:
             "market":     arb["market"],
             "profit_pct": arb["profit_pct"],
             "detected_at": arb["detected_at"],
-            "legs": [{"bookmaker": r["bookmaker"], "outcome": r["selection"],
+            "legs": [{"bookmaker": _scanner_book_name(r["bookmaker"]), "outcome": r["selection"],
                       "odd": float(r["odds"]), "stake_pct": float(r["stake"] or 50.0)} for r in legs],
         }
     except Exception as e:
@@ -6116,11 +6143,12 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = await asyncpg.connect(SCANNER_DIRECT_URL, ssl=_ssl_ctx, timeout=15)
         rows = await conn.fetch(
             """
-            SELECT a.type, a.sport, a.is_live, a.event_name, a.market, a.profit_pct, a.detected_at
+            SELECT a.type, a.sport, a."isLive" AS is_live, a."eventName" AS event_name, a.market,
+                   a."profitPct" AS profit_pct, a."detectedAt" AS detected_at
             FROM arb_notifications n
-            JOIN detected_arbs a ON a.id = n.arb_id
-            WHERE n.telegram_id = $1
-            ORDER BY a.detected_at DESC
+            JOIN detected_arbs a ON a.id = n."arbId"
+            WHERE n."telegramId" = $1
+            ORDER BY a."detectedAt" DESC
             LIMIT 10
             """,
             str(user_id)
@@ -6216,8 +6244,12 @@ async def main():
     # Tareas periódicas
     app.job_queue.run_repeating(tarea_flush_db,                interval=30,    first=30)
     app.job_queue.run_repeating(tarea_sync_desde_api,          interval=300,   first=60)  # 5min — activa pagos Stripe
-    app.job_queue.run_repeating(tarea_escaneo_prematch,        interval=BOT_CONFIG["scan_prematch_interval"], first=20)
-    app.job_queue.run_repeating(tarea_escaneo_live,            interval=BOT_CONFIG["scan_live_interval"],     first=10)
+    # Las alertas automáticas las manda SOLO el escáner: un único flujo, igual en el canal de
+    # historial y en los chats. El escaneo propio del bot (API externa + su propio cálculo)
+    # mandaba alertas que nunca pasaban por el canal; queda apagado salvo BOT_LEGACY_SCAN=1.
+    if os.environ.get("BOT_LEGACY_SCAN") == "1":
+        app.job_queue.run_repeating(tarea_escaneo_prematch,    interval=BOT_CONFIG["scan_prematch_interval"], first=20)
+        app.job_queue.run_repeating(tarea_escaneo_live,        interval=BOT_CONFIG["scan_live_interval"],     first=10)
     app.job_queue.run_repeating(tarea_verificar_suscripciones, interval=3600,  first=60)
     app.job_queue.run_repeating(tarea_recordatorios_pendientes,interval=3600,  first=120)
     app.job_queue.run_repeating(tarea_digest_semanal,          interval=24*3600, first=_segundos_hasta_lunes_9am())
